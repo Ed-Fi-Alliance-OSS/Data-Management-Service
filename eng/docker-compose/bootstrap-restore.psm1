@@ -405,7 +405,7 @@ function Assert-RestoreManifestMatchesRequest {
         [string]$DataStandardVersion
     )
 
-    if ([string]$Manifest.databaseEngine -cne $DatabaseEngine) {
+    if (-not [string]::Equals([string]$Manifest.databaseEngine, $DatabaseEngine, [System.StringComparison]::Ordinal)) {
         throw "The restore manifest declares databaseEngine '$($Manifest.databaseEngine)' but this restore selected '$DatabaseEngine'."
     }
     if ([string]$Manifest.templateKind -cne $RestoreTemplate) {
@@ -511,7 +511,7 @@ function Initialize-RestorePackageStage {
         if ($manifestEntries.Count -ne 1) {
             throw "Package '$packageFileName' must contain exactly one $(Get-RestoreManifestFileName), found $($manifestEntries.Count). Packages without a restore manifest are not eligible for restore."
         }
-        $manifestText = Read-RestorePackageArchiveEntryText -Entry $manifestEntries[0]
+        $manifestText = Read-RestorePackageArchiveEntryText -Entry $manifestEntries[0] -DatabaseEngine $DatabaseEngine
         $manifest = Read-RestoreManifest -Path "$packageFileName!/$($manifestEntries[0].FullName)" -Content $manifestText
 
         Assert-RestoreManifestMatchesRequest -Manifest $manifest -DatabaseEngine $DatabaseEngine -RestoreTemplate $RestoreTemplate -DataStandardVersion $Package.DataStandardVersion
@@ -613,12 +613,41 @@ function Get-RestorePackageArchiveEntrySha256 {
 function Read-RestorePackageArchiveEntryText {
     <#
     .SYNOPSIS
-    The UTF-8 text of one in-memory archive entry (a byte-order mark is honored).
+    The text of one in-memory archive entry. SQL Server manifests use strict UTF-8, allowing
+    only an optional UTF-8 byte-order mark; PostgreSQL manifests and nuspec retain legacy
+    StreamReader encoding detection.
     #>
     param (
         [Parameter(Mandatory = $true)]
-        [System.IO.Compression.ZipArchiveEntry]$Entry
+        [System.IO.Compression.ZipArchiveEntry]$Entry,
+
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql"
     )
+
+    if ($DatabaseEngine -eq "mssql") {
+        $entryStream = $Entry.Open()
+        $memory = [System.IO.MemoryStream]::new()
+        try {
+            $entryStream.CopyTo($memory)
+            $bytes = $memory.ToArray()
+        }
+        finally {
+            $memory.Dispose()
+            $entryStream.Dispose()
+        }
+
+        $offset = 0
+        if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+            $offset = 3
+        }
+        try {
+            return [System.Text.UTF8Encoding]::new($false, $true).GetString($bytes, $offset, $bytes.Length - $offset)
+        }
+        catch {
+            throw "The SQL Server restore manifest archive entry must be strict UTF-8, optionally with a UTF-8 BOM."
+        }
+    }
 
     $reader = [System.IO.StreamReader]::new($Entry.Open(), [System.Text.Encoding]::UTF8, $true)
     try {
@@ -946,7 +975,8 @@ function Get-RestoreCandidateRelationalMappingVersion {
     <#
     .SYNOPSIS
     Runs 'api-schema-tools ddl emit --ddl-manifest' over the candidate's staged schema files
-    (core first) and returns the emitted relational_mapping_version. Output goes into a fresh
+    (core first) and returns its relational mapping version. With -IncludePhysicalSchemaVersion
+    it returns both the logical and engine-specific physical versions. Output goes into a fresh
     subdirectory of the private package stage - never into the candidate tree - because the tool
     requires an empty output directory and the candidate must stay byte-identical to what the
     prepare phases produced.
@@ -962,7 +992,9 @@ function Get-RestoreCandidateRelationalMappingVersion {
         [Parameter(Mandatory = $true)]
         [string]$OutputRoot,
 
-        [string]$SchemaToolPath = ""
+        [string]$SchemaToolPath = "",
+
+        [switch]$IncludePhysicalSchemaVersion
     )
 
     $toolPath = Resolve-DmsSchemaTool -RequestedPath $SchemaToolPath
@@ -984,13 +1016,43 @@ function Get-RestoreCandidateRelationalMappingVersion {
     if (-not (Test-Path -LiteralPath $ddlManifestPath -PathType Leaf)) {
         throw "api-schema-tools ddl emit reported success but produced no ddl.manifest.json at '$ddlManifestPath'."
     }
-    $ddlManifest = Get-Content -LiteralPath $ddlManifestPath -Raw | ConvertFrom-Json
-    $mappingProperty = $ddlManifest.PSObject.Properties['relational_mapping_version']
-    if ($null -eq $mappingProperty -or [string]::IsNullOrWhiteSpace([string]$mappingProperty.Value)) {
-        throw "ddl.manifest.json at '$ddlManifestPath' carries no relational_mapping_version."
+    $ddlContent = Get-Content -LiteralPath $ddlManifestPath -Raw
+    $physicalVersion = $null
+    if ($DatabaseEngine -eq "mssql") {
+        Assert-RestoreJsonObject -Content $ddlContent
+        $ddlManifest = $ddlContent | ConvertFrom-Json -AsHashtable
+        $mappingVersion = $ddlManifest['relational_mapping_version']
+        if ($mappingVersion -isnot [string] -or [string]::IsNullOrWhiteSpace($mappingVersion)) {
+            throw "ddl.manifest.json at '$ddlManifestPath' carries no relational_mapping_version."
+        }
+        $entries = $ddlManifest['ddl']
+        $mssql = @(if ($entries -is [array]) {
+            $entries | Where-Object {
+                $_ -is [System.Collections.IDictionary] -and $_['dialect'] -is [string] -and
+                [string]::Equals($_['dialect'], 'mssql', [System.StringComparison]::Ordinal)
+            }
+        })
+        if ($mssql.Count -ne 1 -or $mssql[0]['mssql_physical_schema_version'] -isnot [string] -or
+            -not [string]::Equals($mssql[0]['mssql_physical_schema_version'], "v2", [System.StringComparison]::Ordinal)) {
+            throw "Selected SchemaTools must emit exactly one mssql entry with mssql_physical_schema_version v2."
+        }
+        $physicalVersion = $mssql[0]['mssql_physical_schema_version']
+    }
+    else {
+        $ddlManifest = $ddlContent | ConvertFrom-Json
+        $mappingProperty = $ddlManifest.PSObject.Properties['relational_mapping_version']
+        if ($null -eq $mappingProperty -or [string]::IsNullOrWhiteSpace([string]$mappingProperty.Value)) {
+            throw "ddl.manifest.json at '$ddlManifestPath' carries no relational_mapping_version."
+        }
+        $mappingVersion = [string]$mappingProperty.Value
     }
 
-    return [string]$mappingProperty.Value
+    if (-not $IncludePhysicalSchemaVersion) { return $mappingVersion }
+
+    return [pscustomobject]@{
+        RelationalMappingVersion = $mappingVersion
+        MssqlPhysicalSchemaVersion = $physicalVersion
+    }
 }
 
 function Assert-RestoreManifestMatchesCandidate {
@@ -1014,16 +1076,28 @@ function Assert-RestoreManifestMatchesCandidate {
         [string]$DatabaseEngine,
 
         [Parameter(Mandatory = $true)]
-        [string]$CandidateRelationalMappingVersion
+        [string]$CandidateRelationalMappingVersion,
+
+        [string]$CandidateMssqlPhysicalSchemaVersion
     )
 
-    if ([string]$Manifest.databaseEngine -cne $DatabaseEngine) {
+    if (-not [string]::Equals([string]$Manifest.databaseEngine, $DatabaseEngine, [System.StringComparison]::Ordinal)) {
         throw "The restore manifest declares databaseEngine '$($Manifest.databaseEngine)' but this restore selected '$DatabaseEngine'."
     }
 
     $baselineDocumentJsonType = Get-RestoreDocumentJsonBaselineType -DatabaseEngine $DatabaseEngine
-    if ([string]$Manifest.documentJsonColumnType -cne $baselineDocumentJsonType) {
+    if ($DatabaseEngine -eq "mssql" -and
+        -not [string]::Equals([string]$Manifest.documentJsonColumnType, $baselineDocumentJsonType, [System.StringComparison]::Ordinal)) {
         throw "DocumentJson physical baseline mismatch: the restore manifest declares documentJsonColumnType '$($Manifest.documentJsonColumnType)' but this checkout's $DatabaseEngine baseline is '$baselineDocumentJsonType'."
+    }
+    if ($DatabaseEngine -eq "postgresql" -and [string]$Manifest.documentJsonColumnType -cne $baselineDocumentJsonType) {
+        throw "DocumentJson physical baseline mismatch: the restore manifest declares documentJsonColumnType '$($Manifest.documentJsonColumnType)' but this checkout's $DatabaseEngine baseline is '$baselineDocumentJsonType'."
+    }
+
+    if ($DatabaseEngine -eq "mssql" -and
+        (-not [string]::Equals($CandidateMssqlPhysicalSchemaVersion, "v2", [System.StringComparison]::Ordinal) -or
+            -not [string]::Equals([string]$Manifest.mssqlPhysicalSchemaVersion, $CandidateMssqlPhysicalSchemaVersion, [System.StringComparison]::Ordinal))) {
+        throw "The restore manifest mssqlPhysicalSchemaVersion must match the selected SchemaTools v2 baseline."
     }
 
     if (-not ([string]$Manifest.dataStandardVersion).Equals($CandidateFact.DataStandardVersion, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -1041,7 +1115,13 @@ function Assert-RestoreManifestMatchesCandidate {
         throw "Effective schema hash mismatch: the restore manifest declares '$($Manifest.effectiveSchemaHash)' but the candidate workspace staged '$($CandidateFact.EffectiveSchemaHash)'."
     }
 
-    if ([string]$Manifest.relationalMappingVersion -cne $CandidateRelationalMappingVersion) {
+    $mappingMismatch = if ($DatabaseEngine -eq "mssql") {
+        -not [string]::Equals([string]$Manifest.relationalMappingVersion, $CandidateRelationalMappingVersion, [System.StringComparison]::Ordinal)
+    }
+    else {
+        [string]$Manifest.relationalMappingVersion -cne $CandidateRelationalMappingVersion
+    }
+    if ($mappingMismatch) {
         throw "Relational mapping version mismatch: the restore manifest declares '$($Manifest.relationalMappingVersion)' but the candidate schema set emits '$CandidateRelationalMappingVersion'."
     }
 
@@ -1084,16 +1164,18 @@ function Invoke-RestoreCandidateCrossCheck {
 
     try {
         $candidateFact = Get-RestoreCandidateSchemaFact -CandidateDirectory $CandidateDirectory
-        $candidateMappingVersion = Get-RestoreCandidateRelationalMappingVersion `
+        $candidateVersions = Get-RestoreCandidateRelationalMappingVersion `
             -SchemaFilePath $candidateFact.SchemaFilePaths `
             -DatabaseEngine $DatabaseEngine `
             -OutputRoot $StageDirectory `
-            -SchemaToolPath $SchemaToolPath
+            -SchemaToolPath $SchemaToolPath `
+            -IncludePhysicalSchemaVersion
         Assert-RestoreManifestMatchesCandidate `
             -Manifest $Manifest `
             -CandidateFact $candidateFact `
             -DatabaseEngine $DatabaseEngine `
-            -CandidateRelationalMappingVersion $candidateMappingVersion
+            -CandidateRelationalMappingVersion $candidateVersions.RelationalMappingVersion `
+            -CandidateMssqlPhysicalSchemaVersion $candidateVersions.MssqlPhysicalSchemaVersion
         return $candidateFact
     }
     catch {
@@ -2288,10 +2370,23 @@ function Get-RestoreDatabaseCatalogFact {
         $databaseCompatibilityLevel = $parsedCompatibilityLevel
     }
 
+    $physicalVersion = $null
+    if ($DatabaseEngine -eq "mssql") {
+        $markerRows = @(Invoke-RestoreCatalogQuery @queryParameters `
+                -Query (Get-MssqlPhysicalSchemaVersionQuerySql) `
+                -FailureMessage "Failed to read the SQL Server DocumentCache physical schema marker from '$DatabaseName'." |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($markerRows.Count -ne 1 -or
+        -not [string]::Equals($markerRows[0].Trim(), "v2", [System.StringComparison]::Ordinal)) {
+            throw "Cannot verify the v2 SQL Server DocumentCache physical schema marker in '$DatabaseName'. Reprovision the template."
+        }
+        $physicalVersion = $markerRows[0].Trim()
+    }
+
     $documentJsonRows = Invoke-RestoreCatalogQuery @queryParameters `
         -Query (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine $DatabaseEngine) `
         -FailureMessage "Failed to read the DocumentJson column type from '$DatabaseName'."
-    $documentJsonColumnType = ConvertFrom-DocumentJsonColumnTypeRow -Row $documentJsonRows
+    $documentJsonColumnType = ConvertFrom-DocumentJsonColumnTypeRow -Row $documentJsonRows -DatabaseEngine $DatabaseEngine
 
     $schemaRows = Invoke-RestoreCatalogQuery @queryParameters `
         -Query (Get-InventorySchemaQuerySql -DatabaseEngine $DatabaseEngine -Purpose InventoryEnumeration) `
@@ -2330,6 +2425,7 @@ function Get-RestoreDatabaseCatalogFact {
         ResourceKeySeedHashB64     = $effectiveSchema.ResourceKeySeedHashB64
         EngineVersion              = $engineVersion
         DatabaseCompatibilityLevel = $databaseCompatibilityLevel
+        MssqlPhysicalSchemaVersion = $physicalVersion
         DocumentJsonColumnType     = $documentJsonColumnType
         FullInventory              = $fullInventory
         ArtifactInventory          = $artifactInventory

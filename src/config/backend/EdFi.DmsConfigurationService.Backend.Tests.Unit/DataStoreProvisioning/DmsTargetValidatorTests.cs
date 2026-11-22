@@ -250,6 +250,17 @@ public class DmsTargetValidatorTests
     [TestFixture]
     public class Given_engine_and_baseline_drift
     {
+        [TestCase(null)]
+        [TestCase("v1")]
+        [TestCase("V2")]
+        public void It_refuses_an_unproven_mssql_physical_marker(string? marker)
+        {
+            DmsTargetFacts facts = MssqlFacts();
+            Staging(facts with { MssqlPhysicalSchemaVersion = marker }, MssqlManifestFor(facts))
+                .Should()
+                .Be(Invalid(TargetIncompatible, MssqlPhysicalSchemaVersionCheck));
+        }
+
         private DmsTargetValidation _olderServer = null!;
         private DmsTargetValidation _newerServer = null!;
         private DmsTargetValidation _unparsableManifestVersion = null!;
@@ -272,7 +283,14 @@ public class DmsTargetValidatorTests
 
             DmsTargetFacts mssqlFacts = facts with
             {
-                DocumentJsonColumns = [new DmsDocumentJsonColumn("dms", "DocumentCache", "nvarchar(max)")],
+                MssqlPhysicalSchemaVersion = "v2",
+                DocumentJsonColumns =
+                [
+                    new DmsDocumentJsonColumn("dms", "DocumentCache", "json")
+                    {
+                        IsMssqlDocumentCacheColumn = true,
+                    },
+                ],
             };
             RestoreManifest mssqlManifest = ManifestFor(
                 mssqlFacts,

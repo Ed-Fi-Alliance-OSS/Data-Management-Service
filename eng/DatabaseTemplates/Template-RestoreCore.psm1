@@ -38,7 +38,9 @@ $script:RestoreScratchDatabaseNamePrefix = "edfi_dms_restore_scratch"
 $script:RestorePreflightDatabaseNamePrefix = "edfi_dms_restore_preflight"
 $script:RestoreExpectedDatabaseNamePrefix = "edfi_dms_restore_expected"
 
-$script:SupportedRestoreManifestVersion = 1
+$script:PostgresqlRestoreManifestVersion = 1
+$script:MssqlRestoreManifestVersion = 2
+$script:MssqlPhysicalSchemaVersion = "v2"
 $script:RestoreManifestFileName = "restore-manifest.json"
 $script:RestoreContentProfileDmsDatastoreOnly = "DmsDatastoreOnly"
 
@@ -269,11 +271,7 @@ function Get-RestoreDocumentJsonBaselineType {
     <#
     .SYNOPSIS
     The current authoritative physical storage type of the DocumentJson columns per engine:
-    PostgreSQL "jsonb", SQL Server "nvarchar(max)" (native json deferred). The SQL Server value
-    carries the declared length, as Get-DocumentJsonColumnTypeQuerySql renders it, so a
-    narrowed nvarchar column is not the baseline. Restore manifests and scratch databases are
-    both validated against this single definition; a future storage migration changes only
-    this function.
+    PostgreSQL "jsonb" and native SQL Server "json".
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -282,7 +280,7 @@ function Get-RestoreDocumentJsonBaselineType {
     )
 
     if ($DatabaseEngine -eq "mssql") {
-        return "nvarchar(max)"
+        return "json"
     }
 
     return "jsonb"
@@ -384,6 +382,18 @@ function Get-RestoreWrappedPropertyValue {
     }
 
     return [pscustomobject]@{ Present = $true; Value = $value }
+}
+
+function Test-RestoreOrdinalStringEqual {
+    param (
+        [AllowNull()]
+        [string]$Left,
+
+        [AllowNull()]
+        [string]$Right
+    )
+
+    return [string]::Equals($Left, $Right, [System.StringComparison]::Ordinal)
 }
 
 function ConvertTo-CanonicalJsonStringLiteral {
@@ -622,7 +632,16 @@ function Assert-RestoreManifestField {
         throw "Restore manifest is missing required field '$FieldName'."
     }
 
-    $value = Get-RestorePropertyValue -InputObject $Manifest -Name $FieldName
+    $manifestEngine = Get-RestorePropertyValue -InputObject $Manifest -Name "databaseEngine"
+    if ([string]::Equals([string]$manifestEngine, "postgresql", [System.StringComparison]::Ordinal)) {
+        # Preserve format-1 behavior: PowerShell enumerates array-valued properties when the
+        # old helper returns them. Strict scalar kinds are required only by MSSQL format 2.
+        $value = Get-RestorePropertyValue -InputObject $Manifest -Name $FieldName
+    }
+    else {
+        $wrappedValue = Get-RestoreWrappedPropertyValue -InputObject $Manifest -Name $FieldName
+        $value = $wrappedValue.Value
+    }
     if ($null -eq $value) {
         throw "Restore manifest is missing required field '$FieldName'."
     }
@@ -633,7 +652,7 @@ function Assert-RestoreManifestField {
         }
     }
 
-    return $value
+    return ,$value
 }
 
 function Test-RestoreManifestInteger {
@@ -645,13 +664,14 @@ function Test-RestoreManifestInteger {
         $Value
     )
 
-    return ($Value -is [int]) -or ($Value -is [long]) -or ($Value -is [short]) -or ($Value -is [byte])
+    $isInteger = ($Value -is [int]) -or ($Value -is [long]) -or ($Value -is [short]) -or ($Value -is [byte])
+    return $isInteger
 }
 
 function Assert-RestoreManifestShape {
     <#
     .SYNOPSIS
-    Validates an already-parsed restore manifest against the version-1 contract: every
+    Validates an already-parsed restore manifest against the engine-specific contract: every
     required field present with the required JSON type and value shape, hashes in lowercase
     64-hex form, the fixed DmsDatastoreOnly content profile, engine-consistent artifact
     extension and compatibility-level rules, and an internally consistent inventory whose
@@ -668,27 +688,58 @@ function Assert-RestoreManifestShape {
     if (-not (Test-RestoreManifestInteger -Value $manifestVersion)) {
         throw "Restore manifest field 'version' must be an integer manifest format version."
     }
-    if ($manifestVersion -ne $script:SupportedRestoreManifestVersion) {
-        throw "Restore manifest field 'version' is '$manifestVersion' but only version $($script:SupportedRestoreManifestVersion) is supported."
-    }
 
     $null = Assert-RestoreManifestField -Manifest $Manifest -FieldName "packageId" -AsNonEmptyString
     $null = Assert-RestoreManifestField -Manifest $Manifest -FieldName "packageVersion" -AsNonEmptyString
 
     $databaseEngine = Assert-RestoreManifestField -Manifest $Manifest -FieldName "databaseEngine" -AsNonEmptyString
-    if ($databaseEngine -cnotin @("postgresql", "mssql")) {
+    if (-not (Test-RestoreOrdinalStringEqual -Left ([string]$databaseEngine) -Right "postgresql") -and
+        -not (Test-RestoreOrdinalStringEqual -Left ([string]$databaseEngine) -Right "mssql")) {
         throw "Restore manifest field 'databaseEngine' must be exactly 'postgresql' or 'mssql', but found '$databaseEngine'."
     }
 
+    if (Test-RestoreOrdinalStringEqual -Left ([string]$databaseEngine) -Right "mssql") {
+        $contractMembers = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+        foreach ($member in @(
+                "version", "packageId", "packageVersion", "databaseEngine", "templateKind",
+                "dataStandardVersion", "contentProfile", "projects", "apiSchemaFormatVersion",
+                "effectiveSchemaHash", "resourceKeyCount", "resourceKeySeedHashB64",
+                "relationalMappingVersion", "engineVersion", "databaseCompatibilityLevel",
+                "documentJsonColumnType", "mssqlPhysicalSchemaVersion", "inventory",
+                "inventorySha256", "artifactFileName", "artifactSha256"
+            )) {
+            $null = $contractMembers.Add($member)
+        }
+        $memberNames = if ($Manifest -is [System.Collections.IDictionary]) {
+            @($Manifest.GetEnumerator() | ForEach-Object { [string]$_.Key })
+        }
+        else {
+            @($Manifest.PSObject.Properties.Name)
+        }
+        for ($index = 0; $index -lt $memberNames.Count; $index++) {
+            if (-not $contractMembers.Contains($memberNames[$index])) {
+                throw "Restore manifest member at position $($index + 1) ('$($memberNames[$index])') is not part of the format-2 contract."
+            }
+        }
+    }
+
+    if ((Test-RestoreOrdinalStringEqual -Left ([string]$databaseEngine) -Right "mssql") -and $manifestVersion -ne $script:MssqlRestoreManifestVersion) {
+        throw "Restore manifest field 'version' must be 2 for mssql. Reprovision legacy templates using the native DocumentCache baseline."
+    }
+    if ((Test-RestoreOrdinalStringEqual -Left ([string]$databaseEngine) -Right "postgresql") -and $manifestVersion -ne $script:PostgresqlRestoreManifestVersion) {
+        throw "Restore manifest field 'version' is '$manifestVersion' but only version 1 is supported for postgresql."
+    }
+
     $templateKind = Assert-RestoreManifestField -Manifest $Manifest -FieldName "templateKind" -AsNonEmptyString
-    if ($templateKind -cnotin @("Minimal", "Populated")) {
+    if (-not (Test-RestoreOrdinalStringEqual -Left ([string]$templateKind) -Right "Minimal") -and
+        -not (Test-RestoreOrdinalStringEqual -Left ([string]$templateKind) -Right "Populated")) {
         throw "Restore manifest field 'templateKind' must be exactly 'Minimal' or 'Populated', but found '$templateKind'."
     }
 
     $null = Assert-RestoreManifestField -Manifest $Manifest -FieldName "dataStandardVersion" -AsNonEmptyString
 
     $contentProfile = Assert-RestoreManifestField -Manifest $Manifest -FieldName "contentProfile" -AsNonEmptyString
-    if ($contentProfile -cne $script:RestoreContentProfileDmsDatastoreOnly) {
+    if (-not (Test-RestoreOrdinalStringEqual -Left ([string]$contentProfile) -Right $script:RestoreContentProfileDmsDatastoreOnly)) {
         throw "Restore manifest field 'contentProfile' must be exactly '$($script:RestoreContentProfileDmsDatastoreOnly)', but found '$contentProfile'. Only DMS-datastore-only template packages are eligible for restore."
     }
 
@@ -728,6 +779,9 @@ function Assert-RestoreManifestShape {
     if (-not (Test-RestoreManifestInteger -Value $resourceKeyCount) -or $resourceKeyCount -lt 1) {
         throw "Restore manifest field 'resourceKeyCount' must be a positive integer."
     }
+    if ($databaseEngine -eq "mssql" -and $resourceKeyCount -gt [int]::MaxValue) {
+        throw "Restore manifest field 'resourceKeyCount' must be a positive integer within the SQL Server format-2 range."
+    }
 
     $resourceKeySeedHashB64 = Assert-RestoreManifestField -Manifest $Manifest -FieldName "resourceKeySeedHashB64" -AsNonEmptyString
     $seedHashBytes = $null
@@ -742,11 +796,16 @@ function Assert-RestoreManifestShape {
     }
 
     $null = Assert-RestoreManifestField -Manifest $Manifest -FieldName "relationalMappingVersion" -AsNonEmptyString
-    $null = Assert-RestoreManifestField -Manifest $Manifest -FieldName "engineVersion" -AsNonEmptyString
+    $engineVersion = Assert-RestoreManifestField -Manifest $Manifest -FieldName "engineVersion" -AsNonEmptyString
 
-    $compatibilityLevel = Get-RestorePropertyValue -InputObject $Manifest -Name "databaseCompatibilityLevel"
     if ($databaseEngine -eq "mssql") {
-        if (-not (Test-RestoreManifestInteger -Value $compatibilityLevel) -or $compatibilityLevel -lt 90) {
+        $compatibilityLevel = (Get-RestoreWrappedPropertyValue -InputObject $Manifest -Name "databaseCompatibilityLevel").Value
+    }
+    else {
+        $compatibilityLevel = Get-RestorePropertyValue -InputObject $Manifest -Name "databaseCompatibilityLevel"
+    }
+    if ($databaseEngine -eq "mssql") {
+        if (-not (Test-RestoreManifestInteger -Value $compatibilityLevel) -or $compatibilityLevel -lt 90 -or $compatibilityLevel -gt [int]::MaxValue) {
             throw "Restore manifest field 'databaseCompatibilityLevel' is required for mssql and must be an integer SQL Server compatibility level (90 or higher)."
         }
     }
@@ -754,7 +813,34 @@ function Assert-RestoreManifestShape {
         throw "Restore manifest field 'databaseCompatibilityLevel' must be omitted or null for postgresql."
     }
 
-    $null = Assert-RestoreManifestField -Manifest $Manifest -FieldName "documentJsonColumnType" -AsNonEmptyString
+    $columnType = Assert-RestoreManifestField -Manifest $Manifest -FieldName "documentJsonColumnType" -AsNonEmptyString
+    if ($databaseEngine -eq "mssql") {
+        $memberNames = if ($Manifest -is [System.Collections.IDictionary]) {
+            @($Manifest.GetEnumerator() | ForEach-Object { [string]$_.Key })
+        }
+        else {
+            @($Manifest.PSObject.Properties.Name)
+        }
+        foreach ($field in @("mssqlPhysicalSchemaVersion", "documentJsonColumnType", "engineVersion")) {
+            if ($memberNames -cnotcontains $field) {
+                throw "Restore manifest is missing required field '$field'."
+            }
+        }
+        $marker = Assert-RestoreManifestField -Manifest $Manifest -FieldName "mssqlPhysicalSchemaVersion" -AsNonEmptyString
+        if (-not (Test-RestoreOrdinalStringEqual -Left ([string]$marker) -Right $script:MssqlPhysicalSchemaVersion)) {
+            throw "Restore manifest field 'mssqlPhysicalSchemaVersion' must be v2."
+        }
+        if (-not (Test-RestoreOrdinalStringEqual -Left ([string]$columnType) -Right (Get-RestoreDocumentJsonBaselineType -DatabaseEngine mssql))) {
+            throw "Restore manifest field 'documentJsonColumnType' must be json for mssql."
+        }
+        $major = 0
+        if ($engineVersion -notmatch '^\s*([0-9]+)' -or -not [int]::TryParse($Matches[1], [ref]$major) -or $major -lt 17) {
+            throw "Restore manifest field 'engineVersion' requires SQL Server major version 17 or later."
+        }
+    }
+    elseif (Test-RestorePropertyPresent -InputObject $Manifest -Name "mssqlPhysicalSchemaVersion") {
+        throw "Restore manifest field 'mssqlPhysicalSchemaVersion' must be omitted for postgresql."
+    }
 
     $inventorySha256 = Assert-RestoreManifestField -Manifest $Manifest -FieldName "inventorySha256" -AsNonEmptyString
     if ($inventorySha256 -cnotmatch "^[0-9a-f]{64}\z") {
@@ -782,10 +868,292 @@ function Assert-RestoreManifestShape {
     }
 }
 
+function Assert-RestoreJsonAllowedMembers {
+    param (
+        [System.Text.Json.JsonElement]$Element,
+        [string[]]$AllowedMember,
+        [string]$Subject
+    )
+
+    if ($Element.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) { return }
+    $allowed = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($name in $AllowedMember) { $null = $allowed.Add($name) }
+    $position = 0
+    foreach ($property in $Element.EnumerateObject()) {
+        $position++
+        if (-not $allowed.Contains($property.Name)) {
+            throw "Restore manifest $Subject declares a member at position $position that is not part of the format-2 contract."
+        }
+    }
+}
+
+function Get-RestoreJsonPropertyElement {
+    param (
+        [System.Text.Json.JsonElement]$Element,
+        [string]$Name
+    )
+
+    foreach ($property in $Element.EnumerateObject()) {
+        if ([string]::Equals($property.Name, $Name, [System.StringComparison]::Ordinal)) {
+            return [pscustomobject]@{ Present = $true; Value = $property.Value }
+        }
+    }
+
+    return [pscustomobject]@{ Present = $false; Value = $null }
+}
+
+function Assert-RestoreMssqlInventoryJson {
+    param ([System.Text.Json.JsonElement]$Root)
+
+    $inventoryProperty = Get-RestoreJsonPropertyElement -Element $Root -Name "inventory"
+    if (-not $inventoryProperty.Present -or $inventoryProperty.Value.ValueKind -eq [System.Text.Json.JsonValueKind]::Null) { return }
+    $inventory = $inventoryProperty.Value
+    if ($inventory.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) {
+        throw "Restore manifest inventory must be a JSON object."
+    }
+    Assert-RestoreJsonAllowedMembers -Element $inventory -AllowedMember @("schemas", "principals") -Subject "inventory"
+
+    $schemasProperty = Get-RestoreJsonPropertyElement -Element $inventory -Name "schemas"
+    if (-not $schemasProperty.Present -or $schemasProperty.Value.ValueKind -ne [System.Text.Json.JsonValueKind]::Array) {
+        throw "Restore manifest inventory schemas must be a JSON array."
+    }
+    $schemas = $schemasProperty.Value
+    $schemaPosition = 0
+    foreach ($schema in $schemas.EnumerateArray()) {
+        $schemaPosition++
+        if ($schema.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) {
+            throw "Restore manifest inventory schema entry $schemaPosition must be a JSON object."
+        }
+        Assert-RestoreJsonAllowedMembers -Element $schema -AllowedMember @("schemaName", "objects") -Subject "inventory schema entry $schemaPosition"
+        $schemaNameProperty = Get-RestoreJsonPropertyElement -Element $schema -Name "schemaName"
+        if (-not $schemaNameProperty.Present -or
+            $schemaNameProperty.Value.ValueKind -ne [System.Text.Json.JsonValueKind]::String -or
+            [string]::IsNullOrWhiteSpace($schemaNameProperty.Value.GetString())) {
+            throw "Restore manifest inventory schema entry $schemaPosition schemaName must be a non-empty JSON string."
+        }
+        $objectsProperty = Get-RestoreJsonPropertyElement -Element $schema -Name "objects"
+        if (-not $objectsProperty.Present -or $objectsProperty.Value.ValueKind -ne [System.Text.Json.JsonValueKind]::Array) {
+            throw "Restore manifest inventory schema entry $schemaPosition objects must be a JSON array."
+        }
+        $objects = $objectsProperty.Value
+        $objectPosition = 0
+        foreach ($entry in $objects.EnumerateArray()) {
+            $objectPosition++
+            if ($entry.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) {
+                throw "Restore manifest inventory object entry $objectPosition of schema entry $schemaPosition must be a JSON object."
+            }
+            Assert-RestoreJsonAllowedMembers -Element $entry -AllowedMember @("name", "type") -Subject "inventory object entry $objectPosition of schema entry $schemaPosition"
+            foreach ($field in @("name", "type")) {
+                $valueProperty = Get-RestoreJsonPropertyElement -Element $entry -Name $field
+                if (-not $valueProperty.Present -or
+                    $valueProperty.Value.ValueKind -ne [System.Text.Json.JsonValueKind]::String -or
+                    [string]::IsNullOrWhiteSpace($valueProperty.Value.GetString())) {
+                    throw "Restore manifest inventory object entry $objectPosition of schema entry $schemaPosition $field must be a non-empty JSON string."
+                }
+            }
+        }
+    }
+
+    $principalsProperty = Get-RestoreJsonPropertyElement -Element $inventory -Name "principals"
+    if ($principalsProperty.Present -and $principalsProperty.Value.ValueKind -ne [System.Text.Json.JsonValueKind]::Null) {
+        $principals = $principalsProperty.Value
+        if ($principals.ValueKind -ne [System.Text.Json.JsonValueKind]::Array) {
+            throw "Restore manifest inventory principals must be a JSON array when present."
+        }
+        foreach ($principal in $principals.EnumerateArray()) {
+            if ($principal.ValueKind -ne [System.Text.Json.JsonValueKind]::String -or
+                [string]::IsNullOrWhiteSpace($principal.GetString())) {
+                throw "Restore manifest inventory principals must contain non-empty JSON strings."
+            }
+        }
+    }
+}
+
+function ConvertFrom-RestoreLegacySingleQuotedJson {
+    param ([Parameter(Mandatory = $true)][string]$Content)
+
+    $builder = [System.Text.StringBuilder]::new($Content.Length)
+    $inDouble = $false
+    $inSingle = $false
+    $escaped = $false
+    for ($index = 0; $index -lt $Content.Length; $index++) {
+        $character = $Content[$index]
+        if ($inDouble) {
+            [void]$builder.Append($character)
+            if ($escaped) { $escaped = $false }
+            elseif ($character -eq '\\') { $escaped = $true }
+            elseif ($character -eq '"') { $inDouble = $false }
+            continue
+        }
+        if ($inSingle) {
+            if ($character -eq '\\' -and $index + 1 -lt $Content.Length -and $Content[$index + 1] -eq "'") {
+                [void]$builder.Append("'")
+                $index++
+            }
+            elseif ($character -eq "'") {
+                [void]$builder.Append('"')
+                $inSingle = $false
+            }
+            else {
+                if ($character -eq '"') { [void]$builder.Append('\\') }
+                [void]$builder.Append($character)
+            }
+            continue
+        }
+        if ($character -eq '"') { $inDouble = $true }
+        elseif ($character -eq "'") { $inSingle = $true; [void]$builder.Append('"'); continue }
+        [void]$builder.Append($character)
+    }
+    if ($inSingle) { throw "Unterminated single-quoted legacy JSON string." }
+    return $builder.ToString()
+}
+
+function Assert-RestoreJsonObject {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$Content,
+
+        [switch]$AllowPostgresqlFormat1
+    )
+
+    # ConvertFrom-Json keeps only the last duplicate member, including with -AsHashtable.
+    # Inspect the JSON tokens first so neither a signed manifest nor selected-tool evidence is ambiguous.
+    $strictParseError = $null
+    try {
+        $document = [System.Text.Json.JsonDocument]::Parse($Content)
+    }
+    catch {
+        if (-not $AllowPostgresqlFormat1) { throw }
+        # The original PostgreSQL reader allows comments and trailing commas. Use this
+        # relaxed token view only to identify its unambiguous version and engine.
+        $strictParseError = $_
+        $options = [System.Text.Json.JsonDocumentOptions]@{
+            CommentHandling = [System.Text.Json.JsonCommentHandling]::Skip
+            AllowTrailingCommas = $true
+            MaxDepth = 1024
+        }
+        try {
+            $document = [System.Text.Json.JsonDocument]::Parse($Content, $options)
+        }
+        catch {
+            # ConvertFrom-Json historically accepts single-quoted member names and values.
+            # Preserve that PostgreSQL-only format-1 compatibility when its parsed root
+            # unambiguously selects PostgreSQL version 1; all other invalid JSON still fails.
+            try {
+                $normalizedLegacyJson = ConvertFrom-RestoreLegacySingleQuotedJson -Content $Content
+                $legacyDocument = [System.Text.Json.JsonDocument]::Parse($normalizedLegacyJson, $options)
+                try {
+                    $legacyRoot = $legacyDocument.RootElement
+                    if ($legacyRoot.ValueKind -eq [System.Text.Json.JsonValueKind]::Array -and $legacyRoot.GetArrayLength() -eq 1) { $legacyRoot = $legacyRoot[0] }
+                    if ($legacyRoot.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) { throw $strictParseError }
+                    # PowerShell property lookup and hashtable keys are case-insensitive;
+                    # use the same equivalence here so differently-cased spellings cannot
+                    # overwrite a previously observed discriminator during legacy parsing.
+                    $seenDiscriminators = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                    $legacyValues = @{}
+                    foreach ($property in $legacyRoot.EnumerateObject()) {
+                        if ($property.Name -in @('databaseEngine', 'version')) {
+                            if (-not $seenDiscriminators.Add($property.Name)) { throw "The JSON document contains a duplicate discriminator." }
+                            $legacyValues[$property.Name] = $property.Value
+                        }
+                    }
+                    if (-not $legacyValues.ContainsKey('databaseEngine') -or -not $legacyValues.ContainsKey('version')) { throw $strictParseError }
+                    $legacyEngine = $legacyValues.databaseEngine
+                    $legacyVersion = $legacyValues.version
+                    if ($legacyEngine.ValueKind -eq [System.Text.Json.JsonValueKind]::Array -and $legacyEngine.GetArrayLength() -eq 1) { $legacyEngine = $legacyEngine[0] }
+                    if ($legacyVersion.ValueKind -eq [System.Text.Json.JsonValueKind]::Array -and $legacyVersion.GetArrayLength() -eq 1) { $legacyVersion = $legacyVersion[0] }
+                    if ($legacyEngine.ValueKind -eq [System.Text.Json.JsonValueKind]::String -and
+                        [string]::Equals($legacyEngine.GetString(), "postgresql", [System.StringComparison]::Ordinal) -and
+                        $legacyVersion.ValueKind -eq [System.Text.Json.JsonValueKind]::Number -and
+                        $legacyVersion.GetRawText() -ceq "1") { return }
+                }
+                finally { $legacyDocument.Dispose() }
+            }
+            catch {
+                if ($_.Exception.Message -like "*duplicate discriminator*") { throw }
+            }
+            throw $strictParseError
+        }
+    }
+    try {
+        $root = $document.RootElement
+        $candidate = $root
+        # ConvertFrom-Json historically unwrapped a singleton array in the PostgreSQL reader.
+        if ($AllowPostgresqlFormat1 -and $root.ValueKind -eq [System.Text.Json.JsonValueKind]::Array -and $root.GetArrayLength() -eq 1) {
+            $candidate = $root[0]
+        }
+        if ($AllowPostgresqlFormat1 -and $candidate.ValueKind -eq [System.Text.Json.JsonValueKind]::Object) {
+            $discriminators = @{}
+            foreach ($property in $candidate.EnumerateObject()) {
+                if ($property.Name -in @('databaseEngine', 'version')) {
+                    if ($discriminators.ContainsKey($property.Name)) { throw "The JSON document contains a duplicate discriminator." }
+                    $discriminators[$property.Name] = $property.Value
+                }
+            }
+            if ($discriminators.ContainsKey('databaseEngine') -and $discriminators.ContainsKey('version')) {
+                $engineValue = $discriminators.databaseEngine
+                if ($engineValue.ValueKind -eq [System.Text.Json.JsonValueKind]::Array -and $engineValue.GetArrayLength() -eq 1) {
+                    $engineValue = $engineValue[0]
+                }
+                $versionValue = $discriminators.version
+                if ($versionValue.ValueKind -eq [System.Text.Json.JsonValueKind]::Array -and $versionValue.GetArrayLength() -eq 1) {
+                    $versionValue = $versionValue[0]
+                }
+                if ($engineValue.ValueKind -eq [System.Text.Json.JsonValueKind]::String -and
+                    [string]::Equals($engineValue.GetString(), 'postgresql', [System.StringComparison]::Ordinal) -and
+                    $versionValue.ValueKind -eq [System.Text.Json.JsonValueKind]::Number -and
+                    $versionValue.GetRawText() -ceq '1') {
+                    return
+                }
+            }
+        }
+        if ($null -ne $strictParseError) { throw $strictParseError }
+        if ($root.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) {
+            throw "The root must be a JSON object."
+        }
+        $rawEngineProperty = Get-RestoreJsonPropertyElement -Element $root -Name "databaseEngine"
+        $rawVersionProperty = Get-RestoreJsonPropertyElement -Element $root -Name "version"
+        if ($rawEngineProperty.Present -and $rawVersionProperty.Present -and
+            $rawEngineProperty.Value.ValueKind -eq [System.Text.Json.JsonValueKind]::String -and
+            [string]::Equals($rawEngineProperty.Value.GetString(), "mssql", [System.StringComparison]::Ordinal) -and
+            $rawVersionProperty.Value.ValueKind -eq [System.Text.Json.JsonValueKind]::Number -and
+            $rawVersionProperty.Value.GetRawText() -ceq "2") {
+            Assert-RestoreMssqlInventoryJson -Root $root
+        }
+        $pending = [System.Collections.Generic.Stack[System.Text.Json.JsonElement]]::new()
+        $pending.Push($document.RootElement)
+        while ($pending.Count -gt 0) {
+            $element = $pending.Pop()
+            if ($element.ValueKind -eq [System.Text.Json.JsonValueKind]::Object) {
+                $names = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+                foreach ($property in $element.EnumerateObject()) {
+                    if (-not $names.Add($property.Name)) {
+                        throw "The JSON document contains a duplicate member name."
+                    }
+                    $pending.Push($property.Value)
+                }
+            }
+            elseif ($element.ValueKind -eq [System.Text.Json.JsonValueKind]::Array) {
+                foreach ($item in $element.EnumerateArray()) {
+                    $pending.Push($item)
+                }
+            }
+            elseif ($element.ValueKind -eq [System.Text.Json.JsonValueKind]::String) {
+                # Force decoding now; ConvertFrom-Json replaces some malformed surrogate
+                # escapes, while CMS rejects them before validating the manifest contract.
+                $null = $element.GetString()
+            }
+        }
+    }
+    finally {
+        $document.Dispose()
+    }
+}
+
 function Read-RestoreManifest {
     <#
     .SYNOPSIS
-    Reads and parses a restore-manifest.json file and validates it against the version-1
+    Reads and parses a restore-manifest.json file and validates it against the engine-specific
     contract via Assert-RestoreManifestShape. Returns the parsed manifest object. -Content
     parses manifest text the caller already holds (the restore stage reads it from the
     authenticated package bytes), so no file is reopened; -Path names its source in messages.
@@ -816,6 +1184,7 @@ function Read-RestoreManifest {
 
     $manifest = $null
     try {
+        Assert-RestoreJsonObject -Content $rawContent -AllowPostgresqlFormat1
         $manifest = $rawContent | ConvertFrom-Json -ErrorAction Stop
     }
     catch {
@@ -830,7 +1199,7 @@ function Read-RestoreManifest {
 function New-TemplateRestoreManifest {
     <#
     .SYNOPSIS
-    Assembles the version-1 restore manifest from live-catalog facts and package identity,
+    Assembles the engine-specific restore manifest from live-catalog facts and package identity,
     computes the canonical inventory hash, and self-validates the result against
     Assert-RestoreManifestShape before returning it, so a producer can never package a
     manifest the consumer contract would reject.
@@ -890,11 +1259,13 @@ function New-TemplateRestoreManifest {
         [string]$ArtifactFileName,
 
         [Parameter(Mandatory = $true)]
-        [string]$ArtifactSha256
+        [string]$ArtifactSha256,
+
+        [string]$MssqlPhysicalSchemaVersion
     )
 
     $manifest = [ordered]@{
-        version                  = $script:SupportedRestoreManifestVersion
+        version                  = $script:PostgresqlRestoreManifestVersion
         packageId                = $PackageId
         packageVersion           = $PackageVersion
         databaseEngine           = $DatabaseEngine
@@ -919,6 +1290,8 @@ function New-TemplateRestoreManifest {
         if ($null -eq $DatabaseCompatibilityLevel) {
             throw "DatabaseCompatibilityLevel is required for mssql restore manifests."
         }
+        $manifest.version = $script:MssqlRestoreManifestVersion
+        $manifest["mssqlPhysicalSchemaVersion"] = $MssqlPhysicalSchemaVersion
         $manifest["databaseCompatibilityLevel"] = [int]$DatabaseCompatibilityLevel
     }
     elseif ($null -ne $DatabaseCompatibilityLevel) {
@@ -1445,17 +1818,36 @@ function Get-DatabaseCompatibilityLevelQuerySql {
     return "SET NOCOUNT ON; SELECT compatibility_level FROM sys.databases WHERE name = N'$DatabaseName';"
 }
 
+function Get-MssqlPhysicalSchemaVersionQuerySql {
+    # Read only a correctly typed marker table, and return a version only for its exact singleton.
+    return @'
+SET NOCOUNT ON;
+IF EXISTS (
+    SELECT 1 FROM sys.tables t
+    JOIN sys.schemas s ON s.schema_id = t.schema_id
+    JOIN sys.columns c ON c.object_id = t.object_id
+    JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+    WHERE s.name COLLATE Latin1_General_100_BIN2 = N'dms'
+      AND t.name COLLATE Latin1_General_100_BIN2 = N'MssqlPhysicalSchema'
+      AND c.user_type_id = c.system_type_id AND ty.is_user_defined = 0 AND c.is_nullable = 0
+      AND ((c.name COLLATE Latin1_General_100_BIN2 = N'SingletonId' AND ty.name = N'smallint')
+        OR (c.name COLLATE Latin1_General_100_BIN2 = N'MssqlPhysicalSchemaVersion'
+            AND ty.name = N'varchar' AND c.max_length = 2))
+    GROUP BY t.object_id HAVING COUNT(*) = 2
+)
+    EXEC sys.sp_executesql N'SELECT MAX(MssqlPhysicalSchemaVersion) FROM dms.MssqlPhysicalSchema
+        HAVING COUNT_BIG(*) = 1 AND MAX(SingletonId) = 1
+        AND MAX(CASE WHEN CONVERT(varbinary(2), MssqlPhysicalSchemaVersion) = 0x7632 THEN 1 ELSE 0 END) = 1';
+'@
+}
+
 function Get-DocumentJsonColumnTypeQuerySql {
     <#
     .SYNOPSIS
-    Engine SQL returning every DocumentJson column in the dms schema as pipe-separated
-    "table|type" rows (the physical-baseline fact; read from the live catalog, never
-    assumed from configuration). In the redesigned schema dms.DocumentCache is the sole
-    carrier; enumerating the whole schema rather than a fixed table list means a future
-    additional carrier is captured automatically and a divergent type anywhere fails
-    validation instead of hiding. SQL Server types carry their declared length
-    (max_length = -1 renders as "(max)"; nchar/nvarchar lengths are in characters), so
-    nvarchar(4000) never reads as the nvarchar(max) baseline.
+    Enumerates every DocumentJson carrier in the dms schema. PostgreSQL returns
+    "table|type". SQL Server returns "table|type|isExactCacheColumn", including the
+    declared length for length-bearing types. Its last field is 1 only for the exactly
+    named DocumentJson column on the dms.DocumentCache user table.
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -1464,7 +1856,25 @@ function Get-DocumentJsonColumnTypeQuerySql {
     )
 
     if ($DatabaseEngine -eq "mssql") {
-        return "SET NOCOUNT ON; SELECT o.name + '|' + t.name + CASE WHEN c.max_length = -1 THEN '(max)' WHEN t.name IN (N'nvarchar', N'nchar') THEN '(' + CONVERT(nvarchar(11), c.max_length / 2) + ')' WHEN t.name IN (N'varchar', N'char', N'varbinary', N'binary') THEN '(' + CONVERT(nvarchar(11), c.max_length) + ')' ELSE '' END FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id JOIN sys.objects o ON o.object_id = c.object_id JOIN sys.schemas s ON s.schema_id = o.schema_id WHERE s.name = N'dms' AND c.name = N'DocumentJson' ORDER BY o.name;"
+        return @'
+SET NOCOUNT ON;
+SELECT o.name + '|'
+    + CASE WHEN t.is_user_defined = 1 OR c.user_type_id <> c.system_type_id THEN N'user-defined:' ELSE N'' END
+    + t.name + CASE
+        WHEN t.name IN (N'nvarchar', N'varchar', N'varbinary') AND c.max_length = -1 THEN '(max)'
+        WHEN t.name IN (N'nvarchar', N'nchar') THEN '(' + CONVERT(nvarchar(11), c.max_length / 2) + ')'
+        WHEN t.name IN (N'varchar', N'char', N'varbinary', N'binary') THEN '(' + CONVERT(nvarchar(11), c.max_length) + ')'
+        ELSE '' END
+    + CASE WHEN o.type = 'U' AND s.name COLLATE Latin1_General_100_BIN2 = N'dms'
+        AND o.name COLLATE Latin1_General_100_BIN2 = N'DocumentCache'
+        AND c.name COLLATE Latin1_General_100_BIN2 = N'DocumentJson' THEN '|1' ELSE '|0' END
+FROM sys.columns c
+JOIN sys.types t ON t.user_type_id = c.user_type_id
+JOIN sys.objects o ON o.object_id = c.object_id
+JOIN sys.schemas s ON s.schema_id = o.schema_id
+WHERE s.name = N'dms' AND c.name = N'DocumentJson'
+ORDER BY o.name;
+'@
     }
 
     return "SELECT table_name || '|' || data_type FROM information_schema.columns WHERE table_schema = 'dms' AND column_name = 'DocumentJson' ORDER BY table_name;"
@@ -1473,7 +1883,8 @@ function Get-DocumentJsonColumnTypeQuerySql {
 function ConvertFrom-DocumentJsonColumnTypeRow {
     <#
     .SYNOPSIS
-    Parses the "table|type" DocumentJson rows into the single physical storage type. The
+    Parses PostgreSQL "table|type" or SQL Server "table|type|isExactCacheColumn" rows
+    into the single physical storage type. The
     rows must include dms.DocumentCache (the authoritative carrier in the redesigned
     schema; dms.Document has no DocumentJson column), and every carrier must report the
     same type - a divergent type on any table is a physical-baseline violation, not a
@@ -1482,7 +1893,10 @@ function ConvertFrom-DocumentJsonColumnTypeRow {
     param (
         [AllowEmptyCollection()]
         [AllowNull()]
-        [string[]]$Row
+        [string[]]$Row,
+
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine
     )
 
     $rows = @(@($Row) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
@@ -1490,22 +1904,52 @@ function ConvertFrom-DocumentJsonColumnTypeRow {
         throw "No DocumentJson column was found in the dms schema; the database is not a provisioned DMS datastore."
     }
 
-    $typesByTable = [ordered]@{}
+    # Existing callers can pass query rows directly. The source and restore paths also pass
+    # the engine so a SQL Server result missing its proof field always fails closed.
+    $isMssql = if ($DatabaseEngine) { $DatabaseEngine -eq "mssql" } else { ($rows[0] -split '\|').Count -eq 3 }
+    $expectedFields = if ($isMssql) { 3 } else { 2 }
+    $carriers = [System.Collections.Generic.List[System.Collections.DictionaryEntry]]::new()
+    $postgresqlTypesByTable = [ordered]@{}
+    $hasCache = $false
     foreach ($rawRow in $rows) {
         $fields = $rawRow.Trim() -split '\|'
-        if ($fields.Count -ne 2 -or [string]::IsNullOrWhiteSpace($fields[0]) -or [string]::IsNullOrWhiteSpace($fields[1])) {
-            throw "DocumentJson column query returned a malformed row (expected 'table|type'): '$rawRow'."
+        if ($fields.Count -ne $expectedFields -or [string]::IsNullOrWhiteSpace($fields[0]) -or [string]::IsNullOrWhiteSpace($fields[1]) -or
+            ($isMssql -and
+                -not [string]::Equals($fields[2], '0', [System.StringComparison]::Ordinal) -and
+                -not [string]::Equals($fields[2], '1', [System.StringComparison]::Ordinal))) {
+            throw "DocumentJson column query returned a malformed row: '$rawRow'."
         }
-        $typesByTable[$fields[0].Trim()] = $fields[1].Trim().ToLowerInvariant()
+        $table = $fields[0].Trim()
+        $type = $fields[1].Trim().ToLowerInvariant()
+        if ($isMssql) {
+            $carriers.Add([System.Collections.DictionaryEntry]::new($table, $type))
+            if ([string]::Equals($table, 'DocumentCache', [System.StringComparison]::Ordinal) -and
+                [string]::Equals($fields[2], '1', [System.StringComparison]::Ordinal)) { $hasCache = $true }
+        } else {
+            $postgresqlTypesByTable[$table] = $type
+        }
     }
 
-    if (-not $typesByTable.Contains("DocumentCache")) {
+    if (-not $isMssql) {
+        $hasCache = $postgresqlTypesByTable.Contains("DocumentCache")
+        foreach ($entry in $postgresqlTypesByTable.GetEnumerator()) { $carriers.Add($entry) }
+    }
+    if (-not $hasCache) {
         throw "dms.DocumentCache.DocumentJson was not found; the database is not a provisioned DMS datastore."
     }
 
-    $distinctTypes = @(@($typesByTable.Values) | Sort-Object -Unique)
+    $distinctTypes = [System.Collections.Generic.List[string]]::new()
+    if ($isMssql) {
+        $seenTypes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+        foreach ($carrier in $carriers) {
+            if ($seenTypes.Add([string]$carrier.Value)) { $distinctTypes.Add([string]$carrier.Value) }
+        }
+    }
+    else {
+        foreach ($value in @($carriers | ForEach-Object Value | Sort-Object -Unique)) { $distinctTypes.Add([string]$value) }
+    }
     if ($distinctTypes.Count -ne 1) {
-        $carrierList = ($typesByTable.Keys | ForEach-Object { "$_=$($typesByTable[$_])" }) -join ", "
+        $carrierList = ($carriers | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ", "
         throw "The dms DocumentJson columns do not share one physical storage type: $carrierList."
     }
 
@@ -1975,7 +2419,13 @@ function Assert-RestoreManifestMatchesDatabase {
     $mismatches = [System.Collections.Generic.List[string]]::new()
 
     $manifestEngine = [string](Get-RestorePropertyValue -InputObject $Manifest -Name "databaseEngine")
-    if ($manifestEngine -cne $DatabaseEngine) {
+    $engineMismatch = if ($DatabaseEngine -eq "mssql") {
+        -not [string]::Equals($manifestEngine, $DatabaseEngine, [System.StringComparison]::Ordinal)
+    }
+    else {
+        $manifestEngine -cne $DatabaseEngine
+    }
+    if ($engineMismatch) {
         $mismatches.Add("databaseEngine: manifest '$manifestEngine' vs selected engine '$DatabaseEngine'")
     }
 
@@ -2016,12 +2466,28 @@ function Assert-RestoreManifestMatchesDatabase {
     }
 
     $baselineDocumentJsonType = Get-RestoreDocumentJsonBaselineType -DatabaseEngine $DatabaseEngine
+    if ($DatabaseEngine -eq "mssql") {
+        $liveMarker = Get-RestorePropertyValue -InputObject $Facts -Name "MssqlPhysicalSchemaVersion"
+        $manifestMarker = Get-RestorePropertyValue -InputObject $Manifest -Name "mssqlPhysicalSchemaVersion"
+        if (-not (Test-RestoreOrdinalStringEqual -Left ([string]$liveMarker) -Right $script:MssqlPhysicalSchemaVersion) -or
+            -not (Test-RestoreOrdinalStringEqual -Left ([string]$manifestMarker) -Right ([string]$liveMarker))) {
+            $mismatches.Add("mssqlPhysicalSchemaVersion: live database and manifest must both report v2")
+        }
+    }
     $manifestDocumentJsonType = [string](Get-RestorePropertyValue -InputObject $Manifest -Name "documentJsonColumnType")
     $databaseDocumentJsonType = [string]$Facts.DocumentJsonColumnType
-    if ($manifestDocumentJsonType -cne $databaseDocumentJsonType) {
+    if ($DatabaseEngine -eq "mssql") {
+        if (-not (Test-RestoreOrdinalStringEqual -Left $manifestDocumentJsonType -Right $databaseDocumentJsonType)) {
+            $mismatches.Add("documentJsonColumnType: manifest '$manifestDocumentJsonType' vs database '$databaseDocumentJsonType'")
+        }
+        if (-not (Test-RestoreOrdinalStringEqual -Left $databaseDocumentJsonType -Right $baselineDocumentJsonType)) {
+            $mismatches.Add("documentJsonColumnType: database '$databaseDocumentJsonType' vs the mssql baseline '$baselineDocumentJsonType'")
+        }
+    }
+    elseif ($manifestDocumentJsonType -cne $databaseDocumentJsonType) {
         $mismatches.Add("documentJsonColumnType: manifest '$manifestDocumentJsonType' vs database '$databaseDocumentJsonType'")
     }
-    if ($databaseDocumentJsonType -cne $baselineDocumentJsonType) {
+    if ($DatabaseEngine -ne "mssql" -and $databaseDocumentJsonType -cne $baselineDocumentJsonType) {
         $mismatches.Add("documentJsonColumnType: database '$databaseDocumentJsonType' vs the $DatabaseEngine baseline '$baselineDocumentJsonType'")
     }
 
@@ -2631,6 +3097,7 @@ Export-ModuleMember -Function `
     ConvertTo-CanonicalInventoryJson, `
     Get-CanonicalInventoryHash, `
     Assert-RestoreManifestShape, `
+    Assert-RestoreJsonObject, `
     Read-RestoreManifest, `
     Get-PostgresqlAllowedExtensionName, `
     Get-InventorySchemaQuerySql, `
@@ -2640,6 +3107,7 @@ Export-ModuleMember -Function `
     Get-EffectiveSchemaRowQuerySql, `
     Get-EngineVersionQuerySql, `
     Get-DatabaseCompatibilityLevelQuerySql, `
+    Get-MssqlPhysicalSchemaVersionQuerySql, `
     Get-DocumentJsonColumnTypeQuerySql, `
     ConvertFrom-DocumentJsonColumnTypeRow, `
     Assert-CompleteRestoreArtifactScope, `

@@ -160,17 +160,21 @@ Add-Content -LiteralPath '$LogPath' -Value "claims override=[`$env:DMS_BOOTSTRAP
             [Parameter(Mandatory)]
             [string]$Directory,
 
-            [string]$MappingVersion = "v2"
+            [string]$MappingVersion = "v2",
+            [string]$Ddl = '[{"dialect":"mssql","mssql_physical_schema_version":"v2"}]',
+            [switch]$ArrayRoot
         )
 
         $logPath = Join-Path $Directory "schema-tool-args.log"
         $toolPath = Join-Path $Directory "api-schema-tools.ps1"
+        $manifestJson = '{"relational_mapping_version":"' + $MappingVersion + '","ddl":' + $Ddl + '}'
+        if ($ArrayRoot) { $manifestJson = "[$manifestJson]" }
         @"
 Add-Content -LiteralPath '$logPath' -Value (`$args -join ' ')
 `$outputIndex = [array]::IndexOf(`$args, '--output')
 `$outputDirectory = `$args[`$outputIndex + 1]
 New-Item -ItemType Directory -Path `$outputDirectory -Force | Out-Null
-Set-Content -LiteralPath (Join-Path `$outputDirectory 'ddl.manifest.json') -Value '{"relational_mapping_version":"$MappingVersion"}'
+Set-Content -LiteralPath (Join-Path `$outputDirectory 'ddl.manifest.json') -Value '$manifestJson'
 exit 0
 "@ | Set-Content -LiteralPath $toolPath -Encoding utf8
 
@@ -743,12 +747,80 @@ Describe "package-to-candidate cross-check" {
             Should -BeNullOrEmpty -Because "the candidate tree must stay byte-identical to what the prepare phases produced"
     }
 
+    It "rejects selected SchemaTools with <Case> physical evidence before Docker" -ForEach @(
+        @{ Case = "old"; Ddl = '[{"dialect":"mssql"}]' }
+        @{ Case = "array dialect"; Ddl = '[{"dialect":["mssql"],"mssql_physical_schema_version":"v2"}]' }
+        @{ Case = "NUL in dialect"; Ddl = '[{"dialect":"ms\u0000sql","mssql_physical_schema_version":"v2"}]' }
+        @{ Case = "NUL in selected-tool marker"; Ddl = '[{"dialect":"mssql","mssql_physical_schema_version":"v2\u0000"}]' }
+        @{ Case = "wrong field casing"; Ddl = '[{"dialect":"mssql","MSSQL_PHYSICAL_SCHEMA_VERSION":"v2"}]' }
+        @{ Case = "duplicate"; Ddl = '[{"dialect":"mssql","mssql_physical_schema_version":"v2"},{"dialect":"mssql","mssql_physical_schema_version":"v2"}]' }
+        @{ Case = "wrong"; Ddl = '[{"dialect":"mssql","mssql_physical_schema_version":"v1"}]' }
+    ) {
+        $candidateDirectory = New-CandidateFixture -Directory $script:crossCheckRoot
+        $tool = New-StubSchemaTool -Directory $script:crossCheckRoot -MappingVersion "v3" -Ddl $Ddl
+        $manifest = New-CrossCheckManifest -Override @{ databaseEngine = "mssql"; documentJsonColumnType = "json"; mssqlPhysicalSchemaVersion = "v2"; relationalMappingVersion = "v3" }
+        { Invoke-RestoreCandidateCrossCheck -Manifest $manifest -CandidateDirectory $candidateDirectory -DatabaseEngine mssql -StageDirectory $script:stageDirectory -SchemaToolPath $tool.ToolPath } |
+            Should -Throw "*exactly one mssql entry*"
+        $candidateDirectory | Should -Not -Exist
+        $script:stageDirectory | Should -Not -Exist
+    }
+
+    It "rejects a singleton array root around selected SQL Server tool evidence" {
+        $candidateDirectory = New-CandidateFixture -Directory $script:crossCheckRoot
+        $tool = New-StubSchemaTool -Directory $script:crossCheckRoot -ArrayRoot
+        $manifest = New-CrossCheckManifest -Override @{ databaseEngine = "mssql"; documentJsonColumnType = "json"; mssqlPhysicalSchemaVersion = "v2" }
+        { Invoke-RestoreCandidateCrossCheck -Manifest $manifest -CandidateDirectory $candidateDirectory -DatabaseEngine mssql -StageDirectory $script:stageDirectory -SchemaToolPath $tool.ToolPath } |
+            Should -Throw "*root*JSON object*"
+        $candidateDirectory | Should -Not -Exist
+        $script:stageDirectory | Should -Not -Exist
+    }
+
+    It "keeps PostgreSQL candidate validation independent of ddl entry members" {
+        $candidateDirectory = New-CandidateFixture -Directory $script:crossCheckRoot
+        $tool = New-StubSchemaTool -Directory $script:crossCheckRoot -Ddl '[{"dialect":"pgsql","dialect":"pgsql"}]'
+        $mapping = Get-RestoreCandidateRelationalMappingVersion -DatabaseEngine postgresql `
+            -SchemaFilePath (Join-Path $candidateDirectory "ApiSchema/schemas/Ed-Fi/ApiSchema.json") `
+            -OutputRoot $script:stageDirectory -SchemaToolPath $tool.ToolPath
+        $mapping | Should -BeExactly "v2"
+    }
+
+    It "refuses duplicate <Case> JSON members in the selected tool before Docker" -ForEach @(
+        @{ Case = "ddl"; Ddl = '[],"ddl":[{"dialect":"mssql","mssql_physical_schema_version":"v2"}]' }
+        @{ Case = "dialect"; Ddl = '[{"dialect":"pgsql","dialect":"mssql","mssql_physical_schema_version":"v2"}]' }
+        @{ Case = "physical version"; Ddl = '[{"dialect":"mssql","mssql_physical_schema_version":"v1","mssql_physical_schema_version":"v2"}]' }
+    ) {
+        $candidateDirectory = New-CandidateFixture -Directory $script:crossCheckRoot
+        $tool = New-StubSchemaTool -Directory $script:crossCheckRoot -MappingVersion "v3" -Ddl $Ddl
+        $manifest = New-CrossCheckManifest -Override @{ databaseEngine = "mssql"; documentJsonColumnType = "json"; mssqlPhysicalSchemaVersion = "v2"; relationalMappingVersion = "v3" }
+        { Invoke-RestoreCandidateCrossCheck -Manifest $manifest -CandidateDirectory $candidateDirectory -DatabaseEngine mssql -StageDirectory $script:stageDirectory -SchemaToolPath $tool.ToolPath } |
+            Should -Throw "*duplicate*"
+        $candidateDirectory | Should -Not -Exist
+        $script:stageDirectory | Should -Not -Exist
+    }
+
+    It "keeps the exported mapping version string and provides physical metadata on request" {
+        $candidateDirectory = New-CandidateFixture -Directory $script:crossCheckRoot
+        $tool = New-StubSchemaTool -Directory $script:crossCheckRoot
+        $arguments = @{
+            SchemaFilePath = @(Join-Path $candidateDirectory "ApiSchema/schemas/Ed-Fi/ApiSchema.json")
+            OutputRoot = $script:stageDirectory
+            SchemaToolPath = $tool.ToolPath
+        }
+        $mappingVersion = Get-RestoreCandidateRelationalMappingVersion @arguments -DatabaseEngine postgresql
+        $mappingVersion | Should -BeOfType [string]
+        $mappingVersion | Should -BeExactly "v2"
+
+        $versions = Get-RestoreCandidateRelationalMappingVersion @arguments -DatabaseEngine mssql -IncludePhysicalSchemaVersion
+        $versions.RelationalMappingVersion | Should -BeExactly "v2"
+        $versions.MssqlPhysicalSchemaVersion | Should -BeExactly "v2"
+    }
+
     It "uses the mssql dialect for a SQL Server cross-check" {
         $candidateDirectory = New-CandidateFixture -Directory $script:crossCheckRoot
         $tool = New-StubSchemaTool -Directory $script:crossCheckRoot
 
         Invoke-RestoreCandidateCrossCheck `
-            -Manifest (New-CrossCheckManifest -Override @{ databaseEngine = "mssql"; documentJsonColumnType = "nvarchar(max)" }) `
+            -Manifest (New-CrossCheckManifest -Override @{ databaseEngine = "mssql"; documentJsonColumnType = "json"; mssqlPhysicalSchemaVersion = "v2" }) `
             -CandidateDirectory $candidateDirectory `
             -DatabaseEngine mssql `
             -StageDirectory $script:stageDirectory `
@@ -763,9 +835,12 @@ Describe "package-to-candidate cross-check" {
         @{ Name = "effectiveSchemaHash"; Override = @{ effectiveSchemaHash = ("cd" * 32) }; Engine = "postgresql"; Expected = "*Effective schema hash mismatch*" }
         @{ Name = "relationalMappingVersion"; Override = @{ relationalMappingVersion = "v1" }; Engine = "postgresql"; Expected = "*Relational mapping version mismatch*'v1'*'v2'*" }
         @{ Name = "projects"; Override = @{ projects = @("edfi", "tpdm") }; Engine = "postgresql"; Expected = "*Project set mismatch*[[]edfi, tpdm*[[]edfi, sample*" }
-        @{ Name = "databaseEngine"; Override = @{ databaseEngine = "mssql"; documentJsonColumnType = "nvarchar(max)" }; Engine = "postgresql"; Expected = "*declares databaseEngine 'mssql'*selected 'postgresql'*" }
+        @{ Name = "databaseEngine"; Override = @{ databaseEngine = "mssql"; documentJsonColumnType = "json"; mssqlPhysicalSchemaVersion = "v2" }; Engine = "postgresql"; Expected = "*declares databaseEngine 'mssql'*selected 'postgresql'*" }
         @{ Name = "documentJsonColumnType"; Override = @{ documentJsonColumnType = "json" }; Engine = "postgresql"; Expected = "*DocumentJson physical baseline mismatch*'json'*'jsonb'*" }
-        @{ Name = "a narrowed SQL Server documentJsonColumnType"; Override = @{ databaseEngine = "mssql"; documentJsonColumnType = "nvarchar(4000)" }; Engine = "mssql"; Expected = "*DocumentJson physical baseline mismatch*'nvarchar(4000)'*'nvarchar(max)'*" }
+        @{ Name = "a narrowed SQL Server documentJsonColumnType"; Override = @{ databaseEngine = "mssql"; documentJsonColumnType = "nvarchar(4000)" }; Engine = "mssql"; Expected = "*DocumentJson physical baseline mismatch*'nvarchar(4000)'*'json'*" }
+        @{ Name = "NUL in candidate marker"; Override = @{ databaseEngine = "mssql"; documentJsonColumnType = "json"; mssqlPhysicalSchemaVersion = "v2`0" }; Engine = "mssql"; Expected = "*mssqlPhysicalSchemaVersion*" }
+        @{ Name = "NUL in candidate native type"; Override = @{ databaseEngine = "mssql"; documentJsonColumnType = "js`0on"; mssqlPhysicalSchemaVersion = "v2" }; Engine = "mssql"; Expected = "*DocumentJson physical baseline mismatch*" }
+        @{ Name = "NUL in candidate mapping version"; Override = @{ databaseEngine = "mssql"; documentJsonColumnType = "json"; mssqlPhysicalSchemaVersion = "v2"; relationalMappingVersion = "v2`0" }; Engine = "mssql"; Expected = "*Relational mapping version mismatch*" }
     ) {
         $candidateDirectory = New-CandidateFixture -Directory $script:crossCheckRoot
         $tool = New-StubSchemaTool -Directory $script:crossCheckRoot
@@ -1846,7 +1921,8 @@ Describe "Invoke-RestoreScratchValidation" {
                 ResourceKeySeedHashB64     = [System.Convert]::ToBase64String([byte[]](1..32))
                 EngineVersion              = $(if ($DatabaseEngine -eq "mssql") { "17.0.900.7" } else { "16.8" })
                 DatabaseCompatibilityLevel = $(if ($DatabaseEngine -eq "mssql") { 170 } else { $null })
-                DocumentJsonColumnType     = $(if ($DatabaseEngine -eq "mssql") { "nvarchar(max)" } else { "jsonb" })
+                MssqlPhysicalSchemaVersion = $(if ($DatabaseEngine -eq "mssql") { "v2" })
+                DocumentJsonColumnType     = $(if ($DatabaseEngine -eq "mssql") { "json" } else { "jsonb" })
                 FullInventory              = (New-ScratchInventory -DatabaseEngine $DatabaseEngine)
                 ArtifactInventory          = (New-ScratchInventory -DatabaseEngine $DatabaseEngine)
                 DatabaseLevelObjects       = [string[]]@()
@@ -1884,6 +1960,7 @@ Describe "Invoke-RestoreScratchValidation" {
                 resourceKeyCount           = $referenceFact.ResourceKeyCount
                 resourceKeySeedHashB64     = $referenceFact.ResourceKeySeedHashB64
                 engineVersion              = $referenceFact.EngineVersion
+                mssqlPhysicalSchemaVersion = $referenceFact.MssqlPhysicalSchemaVersion
                 documentJsonColumnType     = $referenceFact.DocumentJsonColumnType
                 databaseCompatibilityLevel = $referenceFact.DatabaseCompatibilityLevel
                 inventorySha256            = (Get-CanonicalInventoryHash -Inventory $referenceFact.ArtifactInventory)
@@ -2307,6 +2384,7 @@ Describe "Invoke-RestoreScratchValidation" {
 
     It "on <Name> (SQL Server): fails naming the defect, drops the scratch, and removes the in-container backup copy" -ForEach @(
         @{ Name = "a mismatched compatibility level"; FactMutation = { param($fact) $fact.DatabaseCompatibilityLevel = 160 }; Expected = "*databaseCompatibilityLevel*" }
+        @{ Name = "a mismatched physical marker"; FactMutation = { param($fact) $fact.MssqlPhysicalSchemaVersion = "V2" }; Expected = "*mssqlPhysicalSchemaVersion*" }
         @{ Name = "a mismatched DocumentJson storage type"; FactMutation = { param($fact) $fact.DocumentJsonColumnType = "varchar" }; Expected = "*documentJsonColumnType*" }
         @{ Name = "a copied database master key"; FactMutation = { param($fact) $fact.DatabaseLevelObjects = [string[]]@("symmetrickey|##MS_DatabaseMasterKey##") }; Expected = "*Restore scratch database*database-level objects the DMS schema does not create: symmetrickey|##MS_DatabaseMasterKey##*" }
     ) {

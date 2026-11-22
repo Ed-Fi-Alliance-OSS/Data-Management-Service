@@ -43,7 +43,7 @@ internal static class DmsShapedManifest
 
         return new RestoreManifest
         {
-            Version = RestoreManifest.SupportedVersion,
+            Version = RestoreManifest.PostgresqlFormatVersion,
             PackageId = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0",
             PackageVersion = "1.0.123",
             DatabaseEngine = RestoreManifest.PostgresqlEngine,

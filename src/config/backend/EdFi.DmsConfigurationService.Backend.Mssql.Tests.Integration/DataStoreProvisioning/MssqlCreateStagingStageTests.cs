@@ -288,6 +288,40 @@ public class MssqlCreateStagingStageTests
     }
 
     [TestFixture]
+    public class Given_a_signed_backup_with_a_mismatched_physical_marker
+    {
+        [Test]
+        public async Task It_refuses_publication_and_removes_the_owned_staging_database()
+        {
+            RequireSharedStagingOrSkip();
+            byte[] backup = await ShapedBackup.CreateAsync(
+                "UPDATE [dms].[MssqlPhysicalSchema] SET [MssqlPhysicalSchemaVersion] = 'v1';"
+            );
+            LaneHooks hooks = new();
+            await using Lane lane = await Lane.BuildAsync(backup, hooks);
+
+            DmsDataStoreCreateResult result = await lane.CreateAsync();
+
+            FailureOf(result).Code.Should().Be(DmsProvisioningFailureCode.TargetIncompatible);
+            FailureOf(result)
+                .Diagnostic.Operation.Should()
+                .Be(
+                    DmsDataStoreProvisioningService.ValidateStagingStep
+                        + "."
+                        + DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
+                );
+            hooks.Points.Should().Equal(DmsProvisioningHookPoint.AfterRestoreStarted);
+            lane.TargetMutations.Should().BeEmpty();
+            ((DmsDataStoreCreateResult.Failure)result).Cleanup.HasResidue.Should().BeFalse();
+            MssqlDmsTargetEngine side = Engine();
+            (await side.InspectAsync(lane.Operation.StagingDatabaseName, default))
+                .Should()
+                .BeOfType<DmsLiveTargetState.Absent>();
+            (await side.InspectAsync(lane.Target, default)).Should().BeOfType<DmsLiveTargetState.Absent>();
+        }
+    }
+
+    [TestFixture]
     public class Given_the_staged_file_is_replaced_after_the_restore
     {
         private Lane? _lane;

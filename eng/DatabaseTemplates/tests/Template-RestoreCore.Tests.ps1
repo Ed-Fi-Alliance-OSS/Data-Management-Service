@@ -89,7 +89,9 @@ BeforeAll {
             $manifest.packageId = "EdFi.Api.Minimal.Template.MsSql.5.2.0"
             $manifest.engineVersion = "17.0.900.7"
             $manifest.databaseCompatibilityLevel = 170
-            $manifest.documentJsonColumnType = "nvarchar(max)"
+            $manifest.version = 2
+            $manifest.mssqlPhysicalSchemaVersion = "v2"
+            $manifest.documentJsonColumnType = "json"
             $manifest.artifactFileName = "EdFi.Api.Minimal.Template.MsSql.5.2.0.bak"
         }
 
@@ -241,7 +243,7 @@ Describe "Get-RestoreSchemaNameExclusion" {
 Describe "Get-RestoreDocumentJsonBaselineType" {
     It "pins the current physical DocumentJson baseline per engine" {
         Get-RestoreDocumentJsonBaselineType -DatabaseEngine postgresql | Should -Be "jsonb"
-        Get-RestoreDocumentJsonBaselineType -DatabaseEngine mssql | Should -Be "nvarchar(max)"
+        Get-RestoreDocumentJsonBaselineType -DatabaseEngine mssql | Should -Be "json"
     }
 }
 
@@ -403,6 +405,39 @@ Describe "Assert-RestoreManifestShape" {
         { Assert-RestoreManifestShape -Manifest (New-ValidRestoreManifest -DatabaseEngine mssql) } | Should -Not -Throw
     }
 
+    It "rejects legacy MSSQL before restore" {
+        $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
+        $manifest.version = 1
+        $manifest.Remove("mssqlPhysicalSchemaVersion")
+        $manifest.documentJsonColumnType = "nvarchar(max)"
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*reprovision*"
+    }
+
+    It "rejects invalid MSSQL physical facts" -ForEach @(
+        @{ Field = "mssqlPhysicalSchemaVersion"; Value = $null }
+        @{ Field = "mssqlPhysicalSchemaVersion"; Value = "V2" }
+        @{ Field = "mssqlPhysicalSchemaVersion"; Value = @("v2") }
+        @{ Field = "documentJsonColumnType"; Value = "nvarchar(max)" }
+        @{ Field = "engineVersion"; Value = "16.0.900.7" }
+        @{ Field = "engineVersion"; Value = "unknown" }
+    ) {
+        $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
+        $manifest[$Field] = $Value
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*$Field*"
+    }
+
+    It "requires the physical version member under its exact wire name" {
+        $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
+        $json = ($manifest | ConvertTo-Json -Depth 10).Replace('"mssqlPhysicalSchemaVersion"', '"MSSQLPhysicalSchemaVersion"')
+        { Read-RestoreManifest -Content $json -Path "restore-manifest.json" } | Should -Throw "*mssqlPhysicalSchemaVersion*"
+    }
+
+    It "rejects a PostgreSQL manifest carrying even a null MSSQL version" {
+        $manifest = New-ValidRestoreManifest
+        $manifest.mssqlPhysicalSchemaVersion = $null
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*mssqlPhysicalSchemaVersion*"
+    }
+
     It "accepts the same manifest after a JSON round trip (PSCustomObject input)" {
         $roundTripped = (New-ValidRestoreManifest -DatabaseEngine mssql | ConvertTo-Json -Depth 10) | ConvertFrom-Json
         { Assert-RestoreManifestShape -Manifest $roundTripped } | Should -Not -Throw
@@ -554,6 +589,155 @@ Describe "Assert-RestoreManifestShape" {
 }
 
 Describe "Read-RestoreManifest" {
+    It "retains PostgreSQL format-1 enumeration of empty compatibility and singleton scalar fields" {
+        $manifest = New-ValidRestoreManifest -DatabaseEngine postgresql
+        $manifest.databaseCompatibilityLevel = @()
+        $manifest.templateKind = @("Minimal")
+        $manifest.version = @(1)
+        $json = $manifest | ConvertTo-Json -Depth 10
+        $parsed = Read-RestoreManifest -Path "restore-manifest.json" -Content $json
+        $parsed.databaseEngine | Should -BeExactly "postgresql"
+        $parsed.templateKind[0] | Should -BeExactly "Minimal"
+    }
+
+    It "requires native SQL Server scalar field kinds even when the legacy reader unwraps singletons" {
+        $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
+        $manifest.templateKind = @("Minimal")
+        { Read-RestoreManifest -Path "restore-manifest.json" -Content ($manifest | ConvertTo-Json -Depth 10) } |
+            Should -Throw "*templateKind*"
+    }
+
+    It "rejects a singleton array root around the SQL Server format-2 fixture" {
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.mssql.json"
+        $json = "[" + [IO.File]::ReadAllText($fixture) + "]"
+        { Read-RestoreManifest -Path $fixture -Content $json } | Should -Throw "*root*JSON object*"
+    }
+
+    It "rejects case-variant and unknown SQL Server format-2 members" -ForEach @(
+        @{ Case = "case-variant required member"; From = '"version": 2'; To = '"Version": 2' }
+        @{ Case = "unknown member"; From = '"version": 2'; To = '"version": 2, "unexpected": "x"' }
+    ) {
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.mssql.json"
+        $json = [IO.File]::ReadAllText($fixture)
+        $json.Contains($From) | Should -BeTrue
+        $json = $json.Replace($From, $To)
+        { Read-RestoreManifest -Path $fixture -Content $json } | Should -Throw "*not part of the format-2 contract*"
+    }
+
+    It "rejects unknown SQL Server inventory members before canonical hashing" {
+        $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
+        $manifest.inventory["unexpected"] = 1
+        $json = $manifest | ConvertTo-Json -Depth 20
+        { Read-RestoreManifest -Path "restore-manifest.json" -Content $json } | Should -Throw "*inventory*not part of the format-2 contract*"
+    }
+
+    It "rejects unknown SQL Server nested schema and object members before canonical hashing" {
+        $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
+        $manifest.inventory.schemas[0]["unexpected"] = 1
+        $manifest.inventory.schemas[0].objects[0]["unexpected"] = 1
+        $json = $manifest | ConvertTo-Json -Depth 20
+        { Read-RestoreManifest -Path "restore-manifest.json" -Content $json } | Should -Throw "*inventory*not part of the format-2 contract*"
+    }
+
+    It "rejects singleton array schema names in SQL Server inventories before canonical hashing" {
+        $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
+        $manifest.inventory.schemas[0].schemaName = @($manifest.inventory.schemas[0].schemaName)
+        $json = $manifest | ConvertTo-Json -Depth 20
+        { Read-RestoreManifest -Path "restore-manifest.json" -Content $json } | Should -Throw "*schemaName*JSON string*"
+    }
+
+    It "rejects case-variant nested SQL Server inventory members before canonical hashing" -ForEach @(
+        @{ From = '"schemaName"'; To = '"SchemaName"'; Expected = "*inventory schema entry*not part of the format-2 contract*" }
+        @{ From = '"type"'; To = '"Type"'; Expected = "*inventory object entry*not part of the format-2 contract*" }
+    ) {
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.mssql.json"
+        $json = [IO.File]::ReadAllText($fixture)
+        $json.Contains($From) | Should -BeTrue
+        $json = $json.Replace($From, $To)
+        { Read-RestoreManifest -Path $fixture -Content $json } | Should -Throw $Expected
+    }
+
+    It "rejects Int32 overflow in SQL Server numeric fields before restore" -ForEach @(
+        @{ Field = "resourceKeyCount"; Value = [long]2147483648; Expected = "*resourceKeyCount*positive integer*" }
+        @{ Field = "databaseCompatibilityLevel"; Value = [long]2147483648; Expected = "*databaseCompatibilityLevel*integer SQL Server compatibility level*" }
+    ) {
+        $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
+        $manifest[$Field] = $Value
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw $Expected
+    }
+
+    It "preserves PostgreSQL format-1 resource counts above Int32" {
+        $manifest = New-ValidRestoreManifest -DatabaseEngine postgresql
+        $manifest.resourceKeyCount = [long]2147483648
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Not -Throw
+    }
+
+    It "rejects malformed Unicode in SQL Server string leaves" {
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.mssql.json"
+        $json = [IO.File]::ReadAllText($fixture).Replace('"engineVersion": "17.0.900.7"', '"engineVersion": "17.0.900.7\uD800"')
+        { Read-RestoreManifest -Path $fixture -Content $json } | Should -Throw "*not valid JSON*"
+    }
+
+    It "checks SQL Server dictionary key sets through the dictionary enumerator" {
+        $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
+        $manifest["Keys"] = @($manifest.Keys)
+        $manifest["unexpected"] = "x"
+        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*not part of the format-2 contract*"
+    }
+
+    It "preserves PostgreSQL format-1 singleton array handling" {
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.postgresql.json"
+        $json = "[" + [IO.File]::ReadAllText($fixture) + "]"
+        (Read-RestoreManifest -Path $fixture -Content $json).databaseEngine | Should -BeExactly "postgresql"
+    }
+
+    It "preserves PostgreSQL format-1 singleton root and version array handling together" {
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.postgresql.json"
+        $json = [IO.File]::ReadAllText($fixture).Replace('"version": 1', '"version": [1]')
+        $json = "[" + $json + "]"
+        (Read-RestoreManifest -Path $fixture -Content $json).databaseEngine | Should -BeExactly "postgresql"
+    }
+
+    It "preserves PostgreSQL format-1 nested ignored fields up to ConvertFrom-Json's legacy depth" {
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.postgresql.json"
+        $nested = ("[" * 70) + "0" + ("]" * 70)
+        $json = [IO.File]::ReadAllText($fixture).Replace('"version": 1,', '"version": 1, "ignored": ' + $nested + ',')
+        (Read-RestoreManifest -Path $fixture -Content $json).databaseEngine | Should -BeExactly "postgresql"
+    }
+
+    It "preserves PostgreSQL format-1 parsing of <Case>" -ForEach @(
+        @{ Case = "an unrelated repeated field"; Value = '"engineVersion": "18", "engineVersion": "18.1"' }
+        @{ Case = "a comment"; Value = '/* PostgreSQL engine */ "engineVersion": "18.1"' }
+        @{ Case = "a single-quoted value"; Value = '"engineVersion": ''18.1''' }
+    ) {
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.postgresql.json"
+        $original = [IO.File]::ReadAllText($fixture)
+        $original.Contains('"engineVersion": "18.1"') | Should -BeTrue
+        $json = $original.Replace('"engineVersion": "18.1"', $Value)
+        (Read-RestoreManifest -Path $fixture -Content $json).engineVersion | Should -BeExactly "18.1"
+    }
+
+    It "refuses an ambiguous <Field> discriminator even when the final value selects PostgreSQL format 1" -ForEach @(
+        @{ Field = "version"; Original = '"version": 1'; Ambiguous = '"version": 2, "version": 1' }
+        @{ Field = "databaseEngine"; Original = '"databaseEngine": "postgresql"'; Ambiguous = '"databaseEngine": "mssql", "databaseEngine": "postgresql"' }
+    ) {
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.postgresql.json"
+        $json = [IO.File]::ReadAllText($fixture).Replace($Original, $Ambiguous)
+        { Read-RestoreManifest -Path $fixture -Content $json } | Should -Throw "*duplicate*"
+    }
+
+    It "rejects duplicate PostgreSQL discriminators before single-quoted legacy values are materialized" -ForEach @(
+        @{ Original = '"version": 1'; Ambiguous = '"version": 2, "version": 1' }
+        @{ Original = '"databaseEngine": "postgresql"'; Ambiguous = '"databaseEngine": "mssql", "databaseEngine": "postgresql"' }
+        @{ Original = '"databaseEngine": "postgresql"'; Ambiguous = '"databaseEngine": "postgresql", "DatabaseEngine": "mssql"' }
+        @{ Original = '"version": 1'; Ambiguous = '"version": 1, "Version": 2' }
+    ) {
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.postgresql.json"
+        $json = [IO.File]::ReadAllText($fixture).Replace($Original, $Ambiguous)
+        $json = $json.Replace('"engineVersion": "18.1"', '"engineVersion": ''18.1''')
+        { Read-RestoreManifest -Path $fixture -Content $json } | Should -Throw "*duplicate discriminator*"
+    }
+
     It "reads and validates a manifest file round-tripped through JSON" {
         $manifestPath = Join-Path $TestDrive "restore-manifest.json"
         New-ValidRestoreManifest -DatabaseEngine mssql | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding utf8
@@ -1126,12 +1310,44 @@ Describe "inventory catalog query SQL builders" {
 
         $mssqlSql = Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine mssql
         $mssqlSql | Should -BeLike "*sys.columns*DocumentJson*"
-        $mssqlSql | Should -BeLike "*s.name = N'dms'*"
+        $mssqlSql | Should -BeLike "*JOIN sys.objects o*" -Because "DocumentJson carriers on unrelated views also participate in the consistency check"
+        $mssqlSql | Should -BeLike "*s.name = N'dms' AND c.name = N'DocumentJson'*" -Because "other carriers follow the database's identifier collation"
+        $mssqlSql | Should -BeLike "*s.name COLLATE Latin1_General_100_BIN2 = N'dms'*"
         $mssqlSql | Should -Not -BeLike "*OBJECT_ID(*"
     }
 }
 
 Describe "ConvertFrom-DocumentJsonColumnTypeRow" {
+    It "rejects NUL in the exact SQL Server carrier proof" {
+        { ConvertFrom-DocumentJsonColumnTypeRow -DatabaseEngine mssql -Row @("DocumentCache|json|1`0") } |
+            Should -Throw "*malformed row*"
+    }
+
+    It "detects NUL in an additional SQL Server carrier type" {
+        { ConvertFrom-DocumentJsonColumnTypeRow -DatabaseEngine mssql -Row @("DocumentCache|json|1", "Other|json`0|0") } |
+            Should -Throw "*do not share one physical storage type*"
+    }
+
+    It "rejects a divergent case-distinct SQL Server carrier even when the native cache sorts last" {
+        { ConvertFrom-DocumentJsonColumnTypeRow -Row @("documentcache|nvarchar(max)|0", "DocumentCache|json|1") } |
+            Should -Throw "*do not share one physical storage type*documentcache=nvarchar(max)*DocumentCache=json*"
+    }
+
+    It "requires positive SQL Server cache-table evidence from the catalog" {
+        { ConvertFrom-DocumentJsonColumnTypeRow -Row @("DocumentCache|json|0") } |
+            Should -Throw "*dms.DocumentCache.DocumentJson was not found*"
+    }
+
+    It "checks every SQL Server carrier even when formatted names coincide" {
+        { ConvertFrom-DocumentJsonColumnTypeRow -Row @(" DocumentCache|nvarchar(max)|0", "DocumentCache|json|1") } |
+            Should -Throw "*do not share one physical storage type*"
+    }
+
+    It "rejects legacy SQL Server rows without authoritative cache evidence" {
+        { ConvertFrom-DocumentJsonColumnTypeRow -DatabaseEngine mssql -Row @("DocumentCache|json") } |
+            Should -Throw "*malformed row*"
+    }
+
     It "returns the single physical type when dms.DocumentCache is the carrier" {
         ConvertFrom-DocumentJsonColumnTypeRow -Row @("DocumentCache|jsonb") | Should -Be "jsonb"
         ConvertFrom-DocumentJsonColumnTypeRow -Row @("", "DocumentCache|NVARCHAR(MAX)") | Should -Be "nvarchar(max)"
@@ -1564,7 +1780,8 @@ Describe "New-TemplateRestoreManifest" {
                 $arguments.PackageId = "EdFi.Api.Minimal.Template.MsSql.5.2.0"
                 $arguments.EngineVersion = "17.0.900.7"
                 $arguments.DatabaseCompatibilityLevel = 170
-                $arguments.DocumentJsonColumnType = "nvarchar(max)"
+                $arguments.MssqlPhysicalSchemaVersion = "v2"
+                $arguments.DocumentJsonColumnType = "json"
                 $arguments.ArtifactFileName = "EdFi.Api.Minimal.Template.MsSql.5.2.0.bak"
             }
             return $arguments
@@ -1585,6 +1802,18 @@ Describe "New-TemplateRestoreManifest" {
         # And it survives a JSON round trip through the consumer-side validator.
         $roundTripped = ($manifest | ConvertTo-Json -Depth 10) | ConvertFrom-Json
         { Assert-RestoreManifestShape -Manifest $roundTripped } | Should -Not -Throw
+    }
+
+    It "preserves positional PostgreSQL manifest arguments and bytes" {
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.postgresql.json"
+        $f = Read-RestoreManifest -Path $fixture
+        $positional = New-TemplateRestoreManifest $f.packageId $f.packageVersion $f.databaseEngine $f.templateKind `
+            $f.dataStandardVersion $f.projects $f.apiSchemaFormatVersion $f.effectiveSchemaHash $f.resourceKeyCount `
+            $f.resourceKeySeedHashB64 $f.relationalMappingVersion $f.engineVersion $null $f.documentJsonColumnType `
+            $f.inventory $f.artifactFileName $f.artifactSha256
+        $json = ($positional | ConvertTo-Json -Depth 10).Replace("`r`n", "`n") + "`n"
+        $bytes = [Text.Encoding]::UTF8.GetBytes($json)
+        [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)) | Should -BeExactly (Get-FileHash $fixture).Hash
     }
 
     It "enforces the engine-conditional compatibility-level rules at assembly time" {
@@ -1622,6 +1851,7 @@ Describe "Assert-RestoreManifestMatchesDatabase" {
                 ResourceKeyCount           = 42
                 ResourceKeySeedHashB64     = [System.Convert]::ToBase64String([byte[]](1..32))
                 EngineVersion              = $(if ($DatabaseEngine -eq "mssql") { "17.0.900.7" } else { "16.8" })
+                MssqlPhysicalSchemaVersion = $(if ($DatabaseEngine -eq "mssql") { "v2" })
                 DatabaseCompatibilityLevel = $(if ($DatabaseEngine -eq "mssql") { 170 } else { $null })
                 DocumentJsonColumnType     = (Get-RestoreDocumentJsonBaselineType -DatabaseEngine $DatabaseEngine)
                 FullInventory              = $inventory
@@ -1648,6 +1878,7 @@ Describe "Assert-RestoreManifestMatchesDatabase" {
             }
             if ($DatabaseEngine -eq "mssql") {
                 $manifestArguments.PackageId = "EdFi.Api.Minimal.Template.MsSql.5.2.0"
+                $manifestArguments.MssqlPhysicalSchemaVersion = $facts.MssqlPhysicalSchemaVersion
                 $manifestArguments.DatabaseCompatibilityLevel = 170
                 $manifestArguments.ArtifactFileName = "EdFi.Api.Minimal.Template.MsSql.5.2.0.bak"
             }
@@ -1702,16 +1933,33 @@ Describe "Assert-RestoreManifestMatchesDatabase" {
             Should -Throw "*databaseCompatibilityLevel: manifest '170' vs database '160'*"
     }
 
-    It "rejects a narrowed SQL Server DocumentJson column even when the manifest declares the same narrowed type, and accepts nvarchar(max)" {
+    It "rejects a narrowed SQL Server DocumentJson column even when the manifest declares the same narrowed type, and accepts native json" {
         $pair = New-MatchingFactsAndManifest -DatabaseEngine mssql
-        $pair.Facts.DocumentJsonColumnType | Should -BeExactly "nvarchar(max)"
+        $pair.Facts.DocumentJsonColumnType | Should -BeExactly "json"
         { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine mssql } |
             Should -Not -Throw
 
         $pair.Facts.DocumentJsonColumnType = "nvarchar(4000)"
         $pair.Manifest.documentJsonColumnType = "nvarchar(4000)"
         { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine mssql } |
-            Should -Throw "*documentJsonColumnType: database 'nvarchar(4000)' vs the mssql baseline 'nvarchar(max)'*"
+            Should -Throw "*documentJsonColumnType: database 'nvarchar(4000)' vs the mssql baseline 'json'*"
+    }
+
+    It "rejects a restored database whose marker differs from its authenticated manifest" {
+        $pair = New-MatchingFactsAndManifest -DatabaseEngine mssql
+        $pair.Facts.MssqlPhysicalSchemaVersion = "v1"
+        { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine mssql } |
+            Should -Throw "*mssqlPhysicalSchemaVersion*"
+    }
+
+    It "rejects NUL in live SQL Server <Field>" -ForEach @(
+        @{ Field = "MssqlPhysicalSchemaVersion"; Value = "v2`0" }
+        @{ Field = "DocumentJsonColumnType"; Value = "js`0on" }
+    ) {
+        $pair = New-MatchingFactsAndManifest -DatabaseEngine mssql
+        $pair.Facts.$Field = $Value
+        { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine mssql } |
+            Should -Throw "*$Field*"
     }
 
     It "reports an inventory divergence through the independently recomputed canonical hash" {

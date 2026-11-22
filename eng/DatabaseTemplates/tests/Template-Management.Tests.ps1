@@ -1391,7 +1391,8 @@ Describe "Get-TemplateSourceCatalogFacts" {
                 if ($query -match 'EffectiveSchema') { return "1.0.0|$('ab' * 32)|42|$('cd' * 32)" }
                 if ($query -match 'ProductVersion') { return '17.0.900.7' }
                 if ($query -match 'compatibility_level') { return '170' }
-                if ($query -match 'sys\.columns') { return 'DocumentCache|nvarchar(max)' }
+                if ($query -match 'MssqlPhysicalSchemaVersion') { return 'v2' }
+                if ($query -match 'sys\.columns') { return 'DocumentCache|json|1' }
                 # The schema query also names sys.objects (built-in schemas show only when
                 # non-empty), so it is told apart by what it selects.
                 if ($query -match 'SELECT s\.name FROM sys\.schemas') { return @('dbo', 'dms', 'edfi', 'tracked_changes_edfi') }
@@ -1405,7 +1406,8 @@ Describe "Get-TemplateSourceCatalogFacts" {
 
             $facts.EngineVersion | Should -Be "17.0.900.7"
             $facts.DatabaseCompatibilityLevel | Should -Be 170
-            $facts.DocumentJsonColumnType | Should -Be "nvarchar(max)"
+            $facts.MssqlPhysicalSchemaVersion | Should -BeExactly "v2"
+            $facts.DocumentJsonColumnType | Should -Be "json"
             # A copied database master key travels in the .bak; the source gate refuses it.
             $facts.DatabaseLevelObjects | Should -Be @('symmetrickey|##MS_DatabaseMasterKey##')
 

@@ -116,7 +116,11 @@ internal static class TargetFactsSample
 
         return new RestoreManifest
         {
-            Version = RestoreManifest.SupportedVersion,
+            Version =
+                databaseEngine == RestoreManifest.MssqlEngine
+                    ? RestoreManifest.MssqlFormatVersion
+                    : RestoreManifest.PostgresqlFormatVersion,
+            MssqlPhysicalSchemaVersion = databaseEngine == RestoreManifest.MssqlEngine ? "v2" : null,
             PackageId = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0",
             PackageVersion = "1.0.123",
             DatabaseEngine = databaseEngine,
@@ -199,7 +203,7 @@ internal static class TargetFactsSample
 
     /// <summary>
     /// The facts a clean SQL Server DMS data store yields: <c>dbo</c> always enumerated, one resource project with
-    /// its companion, the <c>nvarchar(max)</c> baseline, a compatibility level, and exactly the built-in security
+    /// its companion, the native JSON baseline, a compatibility level, and exactly the built-in security
     /// state of a new database (the three database-scope defaults, public SELECT on system objects, dbo in
     /// db_owner).
     /// </summary>
@@ -209,7 +213,14 @@ internal static class TargetFactsSample
             EffectiveSchema = EffectiveSchema(),
             EngineMajorVersion = 17,
             CompatibilityLevel = 170,
-            DocumentJsonColumns = [new DmsDocumentJsonColumn("dms", "DocumentCache", "nvarchar(max)")],
+            MssqlPhysicalSchemaVersion = "v2",
+            DocumentJsonColumns =
+            [
+                new DmsDocumentJsonColumn("dms", "DocumentCache", "json")
+                {
+                    IsMssqlDocumentCacheColumn = true,
+                },
+            ],
             SchemaNames = ["dbo", "dms", "edfi", "tracked_changes_edfi"],
             InventoryObjects =
             [

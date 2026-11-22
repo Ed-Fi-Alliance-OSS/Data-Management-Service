@@ -155,11 +155,51 @@ internal static class MssqlInventoryQueries
         "CONVERT(nvarchar(36), CONVERT(nvarchar(max), [SourceIdentity])), CONVERT(bit, CASE WHEN DATALENGTH(CONVERT(nvarchar(max), [SourceIdentity])) > 72 THEN 1 ELSE 0 END)";
 
     /// <summary>
-    /// Every <c>DocumentJson</c> column in the <c>dms</c> schema with its type, declared length included
-    /// (<c>Get-DocumentJsonColumnTypeQuerySql</c>, columns separated).
+    /// The version of a correctly typed SQL Server marker table with its exact native singleton.
     /// </summary>
-    public const string DocumentJsonColumns =
-        "SET NOCOUNT ON; SELECT o.name, t.name + CASE WHEN c.max_length = -1 THEN '(max)' WHEN t.name IN (N'nvarchar', N'nchar') THEN '(' + CONVERT(nvarchar(11), c.max_length / 2) + ')' WHEN t.name IN (N'varchar', N'char', N'varbinary', N'binary') THEN '(' + CONVERT(nvarchar(11), c.max_length) + ')' ELSE '' END FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id JOIN sys.objects o ON o.object_id = c.object_id JOIN sys.schemas s ON s.schema_id = o.schema_id WHERE s.name = N'dms' AND c.name = N'DocumentJson' ORDER BY o.name;";
+    public const string MssqlPhysicalSchemaVersion = """
+        SET NOCOUNT ON;
+        IF EXISTS (
+            SELECT 1 FROM sys.tables t
+            JOIN sys.schemas s ON s.schema_id = t.schema_id
+            JOIN sys.columns c ON c.object_id = t.object_id
+            JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+            WHERE s.name COLLATE Latin1_General_100_BIN2 = N'dms'
+              AND t.name COLLATE Latin1_General_100_BIN2 = N'MssqlPhysicalSchema'
+              AND c.user_type_id = c.system_type_id AND ty.is_user_defined = 0 AND c.is_nullable = 0
+              AND ((c.name COLLATE Latin1_General_100_BIN2 = N'SingletonId' AND ty.name = N'smallint')
+                OR (c.name COLLATE Latin1_General_100_BIN2 = N'MssqlPhysicalSchemaVersion'
+                    AND ty.name = N'varchar' AND c.max_length = 2))
+            GROUP BY t.object_id HAVING COUNT(*) = 2
+        )
+            EXEC sys.sp_executesql N'SELECT MAX(MssqlPhysicalSchemaVersion) FROM dms.MssqlPhysicalSchema
+                HAVING COUNT_BIG(*) = 1 AND MAX(SingletonId) = 1
+                AND MAX(CASE WHEN CONVERT(varbinary(2), MssqlPhysicalSchemaVersion) = 0x7632 THEN 1 ELSE 0 END) = 1';
+        """;
+
+    /// <summary>
+    /// Every <c>DocumentJson</c> carrier in the <c>dms</c> schema with its type and a bit identifying
+    /// the exactly named column on the cache user table. Mirrors <c>Get-DocumentJsonColumnTypeQuerySql</c>.
+    /// </summary>
+    public const string DocumentJsonColumns = """
+        SET NOCOUNT ON;
+        SELECT o.name,
+            CASE WHEN t.is_user_defined = 1 OR c.user_type_id <> c.system_type_id THEN N'user-defined:' ELSE N'' END
+            + t.name + CASE
+                WHEN t.name IN (N'nvarchar', N'varchar', N'varbinary') AND c.max_length = -1 THEN '(max)'
+                WHEN t.name IN (N'nvarchar', N'nchar') THEN '(' + CONVERT(nvarchar(11), c.max_length / 2) + ')'
+                WHEN t.name IN (N'varchar', N'char', N'varbinary', N'binary') THEN '(' + CONVERT(nvarchar(11), c.max_length) + ')'
+                ELSE '' END,
+            CONVERT(bit, CASE WHEN o.type = 'U' AND s.name COLLATE Latin1_General_100_BIN2 = N'dms'
+                AND o.name COLLATE Latin1_General_100_BIN2 = N'DocumentCache'
+                AND c.name COLLATE Latin1_General_100_BIN2 = N'DocumentJson' THEN 1 ELSE 0 END)
+        FROM sys.columns c
+        JOIN sys.types t ON t.user_type_id = c.user_type_id
+        JOIN sys.objects o ON o.object_id = c.object_id
+        JOIN sys.schemas s ON s.schema_id = o.schema_id
+        WHERE s.name = N'dms' AND c.name = N'DocumentJson'
+        ORDER BY o.name;
+        """;
 
     /// <summary>The live server's major version (<c>17</c> for SQL Server 2025).</summary>
     public const string ProductMajorVersion = "SELECT CONVERT(int, SERVERPROPERTY('ProductMajorVersion'));";

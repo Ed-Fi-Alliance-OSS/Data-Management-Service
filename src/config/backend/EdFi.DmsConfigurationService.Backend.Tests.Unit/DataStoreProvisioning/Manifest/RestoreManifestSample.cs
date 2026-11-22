@@ -93,7 +93,9 @@ internal static class RestoreManifestSample
         manifest["databaseEngine"] = "mssql";
         manifest["engineVersion"] = "17.0.900.7";
         manifest["databaseCompatibilityLevel"] = 170;
-        manifest["documentJsonColumnType"] = "nvarchar(max)";
+        manifest["version"] = 2;
+        manifest["mssqlPhysicalSchemaVersion"] = "v2";
+        manifest["documentJsonColumnType"] = "json";
         manifest["artifactFileName"] = $"{MssqlPackageId}.bak";
         return manifest;
     }

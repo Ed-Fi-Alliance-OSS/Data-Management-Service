@@ -25,6 +25,7 @@ public static class DmsTargetValidator
     public const string IdentityCheck = "Identity";
     public const string EngineMajorCheck = "EngineMajor";
     public const string CompatibilityLevelCheck = "CompatibilityLevel";
+    public const string MssqlPhysicalSchemaVersionCheck = "MssqlPhysicalSchemaVersion";
     public const string DocumentJsonColumnTypeCheck = "DocumentJsonColumnType";
     public const string InventoryHashCheck = "InventoryHash";
     public const string ContentProfileCheck = "ContentProfile";
@@ -242,6 +243,17 @@ public static class DmsTargetValidator
             return Invalid(DmsProvisioningFailureCode.TargetIncompatible, CompatibilityLevelCheck);
         }
 
+        if (
+            manifest.DatabaseEngine == RestoreManifest.MssqlEngine
+            && (
+                facts.MssqlPhysicalSchemaVersion != RestoreManifest.NativeMssqlPhysicalSchemaVersion
+                || facts.MssqlPhysicalSchemaVersion != manifest.MssqlPhysicalSchemaVersion
+            )
+        )
+        {
+            return Invalid(DmsProvisioningFailureCode.TargetIncompatible, MssqlPhysicalSchemaVersionCheck);
+        }
+
         return DocumentJsonColumnTypeMatches(facts.DocumentJsonColumns, manifest)
             ? null
             : Invalid(DmsProvisioningFailureCode.TargetIncompatible, DocumentJsonColumnTypeCheck);
@@ -263,7 +275,12 @@ public static class DmsTargetValidator
 
         if (
             !columns.Any(column =>
-                Same(column.SchemaName, DmsSchemaName) && Same(column.TableName, DocumentCacheTableName)
+                Same(column.SchemaName, DmsSchemaName)
+                && Same(column.TableName, DocumentCacheTableName)
+                && (
+                    manifest.DatabaseEngine != RestoreManifest.MssqlEngine
+                    || column.IsMssqlDocumentCacheColumn
+                )
             )
         )
         {

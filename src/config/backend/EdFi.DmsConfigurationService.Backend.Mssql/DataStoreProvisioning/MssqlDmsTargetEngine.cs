@@ -402,10 +402,19 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
             MssqlInventoryQueries.CompatibilityLevel,
             cancellationToken
         );
+        List<string> physicalVersions = await ReadRowsAsync(
+            connection,
+            MssqlInventoryQueries.MssqlPhysicalSchemaVersion,
+            reader => reader.GetString(0),
+            cancellationToken
+        );
         List<DmsDocumentJsonColumn> documentJsonColumns = await ReadRowsAsync(
             connection,
             MssqlInventoryQueries.DocumentJsonColumns,
-            reader => new DmsDocumentJsonColumn("dms", reader.GetString(0), reader.GetString(1)),
+            reader => new DmsDocumentJsonColumn("dms", reader.GetString(0), reader.GetString(1))
+            {
+                IsMssqlDocumentCacheColumn = reader.GetBoolean(2),
+            },
             cancellationToken
         );
         List<string> schemaNames = await ReadRowsAsync(
@@ -444,6 +453,7 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
             EngineMajorVersion = engineMajorVersion,
             CompatibilityLevel = compatibilityLevel,
             DocumentJsonColumns = documentJsonColumns,
+            MssqlPhysicalSchemaVersion = physicalVersions.SingleOrDefault(),
             SchemaNames = schemaNames,
             InventoryObjects = inventoryObjects,
             Principals = principals,

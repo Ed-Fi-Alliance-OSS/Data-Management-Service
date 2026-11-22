@@ -6,7 +6,11 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>One <c>DocumentJson</c> column (incl. <c>DocumentCache</c>) and its engine column type.</summary>
-public sealed record DmsDocumentJsonColumn(string SchemaName, string TableName, string ColumnType);
+public sealed record DmsDocumentJsonColumn(string SchemaName, string TableName, string ColumnType)
+{
+    /// <summary>SQL Server observed the exactly named column on the dms.DocumentCache user table.</summary>
+    public bool IsMssqlDocumentCacheColumn { get; init; }
+}
 
 /// <summary>
 /// One inventoried catalog object as the delivered inventory query reports it
@@ -38,6 +42,9 @@ public sealed record DmsTargetFacts
 
     /// <summary>SQL Server <c>compatibility_level</c>; null on PostgreSQL (item 3).</summary>
     public required int? CompatibilityLevel { get; init; }
+
+    /// <summary>The physical version proven by the SQL Server singleton marker, when present.</summary>
+    public string? MssqlPhysicalSchemaVersion { get; init; }
 
     /// <summary>Every <c>dms.*.DocumentJson</c> column and its type (item 3).</summary>
     public required IReadOnlyList<DmsDocumentJsonColumn> DocumentJsonColumns { get; init; }

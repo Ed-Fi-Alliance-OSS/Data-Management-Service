@@ -1675,10 +1675,22 @@ function Get-TemplateSourceCatalogFacts {
         $databaseCompatibilityLevel = $parsedCompatibilityLevel
     }
 
+    $physicalVersion = $null
+    if ($DatabaseEngine -eq "mssql") {
+        $markerRows = @(Invoke-TemplateCatalogQuery @queryParameters `
+                -Query (Get-MssqlPhysicalSchemaVersionQuerySql) `
+                -FailureMessage "Failed to read the SQL Server DocumentCache physical schema marker from '$DatabaseName'." |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($markerRows.Count -ne 1 -or $markerRows[0].Trim() -cne "v2") {
+            throw "Cannot verify the v2 SQL Server DocumentCache physical schema marker in '$DatabaseName'. Reprovision the template."
+        }
+        $physicalVersion = $markerRows[0].Trim()
+    }
+
     $documentJsonRows = Invoke-TemplateCatalogQuery @queryParameters `
         -Query (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine $DatabaseEngine) `
         -FailureMessage "Failed to read the DocumentJson column type from '$DatabaseName'."
-    $documentJsonColumnType = ConvertFrom-DocumentJsonColumnTypeRow -Row $documentJsonRows
+    $documentJsonColumnType = ConvertFrom-DocumentJsonColumnTypeRow -Row $documentJsonRows -DatabaseEngine $DatabaseEngine
 
     $schemaRows = Invoke-TemplateCatalogQuery @queryParameters `
         -Query (Get-InventorySchemaQuerySql -DatabaseEngine $DatabaseEngine -Purpose InventoryEnumeration) `
@@ -1722,6 +1734,7 @@ function Get-TemplateSourceCatalogFacts {
         ResourceKeySeedHashB64     = $effectiveSchema.ResourceKeySeedHashB64
         EngineVersion              = $engineVersion
         DatabaseCompatibilityLevel = $databaseCompatibilityLevel
+        MssqlPhysicalSchemaVersion = $physicalVersion
         DocumentJsonColumnType     = $documentJsonColumnType
         FullInventory              = $fullInventory
         ArtifactInventory          = $artifactInventory
@@ -1981,6 +1994,7 @@ function Write-TemplateRestoreManifest {
     }
     if ($DatabaseEngine -eq "mssql") {
         $manifestArguments.DatabaseCompatibilityLevel = $Facts.DatabaseCompatibilityLevel
+        $manifestArguments.MssqlPhysicalSchemaVersion = $Facts.MssqlPhysicalSchemaVersion
     }
 
     $manifest = New-TemplateRestoreManifest @manifestArguments

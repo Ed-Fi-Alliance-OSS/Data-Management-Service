@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 
 /// <summary>
-/// A version-1 restore manifest of the delivered template package contract, as
+/// A PostgreSQL format-1 or SQL Server format-2 restore manifest of the delivered template package contract, as
 /// <see cref="RestoreManifestReader"/> accepted it: every field present with the required JSON kind and value
 /// shape, hashes in lowercase 64-hex form, the fixed <see cref="ContentProfileDmsDatastoreOnly"/> profile,
 /// engine-consistent artifact extension and compatibility-level rules, and an inventory whose recomputed
@@ -16,7 +16,9 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 /// </summary>
 public sealed class RestoreManifest
 {
-    public const int SupportedVersion = 1;
+    public const int PostgresqlFormatVersion = 1;
+    public const int MssqlFormatVersion = 2;
+    public const string NativeMssqlPhysicalSchemaVersion = "v2";
 
     /// <summary>The fixed entry name of the manifest inside a template package.</summary>
     public const string FileName = "restore-manifest.json";
@@ -38,8 +40,8 @@ public sealed class RestoreManifest
     /// <summary>The physical type every <c>DocumentJson</c> column has on PostgreSQL (<c>Get-RestoreDocumentJsonBaselineType</c>).</summary>
     public const string PostgresqlDocumentJsonColumnType = "jsonb";
 
-    /// <summary>The physical type every <c>DocumentJson</c> column has on SQL Server, with its declared length.</summary>
-    public const string MssqlDocumentJsonColumnType = "nvarchar(max)";
+    /// <summary>The physical type every <c>DocumentJson</c> column has on SQL Server.</summary>
+    public const string MssqlDocumentJsonColumnType = "json";
 
     public required int Version { get; init; }
 
@@ -76,6 +78,8 @@ public sealed class RestoreManifest
 
     /// <summary>The SQL Server compatibility level; present only when <see cref="DatabaseEngine"/> is <see cref="MssqlEngine"/>.</summary>
     public required int? DatabaseCompatibilityLevel { get; init; }
+
+    public string? MssqlPhysicalSchemaVersion { get; init; }
 
     public required string DocumentJsonColumnType { get; init; }
 
