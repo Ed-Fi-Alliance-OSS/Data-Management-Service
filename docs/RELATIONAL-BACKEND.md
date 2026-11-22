@@ -501,6 +501,27 @@ compatible, qualified worker. Template-backed rollout requires a matching, verif
 The [adoption record](../reference/design/backend-redesign/epics/17-mssql-gap-closure/03-sql-server-2025-and-native-json.md#dms-1328-adoption-scope)
 tracks these boundaries.
 
+Before a SQL Server template cutover, build and verify Minimal and Populated packages for
+Data Standard `5.2.0` and `6.1.0` from the same reviewed release. Keep package publication
+disabled during qualification. Inspect the exact package contents and require the signed
+restore manifest to report format 2, `documentJsonColumnType: "json"`, and
+`mssqlPhysicalSchemaVersion: "v2"`; verify source and restored catalogs and the authenticated
+descriptor probe for both template kinds, plus the populated schools probe. Use the matching
+SchemaTools and CMS restore consumers for every verification. The restore preflight rejects a
+selected SQL Server SchemaTools manifest without the physical-v2 discriminator before Docker
+work, and CMS rejects packages that do not satisfy the format-2 contract.
+
+Deploy the compatible DMS, SchemaTools and CMS consumers before making v2 packages available to
+restore jobs. Review scheduled and deployment jobs for legacy-pinned template packages or old
+restore-tool images before cutover; do not combine a v2 package with a consumer that only
+understands restore format 1 or logical mapping metadata. Existing SQL Server databases require
+fresh provisioning on SQL Server 2025 or later and a deliberate, separately planned data
+carry-forward; do not convert `nvarchar(max)` in place or infer physical compatibility from the
+unchanged effective schema hash. Existing CDC bindings have no automatic migration or cutover:
+plan their handling against the CDC deployment and state-continuity guidance before replacing an
+in-use database. Publish and change deployment pins only through the approved release workflow
+after all four non-publishing package gates pass.
+
 ### Cache-backed read acceleration
 
 Cache-backed reads are optional. DMS considers `dms.DocumentCache` only for external
