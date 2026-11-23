@@ -92,9 +92,10 @@ public abstract class RateLimitPartitionHostFixture
         "RateLimit__QueueLimit",
     ];
 
-    private EnvironmentVariableScope _environment = null!;
-    private WebApplicationFactory<Program> _factory = null!;
-    private HttpClient _client = null!;
+    // Null until set up; one-time teardown also runs after a setup that failed part way.
+    private EnvironmentVariableScope? _environment;
+    private WebApplicationFactory<Program>? _factory;
+    private HttpClient? _client;
 
     protected abstract IReadOnlyDictionary<string, string> ReverseProxyEnvironment { get; }
 
@@ -122,9 +123,20 @@ public abstract class RateLimitPartitionHostFixture
     [OneTimeTearDown]
     public async Task StopHost()
     {
-        _client.Dispose();
-        await _factory.DisposeAsync();
-        _environment.Dispose();
+        try
+        {
+            _client?.Dispose();
+            if (_factory is not null)
+            {
+                await _factory.DisposeAsync();
+            }
+        }
+        finally
+        {
+            // Restored even when the host never started or fails to shut down, so the fixtures that
+            // run next see the process environment this fixture found.
+            _environment?.Dispose();
+        }
     }
 
     /// <summary>
@@ -147,7 +159,7 @@ public abstract class RateLimitPartitionHostFixture
             request.Headers.Host = host;
         }
 
-        using HttpResponseMessage response = await _client.SendAsync(request);
+        using HttpResponseMessage response = await _client!.SendAsync(request);
         return response.StatusCode;
     }
 
@@ -317,5 +329,44 @@ public class Given_The_Rate_Limiter_Behind_Configured_Reverse_Proxies : RateLimi
         )
             .Should()
             .Be(HttpStatusCode.TooManyRequests);
+    }
+}
+
+/// <summary>
+/// NUnit runs one-time teardown after a one-time setup that threw. A host fixture whose host fails to
+/// start must still put back the process environment it changed, or the fixtures that run after it
+/// would be configured by its values.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_A_Rate_Limit_Host_Fixture_Whose_Host_Fails_To_Start
+{
+    private const string WindowVariable = "RateLimit__Window";
+    private const string KnownProxiesVariable = "AppSettings__ReverseProxy__KnownProxies";
+
+    /// <summary>A window that cannot bind, so building the host throws.</summary>
+    private sealed class UnstartableHostFixture : RateLimitPartitionHostFixture
+    {
+        protected override IReadOnlyDictionary<string, string> ReverseProxyEnvironment =>
+            new Dictionary<string, string> { [WindowVariable] = "not-a-number" };
+    }
+
+    [Test]
+    public async Task It_restores_the_process_environment_on_teardown()
+    {
+        using EnvironmentVariableScope outerEnvironment = new(WindowVariable, KnownProxiesVariable);
+        Environment.SetEnvironmentVariable(WindowVariable, "60");
+        Environment.SetEnvironmentVariable(KnownProxiesVariable, "10.0.0.9");
+        UnstartableHostFixture fixture = new();
+
+        Action startHost = fixture.StartHost;
+        startHost.Should().Throw<Exception>();
+        Environment.GetEnvironmentVariable(WindowVariable).Should().Be("not-a-number");
+        Environment.GetEnvironmentVariable(KnownProxiesVariable).Should().BeNull();
+
+        await fixture.StopHost();
+
+        Environment.GetEnvironmentVariable(WindowVariable).Should().Be("60");
+        Environment.GetEnvironmentVariable(KnownProxiesVariable).Should().Be("10.0.0.9");
     }
 }
