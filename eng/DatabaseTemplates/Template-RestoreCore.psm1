@@ -981,12 +981,12 @@ function ConvertFrom-RestoreLegacySingleQuotedJson {
         if ($inDouble) {
             [void]$builder.Append($character)
             if ($escaped) { $escaped = $false }
-            elseif ($character -eq '\\') { $escaped = $true }
+            elseif ($character -eq '\') { $escaped = $true }
             elseif ($character -eq '"') { $inDouble = $false }
             continue
         }
         if ($inSingle) {
-            if ($character -eq '\\' -and $index + 1 -lt $Content.Length -and $Content[$index + 1] -eq "'") {
+            if ($character -eq '\' -and $index + 1 -lt $Content.Length -and $Content[$index + 1] -eq "'") {
                 [void]$builder.Append("'")
                 $index++
             }
@@ -995,7 +995,7 @@ function ConvertFrom-RestoreLegacySingleQuotedJson {
                 $inSingle = $false
             }
             else {
-                if ($character -eq '"') { [void]$builder.Append('\\') }
+                if ($character -eq '"') { [void]$builder.Append('\') }
                 [void]$builder.Append($character)
             }
             continue

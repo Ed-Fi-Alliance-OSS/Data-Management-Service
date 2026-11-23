@@ -717,6 +717,16 @@ Describe "Read-RestoreManifest" {
         (Read-RestoreManifest -Path $fixture -Content $json).engineVersion | Should -BeExactly "18.1"
     }
 
+    It "preserves escaped apostrophes in PostgreSQL format-1 single-quoted legacy values" {
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.postgresql.json"
+        $original = [IO.File]::ReadAllText($fixture)
+        $apostrophe = [char]39
+        $replacement = '"engineVersion": "18.1", "legacyNote": ' + $apostrophe + 'DMS\' + $apostrophe + 's template' + $apostrophe
+        $json = $original.Replace('"engineVersion": "18.1"', $replacement)
+
+        (Read-RestoreManifest -Path $fixture -Content $json).engineVersion | Should -BeExactly "18.1"
+    }
+
     It "refuses an ambiguous <Field> discriminator even when the final value selects PostgreSQL format 1" -ForEach @(
         @{ Field = "version"; Original = '"version": 1'; Ambiguous = '"version": 2, "version": 1' }
         @{ Field = "databaseEngine"; Original = '"databaseEngine": "postgresql"'; Ambiguous = '"databaseEngine": "mssql", "databaseEngine": "postgresql"' }
