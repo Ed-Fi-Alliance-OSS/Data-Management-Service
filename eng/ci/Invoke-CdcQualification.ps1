@@ -117,7 +117,7 @@ try {
         if ($Suite -ne 'All' -and -not $mssqlSuites.Contains($Suite)) {
             throw "EnvironmentUnavailable: Mssql/$Suite requires a shipped worker qualified for native DocumentJson."
         }
-        Write-Warning 'SQL Server native CDC success suites are deferred pending a qualified worker. Admission verifies refusal.'
+        Write-Warning 'SQL Server native CDC success suites are deferred pending a qualified worker. Admission verifies refusal and MessageContract runs serialized cases.'
     }
     if (@($lanes | Where-Object { $_ -ne 'Contract' }).Count -gt 0) {
         $required = @('CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE')
@@ -144,16 +144,18 @@ try {
         if ('Kafka' -in $lanes -and -not (Get-Command timeout -CommandType Application -ErrorAction SilentlyContinue)) {
             throw 'EnvironmentUnavailable: Kafka runbook inspections require native timeout.'
         }
-        if ($Suite -in @('All', 'Telemetry') -and @($lanes | Where-Object { $_ -in @('Postgresql', 'Mssql') }).Count -gt 0) {
+        $mssqlTelemetrySelected = 'Mssql' -in $lanes -and $mssqlSuites.Contains('Telemetry')
+        $postgresqlTelemetrySelected = 'Postgresql' -in $lanes
+        if ($Suite -in @('All', 'Telemetry') -and ($mssqlTelemetrySelected -or $postgresqlTelemetrySelected)) {
             $inspectionTools = @('curl', 'timeout')
-            if ('Mssql' -in $lanes) { $inspectionTools += 'sqlcmd' }
-            if ('Postgresql' -in $lanes) { $inspectionTools += @('psql') }
+            if ($mssqlTelemetrySelected) { $inspectionTools += 'sqlcmd' }
+            if ($postgresqlTelemetrySelected) { $inspectionTools += @('psql') }
             foreach ($tool in $inspectionTools) {
                 if (-not (Get-Command $tool -CommandType Application -ErrorAction SilentlyContinue)) {
                     throw "EnvironmentUnavailable: required telemetry inspection client $tool is missing."
                 }
             }
-            if ('Mssql' -in $lanes) {
+            if ($mssqlTelemetrySelected) {
                 $sqlcmdVersion = (& sqlcmd --version) -join "`n"
                 if ($LASTEXITCODE -ne 0 -or $sqlcmdVersion -notmatch 'Version: v1\.10\.0(?:\s|$)') {
                     throw 'EnvironmentUnavailable: SQL Server telemetry inspection requires sqlcmd (Go) 1.10.0.'

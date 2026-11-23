@@ -4,13 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Frozen;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// A typed, retry-classifiable provisioning failure. The summary is fixed text per code;
-/// the diagnostic is the only variable part and carries no values. The category is the code's default
-/// unless the code is one of the context-dependent codes, whose allowed categories are pinned in
+/// A typed, retry-classifiable provisioning failure. The summary is fixed text selected by code and, for
+/// SQL Server physical validation, by the failed check. The diagnostic carries no values. The category is the
+/// code's default unless the code is one of the context-dependent codes, whose allowed categories are pinned in
 /// <see cref="CategoriesOf"/>; any other combination is a programming error and throws.
 /// </summary>
 public sealed record DmsProvisioningFailure
@@ -34,7 +35,7 @@ public sealed record DmsProvisioningFailure
 
     public DmsProvisioningFailureCode Code { get; }
 
-    /// <summary>Fixed text per code; never a provider message.</summary>
+    /// <summary>Fixed operator-facing text, independent of provider messages.</summary>
     public string Summary { get; }
 
     public DmsProvisioningDiagnostic Diagnostic { get; }
@@ -63,6 +64,33 @@ public sealed record DmsProvisioningFailure
         }
 
         return new DmsProvisioningFailure(category, code, entry.Summary, diagnostic);
+    }
+
+    internal static DmsProvisioningFailure ForTargetValidation(
+        DmsTargetValidation.Invalid invalid,
+        string step,
+        string databaseEngine
+    )
+    {
+        var diagnostic = DmsProvisioningDiagnostic.ForOperation(step + "." + invalid.Check);
+        if (
+            invalid.Code == DmsProvisioningFailureCode.TargetIncompatible
+            && databaseEngine == RestoreManifest.MssqlEngine
+            && invalid.Check
+                is DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
+                    or DmsTargetValidator.DocumentJsonColumnTypeCheck
+                    or DmsTargetValidator.MssqlDocumentCacheObjectCheck
+        )
+        {
+            return new(
+                DefaultCategoryOf(invalid.Code),
+                invalid.Code,
+                "The SQL Server DocumentCache physical schema is incompatible. Verify the pinned v2 template package and its restore tools. Reprovision a fresh SQL Server 2025 or later database using the supported template restore flow.",
+                diagnostic
+            );
+        }
+
+        return Create(invalid.Code, diagnostic);
     }
 
     /// <summary>The categories the failure taxonomy allows for the code; the first is the default.</summary>

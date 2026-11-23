@@ -28,8 +28,8 @@ $jobs = @(
             if ($Suite -ne 'All' -and -not $suites.Contains($Suite)) {
                 throw "Mssql/$Suite requires a shipped worker qualified for native DocumentJson."
             }
-            if ($Suite -in @('All', 'Admission', 'History')) {
-                $notice = 'SQL Server native CDC admission success, managed lifecycle, recovery, record size, API E2E and managed retirement are deferred pending a qualified worker. The Admission job verifies refusal on a fresh native datastore.'
+            if ($Suite -in @('All', 'Admission', 'History', 'MessageContract')) {
+                $notice = 'SQL Server native CDC admission success, managed lifecycle, recovery, record size, telemetry, live message contracts, API E2E and managed retirement are deferred pending a qualified worker. Admission verifies refusal and MessageContract runs serialized cases.'
                 Write-Warning $notice
                 if ($env:GITHUB_STEP_SUMMARY) { $notice >> $env:GITHUB_STEP_SUMMARY }
             }

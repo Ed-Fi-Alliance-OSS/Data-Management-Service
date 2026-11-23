@@ -1789,6 +1789,12 @@ server message, or `psql` output. The category tells the caller whether to retry
 | `ArtifactUntrusted`, `ArtifactTampered`, `ManifestInvalid`, `ManifestMismatch`, `BackupInvalid`, `PackageIdentityInvalid`, `ArtifactChangedSinceCreate` | `OperatorInspectionRequired` |
 | `ContentProfileViolation`, `TargetIncompatible`, `SecurityStateViolation`, `StagingIntegrityViolation`, `IdentityAssignmentFailed`, `TargetUnowned`, `TargetUnverifiable`, `TargetFenced`, `InstanceChanged`, `OutcomeUnknown`, `CompensationFailed` | `OperatorInspectionRequired` |
 
+For SQL Server `TargetIncompatible` at `MssqlPhysicalSchemaVersion`, `DocumentJsonColumnType`, or
+`MssqlDocumentCacheObjectCheck`, verify the pinned physical-v2 package and matching restore tools.
+Use the managed template restore flow to provision a fresh datastore on SQL Server 2025 or later.
+For an existing datastore, plan the data carry-forward before replacement. See the
+[native DocumentCache rollout](./RELATIONAL-BACKEND.md#sql-server-native-documentcache-rollout).
+
 #### A refused administrative login, and rotating its password
 
 When the target server refuses the administrative login or the lock request during an operation, the create

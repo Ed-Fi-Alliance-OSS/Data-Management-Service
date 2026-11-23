@@ -433,10 +433,13 @@ Describe "Assert-RestoreManifestShape" {
             Should -Throw "*MSSQLPhysicalSchemaVersion*not part of the format-2 contract*"
     }
 
-    It "rejects a PostgreSQL manifest carrying even a null MSSQL version" {
+    It "accepts a PostgreSQL format-1 manifest with an extra MSSQL version field" {
         $manifest = New-ValidRestoreManifest
         $manifest.mssqlPhysicalSchemaVersion = $null
-        { Assert-RestoreManifestShape -Manifest $manifest } | Should -Throw "*mssqlPhysicalSchemaVersion*"
+        $json = $manifest | ConvertTo-Json -Depth 10
+        $result = Read-RestoreManifest -DatabaseEngine postgresql -Content $json -Path "restore-manifest.json"
+        $result.version | Should -Be 1
+        $result.databaseEngine | Should -Be "postgresql"
     }
 
     It "accepts the same manifest after a JSON round trip (PSCustomObject input)" {

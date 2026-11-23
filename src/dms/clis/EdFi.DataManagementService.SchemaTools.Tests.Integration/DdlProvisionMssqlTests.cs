@@ -690,6 +690,7 @@ public class Given_Mssql_DocumentCache_Physical_Preflight
     [TestCase("missing column")]
     [TestCase("missing cache table")]
     [TestCase("disabled object check")]
+    [TestCase("untrusted object check")]
     [TestCase("weaker object check")]
     [TestCase("lookalike object check")]
     [TestCase("nullable document json")]
@@ -1007,10 +1008,16 @@ public class Given_Mssql_DocumentCache_Physical_Preflight
                     ADD CONSTRAINT [CK_DocumentCache_IsJsonObject] CHECK ({predicate});
                     """
                 );
-                if (shape == "disabled object check")
+                if (shape is "disabled object check" or "untrusted object check")
                 {
                     Execute(
                         "ALTER TABLE [dms].[DocumentCache] NOCHECK CONSTRAINT [CK_DocumentCache_IsJsonObject];"
+                    );
+                }
+                if (shape == "untrusted object check")
+                {
+                    Execute(
+                        "ALTER TABLE [dms].[DocumentCache] WITH NOCHECK CHECK CONSTRAINT [CK_DocumentCache_IsJsonObject];"
                     );
                 }
             }

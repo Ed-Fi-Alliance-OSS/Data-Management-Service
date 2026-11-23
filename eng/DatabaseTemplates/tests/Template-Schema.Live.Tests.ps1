@@ -145,6 +145,56 @@ SELECT "DocumentId", "ResourceKeyId", 'uri://template', 'school', 'School' FROM 
             Should -Invoke Get-CmsToken -Times 1 -Exactly
             @(Invoke-TestSql $script:restored $fingerprintSql) | Should -Be $fingerprint
         }
+        It 'Rejects <Name> during native SQL Server source inspection' -Skip:($Engine -ne 'mssql') -ForEach @(
+            @{
+                Name = 'a missing marker row'
+                Sql = 'DELETE FROM dms.MssqlPhysicalSchema;'
+                Undo = "INSERT INTO dms.MssqlPhysicalSchema (SingletonId, MssqlPhysicalSchemaVersion) VALUES (1, 'v2');"
+            }
+            @{
+                Name = 'a mismatched marker'
+                Sql = "UPDATE dms.MssqlPhysicalSchema SET MssqlPhysicalSchemaVersion = 'V2';"
+                Undo = "UPDATE dms.MssqlPhysicalSchema SET MssqlPhysicalSchemaVersion = 'v2';"
+            }
+        ) {
+            Invoke-TestSql $source $Sql | Out-Null
+            try {
+                { Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $source -MssqlPassword $password } |
+                    Should -Throw '*physical schema marker*'
+            }
+            finally {
+                Invoke-TestSql $source $Undo | Out-Null
+            }
+        }
+        It 'Rejects <Name> during native SQL Server source inspection' -Skip:($Engine -ne 'mssql') -ForEach @(
+            @{ Name = 'a markerless v1 baseline'; Column = 'nvarchar(max) NOT NULL'; HideMarker = $true; Message = '*physical schema marker*' }
+            @{ Name = 'a legacy text column with a v2 marker'; Column = 'nvarchar(max) NOT NULL'; HideMarker = $false; Message = '*Cannot verify native json*' }
+            @{ Name = 'a nullable native column'; Column = 'json NULL'; HideMarker = $false; Message = '*CK_DocumentCache_IsJsonObject*enabled and trusted*' }
+        ) {
+            # The fixture seeds relational data directly and leaves the cache empty.
+            $replaceColumn = @'
+ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
+GO
+'@
+            $addCheck = 'ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson], OBJECT) = 1);'
+            try {
+                Invoke-TestSql $source "$replaceColumn`nALTER TABLE dms.DocumentCache ADD DocumentJson $Column;" | Out-Null
+                Invoke-TestSql $source $addCheck | Out-Null
+                if ($HideMarker) {
+                    Invoke-TestSql $source "EXEC sys.sp_rename 'dms.MssqlPhysicalSchema', 'SavedMssqlPhysicalSchema';" | Out-Null
+                }
+                { Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $source -MssqlPassword $password } |
+                    Should -Throw $Message
+            }
+            finally {
+                if ($HideMarker) {
+                    Invoke-TestSql $source "IF OBJECT_ID('dms.SavedMssqlPhysicalSchema', 'U') IS NOT NULL EXEC sys.sp_rename 'dms.SavedMssqlPhysicalSchema', 'MssqlPhysicalSchema';" | Out-Null
+                }
+                Invoke-TestSql $source "$replaceColumn`nALTER TABLE dms.DocumentCache ADD DocumentJson json NOT NULL;" | Out-Null
+                Invoke-TestSql $source $addCheck | Out-Null
+            }
+        }
         It 'Rejects a native SQL Server source and restored package with a <Name> object-only CHECK' -Skip:($Engine -ne 'mssql') -ForEach @(
             @{ Name = 'disabled'; Sql = 'ALTER TABLE dms.DocumentCache NOCHECK CONSTRAINT CK_DocumentCache_IsJsonObject;' }
             @{ Name = 'untrusted'; Sql = 'ALTER TABLE dms.DocumentCache NOCHECK CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache CHECK CONSTRAINT CK_DocumentCache_IsJsonObject;' }

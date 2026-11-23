@@ -497,25 +497,37 @@ cutover before replacing it.
 
 Cache rollout requires a qualified native-v2 runtime. CDC rollout also requires a
 compatible, qualified worker. Managed CDC enablement rejects native SQL Server targets
-until the DMS release qualifies its pinned worker for native `DocumentJson`. Template-backed
+until the DMS release qualifies its pinned worker for native `DocumentJson`. Coordinate
+the worker pin and native database rollout in the same release to retain managed CDC
+availability. Shipping native SQL Server before that worker is available requires an
+explicit release decision on SQL Server CDC availability. Template-backed
 rollout requires a matching, verified `v2` package and compatible restore tools.
 The [adoption record](../reference/design/backend-redesign/epics/17-mssql-gap-closure/03-sql-server-2025-and-native-json.md#dms-1328-adoption-scope)
 tracks these boundaries.
 
+For an established SQL Server CDC deployment on physical `v1`, retain its matching
+DMS, SchemaTools and qualified worker for managed validation and operation until
+cutover. The native-baseline tools require `v2` for managed validation, including
+operations against existing bindings. Verify the retained deployment with the original
+toolchain using the [established validation procedure](../reference/cdc-documentation/operations-runbook.md#established-validation)
+before replacing any component. Include that check in release qualification for the
+retained-v1 path.
+
 Before a SQL Server template cutover, build and verify Minimal and Populated packages for
 Data Standard `5.2.0` and `6.1.0` from the same reviewed release. Keep package publication
-disabled during qualification. Inspect the exact package contents and require the signed
-restore manifest to report format 2, `documentJsonColumnType: "json"`, and
+disabled during qualification. Inspect the exact packages and require their attested
+contents to include a restore manifest reporting format 2, `documentJsonColumnType: "json"`, and
 `mssqlPhysicalSchemaVersion: "v2"`; verify source and restored catalogs and the authenticated
 descriptor probe for both template kinds, plus the populated schools probe. Use the matching
 SchemaTools and CMS restore consumers for every verification. The restore preflight rejects a
 selected SQL Server SchemaTools manifest without the physical-v2 discriminator before Docker
 work, and CMS rejects packages that do not satisfy the format-2 contract.
 
-Deploy the compatible DMS, SchemaTools and CMS consumers before making v2 packages available to
-restore jobs. Review scheduled and deployment jobs for legacy-pinned template packages or old
-restore-tool images before cutover; do not combine a v2 package with a consumer that only
-understands restore format 1 or logical mapping metadata. Existing SQL Server databases require
+Record the release run, package versions and SHA-256 digests for all four packages before
+cutover. Make the verified packages available and coordinate the restore-job package and
+allowlist updates with deployment of the matching DMS, SchemaTools and CMS consumers.
+Review scheduled and deployment jobs for legacy-pinned template packages or restore-tool
+images that only support format 1. Existing SQL Server databases require
 fresh provisioning on SQL Server 2025 or later and a deliberate, separately planned data
 carry-forward; do not convert `nvarchar(max)` in place or infer physical compatibility from the
 unchanged effective schema hash. Existing CDC bindings have no automatic migration or cutover:

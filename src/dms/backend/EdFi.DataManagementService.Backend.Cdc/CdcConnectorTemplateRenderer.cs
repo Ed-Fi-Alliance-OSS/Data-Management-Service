@@ -26,6 +26,7 @@ internal sealed class CdcConnectorTemplateRenderer(
     TimeProvider timeProvider
 ) : ICdcConnectorTemplateRenderer
 {
+    internal const string CacheJsonConverterTypeProperty = "edfiCacheJson.type";
     internal const string CacheJsonConverterTableProperty = "edfiCacheJson.table";
 
     private const int ManifestFileNameMaxLength = 255;
@@ -231,7 +232,7 @@ internal sealed class CdcConnectorTemplateRenderer(
         if (CdcConnectorTemplateSharedRules.IsNativeSqlServerDocumentCache(cacheTable))
         {
             config["converters"] = "edfiCacheJson";
-            config["edfiCacheJson.type"] =
+            config[CacheJsonConverterTypeProperty] =
                 "org.edfi.kafka.connect.converters.SqlServerDocumentCacheJsonConverter";
             config[CacheJsonConverterTableProperty] =
                 $"{config["database.names"]}.{cacheTable.TableName.Schema.Value}.{cacheTable.TableName.Name}";

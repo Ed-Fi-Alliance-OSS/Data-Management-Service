@@ -684,21 +684,24 @@ Describe 'CDC qualification CI scheduling' {
     It 'selects the shipped worker qualification matrix without Contract or duplicates' {
         $matrix = & $script:matrixScript | ConvertFrom-Json
         $pairs = @($matrix.include | ForEach-Object { $_.lane + '/' + $_.suite })
-        $expected = @('Kafka/All', 'Mssql/Admission', 'Mssql/Telemetry', 'Mssql/History', 'Mssql/MessageContract')
+        $expected = @('Kafka/All', 'Mssql/Admission', 'Mssql/History', 'Mssql/MessageContract')
         $expected += @('Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History', 'MessageContract', 'ApiE2E') |
             ForEach-Object { "Postgresql/$_" }
         if ([object]::Equals((Get-CdcQualificationWorkerImage)['mssqlNativeDocumentCache'], $true)) {
-            $expected += @('Mssql/Lifecycle', 'Mssql/Recovery', 'Mssql/RecordSize', 'Mssql/ApiE2E')
+            $expected += @('Mssql/Lifecycle', 'Mssql/Recovery', 'Mssql/RecordSize', 'Mssql/Telemetry', 'Mssql/ApiE2E')
         }
         @($pairs | Sort-Object) | Should -Be @($expected | Sort-Object)
     }
     It 'requires the native-worker refusal and defers only dependent SQL Server suites until the worker supports native JSON' {
         $deferred = Get-CdcQualificationProviderSuite -Provider Mssql -MssqlNativeDocumentCache $false
-        @($deferred.Keys) | Should -Be @('Admission', 'Telemetry', 'History', 'MessageContract')
+        @($deferred.Keys) | Should -Be @('Admission', 'History', 'MessageContract')
         $deferred.Admission | Should -Be 'Category=CdcMssqlNativeWorkerRefusal&Category=MssqlIntegration'
+        $deferred.MessageContract | Should -Be 'Category=CdcMessageContractSerialized&Category=MssqlIntegration'
         $qualified = Get-CdcQualificationProviderSuite -Provider Mssql -MssqlNativeDocumentCache $true
         $qualified.Keys.Count | Should -Be 8
         $qualified.Admission | Should -Be 'Category=CdcControllerAdmission&Category=MssqlIntegration'
+        $qualified.Telemetry | Should -Be 'Category=CdcConnectorTelemetryQualification&Category=MssqlIntegration'
+        $qualified.MessageContract | Should -Be '(Category=CdcMessageContractSerialized|Category=CdcMessageContractKafka)&Category=MssqlIntegration'
     }
     It 'selects <Lane>/<Suite> for a targeted manual run' -ForEach @(
         @{ Lane = 'Kafka'; Suite = 'All'; Count = 1 }
@@ -720,11 +723,14 @@ Describe 'CDC qualification CI scheduling' {
         @($matrix.include | Where-Object lane -ne $Lane).Count | Should -Be 0
         if ($Suite -ne 'All') { @($matrix.include | Where-Object suite -ne $Suite).Count | Should -Be 0 }
     }
-    It 'rejects explicitly requested native success suites while the shipped worker is unqualified' {
+    It 'rejects explicitly requested SQL Server <Suite> while the shipped worker is unqualified' -ForEach @(
+        @{ Suite = 'ApiE2E' }
+        @{ Suite = 'Telemetry' }
+    ) {
         if ([object]::Equals((Get-CdcQualificationWorkerImage)['mssqlNativeDocumentCache'], $true)) {
-            (& $script:matrixScript -Lane Mssql -Suite ApiE2E | ConvertFrom-Json).include.Count | Should -Be 1
+            (& $script:matrixScript -Lane Mssql -Suite $Suite | ConvertFrom-Json).include.Count | Should -Be 1
         } else {
-            { & $script:matrixScript -Lane Mssql -Suite ApiE2E } | Should -Throw '*requires a shipped worker qualified for native DocumentJson*'
+            { & $script:matrixScript -Lane Mssql -Suite $Suite } | Should -Throw '*requires a shipped worker qualified for native DocumentJson*'
         }
     }
     It 'rejects ambiguous <Lane> suite selection instead of silently selecting different tests' -ForEach @(
@@ -762,7 +768,7 @@ Describe 'CDC qualification CI scheduling' {
                 & ([scriptblock]::Create($selection))
                 $output = Get-Content $env:GITHUB_OUTPUT
                 $selected = $output[0].Substring('matrix='.Length) | ConvertFrom-Json
-                $expectedCount = if ($lane -ne 'All') { 1 } elseif ([object]::Equals((Get-CdcQualificationWorkerImage)['mssqlNativeDocumentCache'], $true)) { 17 } else { 13 }
+                $expectedCount = if ($lane -ne 'All') { 1 } elseif ([object]::Equals((Get-CdcQualificationWorkerImage)['mssqlNativeDocumentCache'], $true)) { 17 } else { 12 }
                 $selected.include.Count | Should -Be $expectedCount
                 $output[1] | Should -Be "suite-count=$($selected.include.Count)"
             }

@@ -618,13 +618,22 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             );
         }
 
-        string[] requiredClasses =
+        List<string> requiredClasses =
         [
             connectorClass,
             DocumentStateTransformClass,
             DocumentStateJsonConverterClass,
             KafkaMurmur2PartitionerClass,
         ];
+        if (
+            rendered.Config.TryGetValue(
+                CdcConnectorTemplateRenderer.CacheJsonConverterTypeProperty,
+                out var converterClass
+            )
+        )
+        {
+            requiredClasses.Add(converterClass);
+        }
 
         try
         {
@@ -2013,10 +2022,9 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             "SELECT CONVERT(nvarchar(20), SERVERPROPERTY('ProductMajorVersion'));",
             cancellationToken
         );
-        string majorVersion =
-            output
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .FirstOrDefault()
+        string majorVersion = output
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault()
             ?? string.Empty;
 
         majorVersion
@@ -2048,37 +2056,36 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         );
     }
 
-    private static string BuildMinimalPostgresqlObjectsSql() =>
-        $$"""
-            CREATE SCHEMA IF NOT EXISTS "dms";
-            CREATE TABLE IF NOT EXISTS "dms"."DataStoreIdentity"
-            (
-                "DataStoreIdentitySingletonId" smallint NOT NULL PRIMARY KEY,
-                "SourceIdentity" uuid NOT NULL
-            );
-            INSERT INTO "dms"."DataStoreIdentity" ("DataStoreIdentitySingletonId", "SourceIdentity")
-            VALUES (1, '{{CdcConnectorTemplatePinnedImageTestData.SourceIdentity}}')
-            ON CONFLICT ("DataStoreIdentitySingletonId") DO NOTHING;
-            {{BuildPostgresqlSourceTablesSql()}}
-            CREATE TABLE IF NOT EXISTS "dms"."DocumentProjectionWork"
-            (
-                "DocumentId" bigint NOT NULL PRIMARY KEY REFERENCES "dms"."Document" ("DocumentId") ON DELETE CASCADE,
-                "RequiredContentVersion" bigint NOT NULL,
-                "FirstEnqueuedAt" timestamp with time zone NOT NULL,
-                "LastEnqueuedAt" timestamp with time zone NOT NULL
-            );
-            DO $role$
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ConnectorDatabaseUser}}') THEN
-                    EXECUTE format(
-                        'CREATE ROLE %I WITH LOGIN REPLICATION NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS PASSWORD %L',
-                        '{{ConnectorDatabaseUser}}',
-                        '{{ConnectorDatabasePassword}}'
-                    );
-                END IF;
-            END
-            $role$;
-            """;
+    private static string BuildMinimalPostgresqlObjectsSql() => $$"""
+        CREATE SCHEMA IF NOT EXISTS "dms";
+        CREATE TABLE IF NOT EXISTS "dms"."DataStoreIdentity"
+        (
+            "DataStoreIdentitySingletonId" smallint NOT NULL PRIMARY KEY,
+            "SourceIdentity" uuid NOT NULL
+        );
+        INSERT INTO "dms"."DataStoreIdentity" ("DataStoreIdentitySingletonId", "SourceIdentity")
+        VALUES (1, '{{CdcConnectorTemplatePinnedImageTestData.SourceIdentity}}')
+        ON CONFLICT ("DataStoreIdentitySingletonId") DO NOTHING;
+        {{BuildPostgresqlSourceTablesSql()}}
+        CREATE TABLE IF NOT EXISTS "dms"."DocumentProjectionWork"
+        (
+            "DocumentId" bigint NOT NULL PRIMARY KEY REFERENCES "dms"."Document" ("DocumentId") ON DELETE CASCADE,
+            "RequiredContentVersion" bigint NOT NULL,
+            "FirstEnqueuedAt" timestamp with time zone NOT NULL,
+            "LastEnqueuedAt" timestamp with time zone NOT NULL
+        );
+        DO $role$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ConnectorDatabaseUser}}') THEN
+                EXECUTE format(
+                    'CREATE ROLE %I WITH LOGIN REPLICATION NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS PASSWORD %L',
+                    '{{ConnectorDatabaseUser}}',
+                    '{{ConnectorDatabasePassword}}'
+                );
+            END IF;
+        END
+        $role$;
+        """;
 
     private async Task CreateMinimalSqlServerObjectsAsync(CancellationToken cancellationToken)
     {
@@ -2206,10 +2213,9 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                     cancellationToken
                 );
 
-        string value =
-            output
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .FirstOrDefault()
+        string value = output
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault()
             ?? string.Empty;
 
         value.Should().NotBeNullOrWhiteSpace("the provider heartbeat singleton should contain one row");

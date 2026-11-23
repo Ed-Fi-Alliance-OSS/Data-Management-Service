@@ -815,17 +815,6 @@ function Assert-RestoreManifestShape {
 
     $columnType = Assert-RestoreManifestField -Manifest $Manifest -FieldName "documentJsonColumnType" -AsNonEmptyString
     if ($databaseEngine -eq "mssql") {
-        $memberNames = if ($Manifest -is [System.Collections.IDictionary]) {
-            @($Manifest.GetEnumerator() | ForEach-Object { [string]$_.Key })
-        }
-        else {
-            @($Manifest.PSObject.Properties.Name)
-        }
-        foreach ($field in @("mssqlPhysicalSchemaVersion", "documentJsonColumnType", "engineVersion")) {
-            if ($memberNames -cnotcontains $field) {
-                throw "Restore manifest is missing required field '$field'."
-            }
-        }
         $marker = Assert-RestoreManifestField -Manifest $Manifest -FieldName "mssqlPhysicalSchemaVersion" -AsNonEmptyString
         if (-not (Test-RestoreOrdinalStringEqual -Left ([string]$marker) -Right $script:MssqlPhysicalSchemaVersion)) {
             throw "Restore manifest field 'mssqlPhysicalSchemaVersion' must be v2."
@@ -837,9 +826,6 @@ function Assert-RestoreManifestShape {
         if ($engineVersion -notmatch '^\s*([0-9]+)' -or -not [int]::TryParse($Matches[1], [ref]$major) -or $major -lt 17) {
             throw "Restore manifest field 'engineVersion' requires SQL Server major version 17 or later."
         }
-    }
-    elseif (Test-RestorePropertyPresent -InputObject $Manifest -Name "mssqlPhysicalSchemaVersion") {
-        throw "Restore manifest field 'mssqlPhysicalSchemaVersion' must be omitted for postgresql."
     }
 
     $inventorySha256 = Assert-RestoreManifestField -Manifest $Manifest -FieldName "inventorySha256" -AsNonEmptyString

@@ -131,8 +131,7 @@ public sealed partial class DmsDataStoreProvisioningService(
             return new DmsDataStoreCreateResult.Failure(refusal, DmsCleanupReport.Clean);
         }
 
-        DmsProvisioningFailure? invalid =
-            ValidateTemplate(request.Template)
+        DmsProvisioningFailure? invalid = ValidateTemplate(request.Template)
             ?? ValidateTargetName(request.TargetName)
             ?? ValidateSourceIdentity(request.ExpectedSourceIdentity)
             ?? ValidatePin(request.PinnedArtifact);
@@ -239,13 +238,8 @@ public sealed partial class DmsDataStoreProvisioningService(
             // operation, so it may be dropped on any session, also after loss, unless it was renamed into the
             // target or a rename is still in doubt; then the private directory.
             publication.ApplyTo(cleanup);
-            await cleanup.RunAsync(
-                engine,
-                options.Value,
-                timeProvider,
-                logger,
-                operation,
-                session => ProveSessionGoneAsync(session, operation, CreateStagingStep)
+            await cleanup.RunAsync(engine, options.Value, timeProvider, logger, operation, session =>
+                ProveSessionGoneAsync(session, operation, CreateStagingStep)
             );
             cleanup.Add(await ReleaseArtifactAsync(artifact));
         }
@@ -357,9 +351,8 @@ public sealed partial class DmsDataStoreProvisioningService(
         }
 
         // A generated name already in use is transient; a retry draws a new operation id.
-        DmsLiveTargetState stagingState = await scope.ReadAsync(
-            InspectStagingStep,
-            token => engine.InspectAsync(stage, token)
+        DmsLiveTargetState stagingState = await scope.ReadAsync(InspectStagingStep, token =>
+            engine.InspectAsync(stage, token)
         );
         if (stagingState is not DmsLiveTargetState.Absent)
         {
@@ -619,9 +612,8 @@ public sealed partial class DmsDataStoreProvisioningService(
 
         await using (session)
         {
-            DmsIdentityRead identity = await scope.ReadAsync(
-                ReadIdentityStep,
-                token => engine.ReadIdentityAsync(session, token)
+            DmsIdentityRead identity = await scope.ReadAsync(ReadIdentityStep, token =>
+                engine.ReadIdentityAsync(session, token)
             );
             ThrowIfAccessDenied(identity, DmsProvisioningFailureCode.AdminPrivilegeMissing, ReadIdentityStep);
             DmsTargetFacts facts = await ReadFactsAsync(
@@ -667,7 +659,13 @@ public sealed partial class DmsDataStoreProvisioningService(
             );
             if (verdict is DmsTargetValidation.Invalid invalid)
             {
-                throw StepFailed(invalid.Code, ValidateStagingStep + "." + invalid.Check);
+                throw new DmsProvisioningFailedException(
+                    DmsProvisioningFailure.ForTargetValidation(
+                        invalid,
+                        ValidateStagingStep,
+                        manifest.DatabaseEngine
+                    )
+                );
             }
 
             if (identity is not DmsIdentityRead.Found package)
@@ -950,9 +948,8 @@ public sealed partial class DmsDataStoreProvisioningService(
     {
         // The facts feed the engine checks of later stages.
         scope.ServerFacts = await scope.ReadAsync(ReadServerFactsStep, engine.ReadServerFactsAsync);
-        DmsLiveTargetState state = await scope.ReadAsync(
-            InspectTargetStep,
-            token => engine.InspectAsync(target, token)
+        DmsLiveTargetState state = await scope.ReadAsync(InspectTargetStep, token =>
+            engine.InspectAsync(target, token)
         );
         return state switch
         {

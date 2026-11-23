@@ -288,28 +288,43 @@ public class MssqlCreateStagingStageTests
     }
 
     [TestFixture]
-    public class Given_a_signed_backup_with_a_mismatched_physical_marker
+    public class Given_a_signed_backup_with_an_incompatible_document_cache
     {
-        [Test]
-        public async Task It_refuses_publication_and_removes_the_owned_staging_database()
+        [TestCase(
+            "DROP TABLE [dms].[MssqlPhysicalSchema];",
+            DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
+        )]
+        [TestCase(
+            "UPDATE [dms].[MssqlPhysicalSchema] SET [MssqlPhysicalSchemaVersion] = 'v1';",
+            DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
+        )]
+        [TestCase(
+            """
+            ALTER TABLE [dms].[DocumentCache] DROP CONSTRAINT [CK_DocumentCache_IsJsonObject];
+            ALTER TABLE [dms].[DocumentCache] DROP COLUMN [DocumentJson];
+            EXEC(N'ALTER TABLE [dms].[DocumentCache] ADD [DocumentJson] nvarchar(max) NOT NULL;');
+            """,
+            DmsTargetValidator.DocumentJsonColumnTypeCheck
+        )]
+        public async Task It_reports_reprovisioning_guidance_before_publication(string mutation, string check)
         {
             RequireSharedStagingOrSkip();
-            byte[] backup = await ShapedBackup.CreateAsync(
-                "UPDATE [dms].[MssqlPhysicalSchema] SET [MssqlPhysicalSchemaVersion] = 'v1';"
-            );
+            byte[] backup = await ShapedBackup.CreateAsync(mutation);
             LaneHooks hooks = new();
             await using Lane lane = await Lane.BuildAsync(backup, hooks);
 
             DmsDataStoreCreateResult result = await lane.CreateAsync();
 
-            FailureOf(result).Code.Should().Be(DmsProvisioningFailureCode.TargetIncompatible);
-            FailureOf(result)
+            DmsProvisioningFailure failure = FailureOf(result);
+            failure.Code.Should().Be(DmsProvisioningFailureCode.TargetIncompatible);
+            failure.Category.Should().Be(DmsProvisioningFailureCategory.OperatorInspectionRequired);
+            failure
                 .Diagnostic.Operation.Should()
-                .Be(
-                    DmsDataStoreProvisioningService.ValidateStagingStep
-                        + "."
-                        + DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
-                );
+                .Be(DmsDataStoreProvisioningService.ValidateStagingStep + "." + check);
+            failure
+                .Summary.Should()
+                .Contain("Verify the pinned v2 template package")
+                .And.Contain("Reprovision");
             hooks.Points.Should().Equal(DmsProvisioningHookPoint.AfterRestoreStarted);
             lane.TargetMutations.Should().BeEmpty();
             ((DmsDataStoreCreateResult.Failure)result).Cleanup.HasResidue.Should().BeFalse();

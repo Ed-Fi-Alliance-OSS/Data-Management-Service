@@ -404,7 +404,9 @@ function Get-CdcQualificationProviderSuite {
     $filters['ApiE2E'] = 'FullyQualifiedName~Given_CdcApiE2E'
     if ($Provider -eq 'Mssql' -and -not $MssqlNativeDocumentCache) {
         $filters['Admission'] = 'Category=CdcMssqlNativeWorkerRefusal&Category=MssqlIntegration'
-        foreach ($suite in @('Lifecycle', 'Recovery', 'RecordSize', 'ApiE2E')) {
+        # Serialized cases exercise the shipped worker with synthetic records and need no CDC source.
+        $filters['MessageContract'] = 'Category=CdcMessageContractSerialized&Category=MssqlIntegration'
+        foreach ($suite in @('Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'ApiE2E')) {
             $filters.Remove($suite)
         }
     }

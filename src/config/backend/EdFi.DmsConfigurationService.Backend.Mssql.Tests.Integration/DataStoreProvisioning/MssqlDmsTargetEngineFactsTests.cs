@@ -136,9 +136,48 @@ public class MssqlDmsTargetEngineFactsTests
     }
 
     [TestFixture]
-    public class Given_a_drifted_native_document_cache_check
+    public class Given_a_drifted_native_document_cache_baseline
     {
+        [TestCase("DELETE FROM dms.MssqlPhysicalSchema;", DmsTargetValidator.MssqlPhysicalSchemaVersionCheck)]
+        [TestCase(
+            "UPDATE dms.MssqlPhysicalSchema SET MssqlPhysicalSchemaVersion = 'V2';",
+            DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
+        )]
+        [TestCase(
+            """
+            ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+            ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
+            EXEC(N'ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;');
+            """,
+            DmsTargetValidator.DocumentJsonColumnTypeCheck
+        )]
+        [TestCase(
+            """
+            DROP TABLE dms.MssqlPhysicalSchema;
+            ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+            ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
+            EXEC(N'ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;');
+            """,
+            DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
+        )]
+        public Task It_rejects_incompatible_marker_or_type(string mutation, string check) =>
+            AssertIncompatibleAsync(mutation, check);
+
+        [TestCase(
+            """
+            ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+            ALTER TABLE dms.DocumentCache ALTER COLUMN DocumentJson json NULL;
+            ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject
+                CHECK (ISJSON([DocumentJson], OBJECT) = 1);
+            """
+        )]
         [TestCase("ALTER TABLE dms.DocumentCache NOCHECK CONSTRAINT CK_DocumentCache_IsJsonObject;")]
+        [TestCase(
+            """
+            ALTER TABLE dms.DocumentCache NOCHECK CONSTRAINT CK_DocumentCache_IsJsonObject;
+            ALTER TABLE dms.DocumentCache WITH NOCHECK CHECK CONSTRAINT CK_DocumentCache_IsJsonObject;
+            """
+        )]
         [TestCase(
             """
             ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
@@ -151,7 +190,10 @@ public class MssqlDmsTargetEngineFactsTests
             "ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; "
                 + "ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson]) = 1);"
         )]
-        public async Task It_rejects_the_target_before_promotion(string mutation)
+        public Task It_rejects_invalid_object_validation(string mutation) =>
+            AssertIncompatibleAsync(mutation, DmsTargetValidator.MssqlDocumentCacheObjectCheck);
+
+        private static async Task AssertIncompatibleAsync(string mutation, string check)
         {
             RequireConfiguredOrSkip();
             await using TestDatabase database = await CreateDmsShapedDatabaseAsync("cachecheck");
@@ -160,12 +202,7 @@ public class MssqlDmsTargetEngineFactsTests
 
             Validate(facts, identity, new DmsTargetValidationRule.Staging(Guid.NewGuid()))
                 .Should()
-                .Be(
-                    new DmsTargetValidation.Invalid(
-                        DmsProvisioningFailureCode.TargetIncompatible,
-                        DmsTargetValidator.MssqlDocumentCacheObjectCheck
-                    )
-                );
+                .Be(new DmsTargetValidation.Invalid(DmsProvisioningFailureCode.TargetIncompatible, check));
         }
     }
 
