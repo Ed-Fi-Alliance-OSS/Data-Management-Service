@@ -44,7 +44,8 @@ internal static class CdcDeploymentRequestTestData
         CdcProviderArtifactNames? setupArtifacts = null,
         CdcWorkerDeploymentPolicy? worker = null,
         string password = "${env:DATABASE_PASSWORD}",
-        IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null
+        IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
+        ICdcProviderDatabaseExecutor? databaseExecutor = null
     )
     {
         CdcConnectorTemplateRequest template = BuildRequest(provider);
@@ -71,7 +72,8 @@ internal static class CdcDeploymentRequestTestData
                     new DbTableName(new DbSchemaName("dms"), "Document"),
                     "private-physical-table"
                 ),
-            ]
+            ],
+            databaseExecutor: databaseExecutor
         );
         return new(
             binding,

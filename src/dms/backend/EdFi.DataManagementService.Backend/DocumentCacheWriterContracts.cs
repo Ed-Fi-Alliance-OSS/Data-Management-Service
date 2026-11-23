@@ -120,6 +120,7 @@ public enum DocumentCacheWriterOutcome
     CacheAheadUnconfirmedCallerAbort = 14,
     DeterministicInvariantOrTargetFailure = 15,
     AlreadyCurrentNoWork = 16,
+    NativeJsonLimitExceeded = 17,
 }
 
 public enum DocumentCacheWriterFenceReason
@@ -153,6 +154,16 @@ public abstract record DocumentCacheWriterResult
     private DocumentCacheWriterResult() { }
 
     public abstract DocumentCacheWriterOutcome Outcome { get; }
+
+    public sealed record NativeJsonLimitExceeded : DocumentCacheWriterResult
+    {
+        private NativeJsonLimitExceeded() { }
+
+        public static NativeJsonLimitExceeded Instance { get; } = new();
+
+        public override DocumentCacheWriterOutcome Outcome =>
+            DocumentCacheWriterOutcome.NativeJsonLimitExceeded;
+    }
 
     public sealed record AlreadyCurrentAcknowledged : DocumentCacheWriterResult
     {

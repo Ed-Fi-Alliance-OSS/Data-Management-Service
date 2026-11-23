@@ -1675,30 +1675,9 @@ function Get-TemplateSourceCatalogFacts {
         $databaseCompatibilityLevel = $parsedCompatibilityLevel
     }
 
-    $physicalVersion = $null
-    if ($DatabaseEngine -eq "mssql") {
-        $markerRows = @(Invoke-TemplateCatalogQuery @queryParameters `
-                -Query (Get-MssqlPhysicalSchemaVersionQuerySql) `
-                -FailureMessage "Failed to read the SQL Server DocumentCache physical schema marker from '$DatabaseName'." |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        if ($markerRows.Count -ne 1 -or $markerRows[0].Trim() -cne "v2") {
-            throw "Cannot verify the v2 SQL Server DocumentCache physical schema marker in '$DatabaseName'. Reprovision the template."
-        }
-        $physicalVersion = $markerRows[0].Trim()
-    }
-
-    $documentJsonRows = Invoke-TemplateCatalogQuery @queryParameters `
-        -Query (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine $DatabaseEngine) `
-        -FailureMessage "Failed to read the DocumentJson column type from '$DatabaseName'."
-    $documentJsonColumnType = ConvertFrom-DocumentJsonColumnTypeRow -Row $documentJsonRows -DatabaseEngine $DatabaseEngine
-    if ($DatabaseEngine -eq "mssql") {
-        if ($documentJsonColumnType -cne (Get-RestoreDocumentJsonBaselineType -DatabaseEngine mssql)) {
-            throw "Cannot verify native json for dms.DocumentCache.DocumentJson in '$DatabaseName'. Reprovision the template."
-        }
-        $objectCheckRows = Invoke-TemplateCatalogQuery @queryParameters `
-            -Query (Get-MssqlDocumentCacheObjectCheckQuerySql) `
-            -FailureMessage "Failed to inspect CK_DocumentCache_IsJsonObject in '$DatabaseName'."
-        Assert-MssqlDocumentCacheObjectCheck -Row $objectCheckRows -DatabaseName $DatabaseName
+    $cacheFacts = Get-RestoreDocumentCacheCatalogFact -QueryParameters $queryParameters -InvokeCatalogQuery {
+        param($parameters, $sql, $failureMessage)
+        Invoke-TemplateCatalogQuery @parameters -Query $sql -FailureMessage $failureMessage
     }
 
     $schemaRows = Invoke-TemplateCatalogQuery @queryParameters `
@@ -1743,8 +1722,8 @@ function Get-TemplateSourceCatalogFacts {
         ResourceKeySeedHashB64     = $effectiveSchema.ResourceKeySeedHashB64
         EngineVersion              = $engineVersion
         DatabaseCompatibilityLevel = $databaseCompatibilityLevel
-        MssqlPhysicalSchemaVersion = $physicalVersion
-        DocumentJsonColumnType     = $documentJsonColumnType
+        MssqlPhysicalSchemaVersion = $cacheFacts.MssqlPhysicalSchemaVersion
+        DocumentJsonColumnType     = $cacheFacts.DocumentJsonColumnType
         FullInventory              = $fullInventory
         ArtifactInventory          = $artifactInventory
         DatabaseLevelObjects       = [string[]]$databaseLevelObjects

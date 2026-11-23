@@ -637,16 +637,7 @@ function Read-RestorePackageArchiveEntryText {
             $entryStream.Dispose()
         }
 
-        $offset = 0
-        if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
-            $offset = 3
-        }
-        try {
-            return [System.Text.UTF8Encoding]::new($false, $true).GetString($bytes, $offset, $bytes.Length - $offset)
-        }
-        catch {
-            throw "The SQL Server restore manifest archive entry must be strict UTF-8, optionally with a UTF-8 BOM."
-        }
+        return ConvertFrom-MssqlRestoreManifestByte -Bytes $bytes
     }
 
     $reader = [System.IO.StreamReader]::new($Entry.Open(), [System.Text.Encoding]::UTF8, $true)
@@ -971,12 +962,11 @@ function Get-RestoreCandidateSchemaFact {
     }
 }
 
-function Get-RestoreCandidateRelationalMappingVersion {
+function Get-RestoreCandidateSchemaVersion {
     <#
     .SYNOPSIS
     Runs 'api-schema-tools ddl emit --ddl-manifest' over the candidate's staged schema files
-    (core first) and returns its relational mapping version. With -IncludePhysicalSchemaVersion
-    it returns both the logical and engine-specific physical versions. Output goes into a fresh
+    (core first) and returns its logical and engine-specific physical versions. Output goes into a fresh
     subdirectory of the private package stage - never into the candidate tree - because the tool
     requires an empty output directory and the candidate must stay byte-identical to what the
     prepare phases produced.
@@ -992,9 +982,7 @@ function Get-RestoreCandidateRelationalMappingVersion {
         [Parameter(Mandatory = $true)]
         [string]$OutputRoot,
 
-        [string]$SchemaToolPath = "",
-
-        [switch]$IncludePhysicalSchemaVersion
+        [string]$SchemaToolPath = ""
     )
 
     $toolPath = Resolve-DmsSchemaTool -RequestedPath $SchemaToolPath
@@ -1046,8 +1034,6 @@ function Get-RestoreCandidateRelationalMappingVersion {
         }
         $mappingVersion = [string]$mappingProperty.Value
     }
-
-    if (-not $IncludePhysicalSchemaVersion) { return $mappingVersion }
 
     return [pscustomobject]@{
         RelationalMappingVersion = $mappingVersion
@@ -1164,12 +1150,11 @@ function Invoke-RestoreCandidateCrossCheck {
 
     try {
         $candidateFact = Get-RestoreCandidateSchemaFact -CandidateDirectory $CandidateDirectory
-        $candidateVersions = Get-RestoreCandidateRelationalMappingVersion `
+        $candidateVersions = Get-RestoreCandidateSchemaVersion `
             -SchemaFilePath $candidateFact.SchemaFilePaths `
             -DatabaseEngine $DatabaseEngine `
             -OutputRoot $StageDirectory `
-            -SchemaToolPath $SchemaToolPath `
-            -IncludePhysicalSchemaVersion
+            -SchemaToolPath $SchemaToolPath
         Assert-RestoreManifestMatchesCandidate `
             -Manifest $Manifest `
             -CandidateFact $candidateFact `
@@ -2370,28 +2355,9 @@ function Get-RestoreDatabaseCatalogFact {
         $databaseCompatibilityLevel = $parsedCompatibilityLevel
     }
 
-    $physicalVersion = $null
-    if ($DatabaseEngine -eq "mssql") {
-        $markerRows = @(Invoke-RestoreCatalogQuery @queryParameters `
-                -Query (Get-MssqlPhysicalSchemaVersionQuerySql) `
-                -FailureMessage "Failed to read the SQL Server DocumentCache physical schema marker from '$DatabaseName'." |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    if ($markerRows.Count -ne 1 -or
-        -not [string]::Equals($markerRows[0].Trim(), "v2", [System.StringComparison]::Ordinal)) {
-            throw "Cannot verify the v2 SQL Server DocumentCache physical schema marker in '$DatabaseName'. Reprovision the template."
-        }
-        $physicalVersion = $markerRows[0].Trim()
-    }
-
-    $documentJsonRows = Invoke-RestoreCatalogQuery @queryParameters `
-        -Query (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine $DatabaseEngine) `
-        -FailureMessage "Failed to read the DocumentJson column type from '$DatabaseName'."
-    $documentJsonColumnType = ConvertFrom-DocumentJsonColumnTypeRow -Row $documentJsonRows -DatabaseEngine $DatabaseEngine
-    if ($DatabaseEngine -eq "mssql") {
-        $objectCheckRows = Invoke-RestoreCatalogQuery @queryParameters `
-            -Query (Get-MssqlDocumentCacheObjectCheckQuerySql) `
-            -FailureMessage "Failed to inspect CK_DocumentCache_IsJsonObject in '$DatabaseName'."
-        Assert-MssqlDocumentCacheObjectCheck -Row $objectCheckRows -DatabaseName $DatabaseName
+    $cacheFacts = Get-RestoreDocumentCacheCatalogFact -QueryParameters $queryParameters -InvokeCatalogQuery {
+        param($parameters, $sql, $failureMessage)
+        Invoke-RestoreCatalogQuery @parameters -Query $sql -FailureMessage $failureMessage
     }
 
     $schemaRows = Invoke-RestoreCatalogQuery @queryParameters `
@@ -2431,8 +2397,8 @@ function Get-RestoreDatabaseCatalogFact {
         ResourceKeySeedHashB64     = $effectiveSchema.ResourceKeySeedHashB64
         EngineVersion              = $engineVersion
         DatabaseCompatibilityLevel = $databaseCompatibilityLevel
-        MssqlPhysicalSchemaVersion = $physicalVersion
-        DocumentJsonColumnType     = $documentJsonColumnType
+        MssqlPhysicalSchemaVersion = $cacheFacts.MssqlPhysicalSchemaVersion
+        DocumentJsonColumnType     = $cacheFacts.DocumentJsonColumnType
         FullInventory              = $fullInventory
         ArtifactInventory          = $artifactInventory
         DatabaseLevelObjects       = [string[]]$databaseLevelObjects
@@ -3349,7 +3315,6 @@ Export-ModuleMember -Function `
     New-RestoreCandidateWorkspace, `
     ConvertTo-RestoreProjectSchemaName, `
     Get-RestoreCandidateSchemaFact, `
-    Get-RestoreCandidateRelationalMappingVersion, `
     Assert-RestoreManifestMatchesCandidate, `
     Invoke-RestoreCandidateCrossCheck, `
     Get-RestoreDatabaseOnlyComposeFile, `

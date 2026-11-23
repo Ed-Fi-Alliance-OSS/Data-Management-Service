@@ -19,8 +19,9 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [Category("DatabaseIntegration")]
 public sealed class Given_SqlServer_Native_Cache_Without_A_Qualified_Worker
 {
-    [Test]
-    public async Task It_refuses_native_initial_enable_before_provider_setup_or_writer_publication()
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_refuses_initial_enable_before_provider_setup_or_writer_publication(bool legacy)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(12));
         var token = timeout.Token;
@@ -31,6 +32,18 @@ public sealed class Given_SqlServer_Native_Cache_Without_A_Qualified_Worker
         );
         var request = fixture.Request;
         request.WorkerPolicy.QualifiedImageDigest.Should().Be(CdcQualifiedWorkerImage.Digest);
+        if (legacy)
+        {
+            await fixture.ExecuteAsync(
+                """
+                DROP TABLE dms.MssqlPhysicalSchema;
+                ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+                ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
+                ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;
+                """,
+                token
+            );
+        }
         (
             await fixture.ScalarAsync<string>(
                 "SELECT TYPE_NAME(user_type_id) FROM sys.columns WHERE object_id = OBJECT_ID(N'dms.DocumentCache') AND name = N'DocumentJson';",
@@ -38,7 +51,12 @@ public sealed class Given_SqlServer_Native_Cache_Without_A_Qualified_Worker
             )
         )
             .Should()
-            .Be("json");
+            .Be(legacy ? "nvarchar" : "json");
+        const string providerStateSql = """
+            SELECT 10 * CONVERT(int, is_cdc_enabled) + snapshot_isolation_state
+            FROM sys.databases WHERE database_id = DB_ID();
+            """;
+        int providerStateBefore = await fixture.ScalarAsync<int>(providerStateSql, token);
         var before = await fixture.JournalAsync(token);
         var workflow = new CdcInitialEnableWorkflow(
             fixture.Infrastructure.StateRoot,
@@ -58,12 +76,21 @@ public sealed class Given_SqlServer_Native_Cache_Without_A_Qualified_Worker
             .Should()
             .BeOfType<CdcTransportResult<CdcWriterPublicationResult>.Unavailable>()
             .Subject;
-        refusal.Diagnostic.Component.Should().Be(CdcDeploymentComponent.Worker);
-        refusal.Diagnostic.Failure.Should().Be(CdcDeploymentFailure.NativeDocumentCacheWorkerRequired);
+        refusal
+            .Diagnostic.Component.Should()
+            .Be(legacy ? CdcDeploymentComponent.ProviderSetup : CdcDeploymentComponent.Worker);
+        refusal
+            .Diagnostic.Failure.Should()
+            .Be(
+                legacy
+                    ? CdcDeploymentFailure.IncompatibleDocumentCachePhysicalSchema
+                    : CdcDeploymentFailure.NativeDocumentCacheWorkerRequired
+            );
         var after = await fixture.JournalAsync(token);
         after.Operations.Select(op => op.Effect).Should().Equal(before.Operations.Select(op => op.Effect));
         after.WriterPublicationAuthorized.Should().BeFalse();
         fixture.ProviderModes.Should().BeEmpty();
+        (await fixture.ScalarAsync<int>(providerStateSql, token)).Should().Be(providerStateBefore);
         (
             await fixture.ScalarAsync<int>(
                 "SELECT COUNT(*) FROM sys.database_principals WHERE name = N'dms_connector'",

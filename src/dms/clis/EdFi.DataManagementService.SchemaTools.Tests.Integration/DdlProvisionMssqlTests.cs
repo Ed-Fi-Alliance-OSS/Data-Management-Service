@@ -575,9 +575,9 @@ public class Given_Mssql_Bounded_E18_Preflight_Guards
     )]
     [TestCase(
         """
-            ALTER TABLE [dms].[DocumentCacheState] DROP CONSTRAINT [CK_DocumentCacheState_Lifecycle];
-            UPDATE [dms].[DocumentCacheState] SET [ProjectionLifecycleState] = 'Broken' WHERE [StateId] = 1;
-            """,
+        ALTER TABLE [dms].[DocumentCacheState] DROP CONSTRAINT [CK_DocumentCacheState_Lifecycle];
+        UPDATE [dms].[DocumentCacheState] SET [ProjectionLifecycleState] = 'Broken' WHERE [StateId] = 1;
+        """,
         "ProjectionLifecycleState has unsupported value",
         TestName = "It_rejects_invalid_DocumentCacheState_lifecycle"
     )]
@@ -689,6 +689,10 @@ public class Given_Mssql_DocumentCache_Physical_Preflight
     [TestCase("marker view")]
     [TestCase("missing column")]
     [TestCase("missing cache table")]
+    [TestCase("disabled object check")]
+    [TestCase("weaker object check")]
+    [TestCase("lookalike object check")]
+    [TestCase("nullable document json")]
     public void It_rejects_invalid_completed_targets_before_cli_or_raw_ddl_mutates_them(string shape)
     {
         var created = ProvisionTestHelper.RunProvision("mssql", _connectionString, createDatabase: true);
@@ -985,13 +989,30 @@ public class Given_Mssql_DocumentCache_Physical_Preflight
             };
             if (shape != "missing column")
             {
-                Execute($"ALTER TABLE [dms].[DocumentCache] ADD [DocumentJson] {columnType} NOT NULL;");
+                var nullability = shape == "nullable document json" ? "NULL" : "NOT NULL";
+                Execute($"ALTER TABLE [dms].[DocumentCache] ADD [DocumentJson] {columnType} {nullability};");
+                if (shape == "lookalike object check")
+                {
+                    Execute("ALTER TABLE [dms].[DocumentCache] ADD [Document Json] json NULL;");
+                }
+                var predicate = shape switch
+                {
+                    "weaker object check" => "ISJSON([DocumentJson]) = 1",
+                    "lookalike object check" => "ISJSON([Document Json], OBJECT) = 1",
+                    _ => "ISJSON([DocumentJson], OBJECT) = 1",
+                };
                 Execute(
-                    """
+                    $"""
                     ALTER TABLE [dms].[DocumentCache] WITH CHECK
-                    ADD CONSTRAINT [CK_DocumentCache_IsJsonObject] CHECK (ISJSON([DocumentJson], OBJECT) = 1);
+                    ADD CONSTRAINT [CK_DocumentCache_IsJsonObject] CHECK ({predicate});
                     """
                 );
+                if (shape == "disabled object check")
+                {
+                    Execute(
+                        "ALTER TABLE [dms].[DocumentCache] NOCHECK CONSTRAINT [CK_DocumentCache_IsJsonObject];"
+                    );
+                }
             }
         }
 

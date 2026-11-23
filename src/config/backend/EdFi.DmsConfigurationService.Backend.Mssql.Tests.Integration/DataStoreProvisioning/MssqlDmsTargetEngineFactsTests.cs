@@ -140,6 +140,14 @@ public class MssqlDmsTargetEngineFactsTests
     {
         [TestCase("ALTER TABLE dms.DocumentCache NOCHECK CONSTRAINT CK_DocumentCache_IsJsonObject;")]
         [TestCase(
+            """
+            ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+            ALTER TABLE dms.DocumentCache ADD [Document Json] json NULL;
+            ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject
+                CHECK (ISJSON([Document Json], OBJECT) = 1);
+            """
+        )]
+        [TestCase(
             "ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; "
                 + "ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson]) = 1);"
         )]

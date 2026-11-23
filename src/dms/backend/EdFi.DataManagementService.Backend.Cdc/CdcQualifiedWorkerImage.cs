@@ -6,6 +6,7 @@
 using System.Collections.Frozen;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Cdc;
 
@@ -30,6 +31,52 @@ public static class CdcQualifiedWorkerImage
             CdcConnectorTemplateSharedRules.IsNativeSqlServerDocumentCache
         )
         || (Qualification.MssqlNativeDocumentCache && request.WorkerPolicy.QualifiedImageDigest == Digest);
+
+    internal static async Task<CdcDeploymentDiagnostic> DiagnoseNativeRefusalAsync(
+        CdcDeploymentRequest request,
+        TimeProvider clock,
+        CancellationToken cancellationToken
+    )
+    {
+        using var deadline = new CancellationTokenSource(request.Timing.CallTimeout, clock);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            deadline.Token
+        );
+        try
+        {
+            if (request.ProviderSetup.DatabaseExecutor is not { } executor)
+            {
+                return new(CdcDeploymentComponent.ProviderSetup, CdcDeploymentFailure.Unavailable);
+            }
+
+            var rows = await executor
+                .QueryAsync(MssqlDocumentCachePhysicalSchema.ObservedVersionSql, timeout.Token)
+                .WaitAsync(timeout.Token);
+            if (
+                rows.Count != 1
+                || !rows[0].TryGetValue("physical_schema_version", out var version)
+                || version != MssqlDocumentCachePhysicalSchema.Version
+            )
+            {
+                return new(
+                    CdcDeploymentComponent.ProviderSetup,
+                    CdcDeploymentFailure.IncompatibleDocumentCachePhysicalSchema
+                );
+            }
+
+            return new(CdcDeploymentComponent.Worker, CdcDeploymentFailure.NativeDocumentCacheWorkerRequired);
+        }
+        catch (OperationCanceledException)
+            when (!cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
+        {
+            return new(CdcDeploymentComponent.ProviderSetup, CdcDeploymentFailure.Timeout);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return CdcDeploymentDiagnostic.FromException(CdcDeploymentComponent.ProviderSetup, exception);
+        }
+    }
 
     private static (string Image, bool MssqlNativeDocumentCache) ReadQualification()
     {

@@ -261,7 +261,7 @@ function Invoke-BootstrapCdcEnable {
             $failure = ($output -join "`n") | ConvertFrom-Json
             $codes = @($failure.diagnostics | ForEach-Object {
                 if ($_.component -cin @('Request', 'WorkflowState', 'Projection', 'ProviderSetup', 'Kafka', 'Connect', 'Worker', 'Metrics', 'WriterPublication') -and
-                    $_.failure -cin @('InvalidInput', 'Unavailable', 'Timeout', 'AuthenticationFailed', 'Conflict', 'ValidationFailed', 'NativeDocumentCacheWorkerRequired')) {
+                    $_.failure -cin @('InvalidInput', 'Unavailable', 'Timeout', 'AuthenticationFailed', 'Conflict', 'ValidationFailed', 'NativeDocumentCacheWorkerRequired', 'IncompatibleDocumentCachePhysicalSchema')) {
                     "$($_.component)/$($_.failure)"
                 }
             } | Select-Object -Unique)
@@ -269,6 +269,9 @@ function Invoke-BootstrapCdcEnable {
         catch { $codes = @() }
         $message = if ('Worker/NativeDocumentCacheWorkerRequired' -cin $codes) {
             "SQL Server native DocumentCache CDC requires a DMS release with a qualified Kafka Connect worker. Retain the original state and update DMS and its pinned worker together before retrying."
+        }
+        elseif ('ProviderSetup/IncompatibleDocumentCachePhysicalSchema' -cin $codes) {
+            "SQL Server CDC requires a verified native DocumentCache v2 baseline. Retain the original state, verify setup-principal access, and drop and reprovision incompatible databases before enabling CDC."
         }
         else {
             "CDC enable did not authorize writer publication (exit $exitCode). Retain the original state and inspect with SchemaTools cdc status."

@@ -102,9 +102,8 @@ public sealed class CdcConnectorRegistration
         {
             if (!CdcQualifiedWorkerImage.CanServe(request))
             {
-                return Failure(
-                    CdcDeploymentComponent.Worker,
-                    CdcDeploymentFailure.NativeDocumentCacheWorkerRequired
+                return new CdcTransportResult<CdcConnectorRegistrationReceipt>.Unavailable(
+                    await CdcQualifiedWorkerImage.DiagnoseNativeRefusalAsync(request, _time, token)
                 );
             }
 

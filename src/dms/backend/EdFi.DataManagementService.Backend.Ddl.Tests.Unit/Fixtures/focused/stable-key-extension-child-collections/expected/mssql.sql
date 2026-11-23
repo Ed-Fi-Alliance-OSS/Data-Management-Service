@@ -36,8 +36,25 @@ WHERE t.[object_id] = @document_cache_object_id
     AND c.[name] COLLATE Latin1_General_100_BIN2 = N'DocumentJson'
     AND c.[user_type_id] = c.[system_type_id] AND ty.[is_user_defined] = 0;
 
+-- Match the generated predicate without letting formatting normalization change an identifier.
+DECLARE @object_check_valid bit = CASE WHEN EXISTS (
+    SELECT 1
+    FROM sys.check_constraints ck
+    INNER JOIN sys.columns c ON c.[object_id] = ck.[parent_object_id]
+    WHERE ck.[parent_object_id] = @document_cache_object_id
+        AND ck.[name] COLLATE Latin1_General_100_BIN2 = N'CK_DocumentCache_IsJsonObject'
+        AND c.[name] COLLATE Latin1_General_100_BIN2 = N'DocumentJson'
+        AND c.[is_nullable] = 0
+        AND ck.[is_disabled] = 0 AND ck.[is_not_trusted] = 0 AND ck.[is_not_for_replication] = 0
+        AND REPLACE(REPLACE(REPLACE(
+            TRANSLATE(REPLACE(ck.[definition] COLLATE Latin1_General_100_BIN2, N'[DocumentJson]', N'DocumentJson')
+                COLLATE Latin1_General_100_CI_AS, N'()' + NCHAR(9) + NCHAR(10) + NCHAR(13), N'     '),
+            N'ISJSON', N'ISJSON'), N'OBJECT', N'OBJECT'), N' ', N'')
+            COLLATE Latin1_General_100_BIN2 = N'ISJSONDocumentJson,OBJECT=1'
+) THEN 1 ELSE 0 END;
+
 DECLARE @physical_marker_valid bit = 0;
-IF @document_json_type = N'json' AND EXISTS (
+IF @document_json_type = N'json' AND @object_check_valid = 1 AND EXISTS (
     SELECT 1
     FROM sys.tables t
     INNER JOIN sys.schemas s ON s.[schema_id] = t.[schema_id]

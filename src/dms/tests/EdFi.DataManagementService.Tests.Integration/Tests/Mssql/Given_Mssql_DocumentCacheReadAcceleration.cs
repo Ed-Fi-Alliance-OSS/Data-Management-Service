@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using EdFi.DataManagementService.Tests.Integration.Mssql;
 using EdFi.DataManagementService.Tests.Integration.Scenarios;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 
@@ -35,6 +36,25 @@ public sealed class Given_Mssql_DocumentCacheReadAcceleration : MssqlApiIntegrat
     [Test]
     public Task It_shapes_cached_profile_and_descriptor_conditional_get() =>
         DocumentCacheReadAccelerationScenario.It_shapes_cached_profile_and_descriptor_conditional_get(
+            Harness
+        );
+}
+
+[Category("DocumentCacheReadAcceleration")]
+public sealed class Given_Mssql_DocumentCacheReadAcceleration_With_An_Oversized_Candidate
+    : MssqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.ProfileRootOnlyMerge;
+    protected override bool EnableDocumentCacheReadAcceleration => true;
+    protected override bool RecordDocumentCacheReadTelemetry => true;
+    protected override string DocumentCacheReadAccelerationDirectFillTimeout => "00:00:05";
+
+    protected override void ConfigureAdditionalServices(IServiceCollection services) =>
+        DocumentCacheReadAccelerationScenario.ConfigureOversizedCacheCandidate(services);
+
+    [Test]
+    public Task It_serves_the_document_relationally_and_projects_following_work() =>
+        DocumentCacheReadAccelerationScenario.It_serves_relationally_and_projects_following_work_when_native_json_is_too_large(
             Harness
         );
 }

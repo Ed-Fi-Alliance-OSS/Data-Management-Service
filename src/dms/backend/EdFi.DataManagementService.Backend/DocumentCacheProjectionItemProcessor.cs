@@ -167,12 +167,12 @@ internal sealed class DocumentCacheProjectionItemProcessor(
     IDocumentCacheProjectionTelemetry? telemetry = null
 ) : IDocumentCacheProjectionItemProcessor
 {
-    private readonly TimeProvider _timeProvider =
-        timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
-    private readonly ILogger<DocumentCacheProjectionItemProcessor> _logger =
-        logger ?? throw new ArgumentNullException(nameof(logger));
-    private readonly IDocumentCacheProjectionTelemetry _telemetry =
-        telemetry ?? NoOpDocumentCacheProjectionTelemetry.Instance;
+    private readonly TimeProvider _timeProvider = timeProvider
+        ?? throw new ArgumentNullException(nameof(timeProvider));
+    private readonly ILogger<DocumentCacheProjectionItemProcessor> _logger = logger
+        ?? throw new ArgumentNullException(nameof(logger));
+    private readonly IDocumentCacheProjectionTelemetry _telemetry = telemetry
+        ?? NoOpDocumentCacheProjectionTelemetry.Instance;
 
     public async Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
         DocumentCacheProjectionItemProcessRequest request,
@@ -318,6 +318,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
             case DocumentCacheWriterResult.CallerAbortedRetry:
             case DocumentCacheWriterResult.DeleteRaceRetryExhausted:
             case DocumentCacheWriterResult.CacheAheadUnconfirmedCallerAbort:
+            case DocumentCacheWriterResult.NativeJsonLimitExceeded:
                 RecordDocumentFailure(
                     targetContext,
                     workItem,
@@ -788,8 +789,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         long documentId
     )
     {
-        DocumentCacheAdministrativeDiagnosticCategory diagnosticCategory =
-            result.DiagnosticCategory
+        DocumentCacheAdministrativeDiagnosticCategory diagnosticCategory = result.DiagnosticCategory
             ?? DocumentCacheAdministrativeDiagnosticCategory.UnexpectedProviderFailure;
 
         return new DocumentCacheAdministrativeDrainFailure(

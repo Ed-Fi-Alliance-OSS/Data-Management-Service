@@ -1028,6 +1028,31 @@ function Assert-RestoreJsonObject {
     }
 }
 
+<#
+.SYNOPSIS
+    Decodes a SQL Server restore manifest from UTF-8 bytes.
+.DESCRIPTION
+    Accepts an optional UTF-8 byte order mark and rejects other encodings.
+#>
+function ConvertFrom-MssqlRestoreManifestByte {
+    param (
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [byte[]]$Bytes
+    )
+
+    $offset = 0
+    if ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) {
+        $offset = 3
+    }
+    try {
+        return [System.Text.UTF8Encoding]::new($false, $true).GetString($Bytes, $offset, $Bytes.Length - $offset)
+    }
+    catch [System.Text.DecoderFallbackException] {
+        throw "The SQL Server restore manifest must be strict UTF-8, optionally with a UTF-8 BOM."
+    }
+}
+
 function Read-RestoreManifest {
     <#
     .SYNOPSIS
@@ -1058,7 +1083,12 @@ function Read-RestoreManifest {
             throw "Restore manifest was not found at '$Path'. Packages without a restore manifest are not eligible for restore."
         }
 
-        $rawContent = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+        $rawContent = if ($DatabaseEngine -eq "mssql") {
+            $filePath = (Resolve-Path -LiteralPath $Path -ErrorAction Stop).ProviderPath
+            ConvertFrom-MssqlRestoreManifestByte -Bytes ([System.IO.File]::ReadAllBytes($filePath))
+        } else {
+            Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+        }
     }
     if ([string]::IsNullOrWhiteSpace($rawContent)) {
         throw "Restore manifest at '$Path' is empty."
@@ -1753,9 +1783,10 @@ WHERE s.name COLLATE Latin1_General_100_BIN2 = N'dms'
   AND ck.name COLLATE Latin1_General_100_BIN2 = N'CK_DocumentCache_IsJsonObject'
   AND ck.is_disabled = 0 AND ck.is_not_trusted = 0 AND ck.is_not_for_replication = 0
   AND REPLACE(REPLACE(REPLACE(
-        TRANSLATE(ck.definition COLLATE Latin1_General_100_CI_AS, N'()' + NCHAR(9) + NCHAR(10) + NCHAR(13), N'     '),
+        TRANSLATE(REPLACE(ck.definition COLLATE Latin1_General_100_BIN2, N'[DocumentJson]', N'DocumentJson')
+            COLLATE Latin1_General_100_CI_AS, N'()' + NCHAR(9) + NCHAR(10) + NCHAR(13), N'     '),
         N'ISJSON', N'ISJSON'), N'OBJECT', N'OBJECT'), N' ', N'')
-        COLLATE Latin1_General_100_BIN2 IN (N'ISJSON[DocumentJson],OBJECT=1', N'ISJSONDocumentJson,OBJECT=1');
+        COLLATE Latin1_General_100_BIN2 = N'ISJSONDocumentJson,OBJECT=1';
 '@
 }
 
@@ -1776,6 +1807,50 @@ function Assert-MssqlDocumentCacheObjectCheck {
     $rows = @($Row | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     if ($rows.Count -ne 1 -or $rows[0].Trim() -cne '1') {
         throw "Database '$DatabaseName' must have a non-null DocumentJson and an enabled and trusted CK_DocumentCache_IsJsonObject enforcing ISJSON(DocumentJson, OBJECT) = 1. Reprovision the template."
+    }
+}
+
+function Get-RestoreDocumentCacheCatalogFact {
+    <#
+    .SYNOPSIS
+    Verifies the cache boundary for template production and restore using the caller's catalog transport.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [hashtable]$QueryParameters,
+
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$InvokeCatalogQuery
+    )
+
+    $databaseName = $QueryParameters.DatabaseName
+    $databaseEngine = $QueryParameters.DatabaseEngine
+    $physicalVersion = $null
+    if ($databaseEngine -eq "mssql") {
+        $markerRows = @(& $InvokeCatalogQuery $QueryParameters (Get-MssqlPhysicalSchemaVersionQuerySql) `
+                "Failed to read the SQL Server DocumentCache physical schema marker from '$databaseName'." |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($markerRows.Count -ne 1 -or $markerRows[0].Trim() -cne "v2") {
+            throw "Cannot verify the v2 SQL Server DocumentCache physical schema marker in '$databaseName'. Reprovision the template."
+        }
+        $physicalVersion = $markerRows[0].Trim()
+    }
+
+    $documentJsonRows = & $InvokeCatalogQuery $QueryParameters (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine $databaseEngine) `
+        "Failed to read the DocumentJson column type from '$databaseName'."
+    $documentJsonColumnType = ConvertFrom-DocumentJsonColumnTypeRow -Row $documentJsonRows -DatabaseEngine $databaseEngine
+    if ($databaseEngine -eq "mssql") {
+        if ($documentJsonColumnType -cne (Get-RestoreDocumentJsonBaselineType -DatabaseEngine mssql)) {
+            throw "Cannot verify native json for dms.DocumentCache.DocumentJson in '$databaseName'. Reprovision the template."
+        }
+        $objectCheckRows = & $InvokeCatalogQuery $QueryParameters (Get-MssqlDocumentCacheObjectCheckQuerySql) `
+            "Failed to inspect CK_DocumentCache_IsJsonObject in '$databaseName'."
+        Assert-MssqlDocumentCacheObjectCheck -Row $objectCheckRows -DatabaseName $databaseName
+    }
+
+    return @{
+        DocumentJsonColumnType = $documentJsonColumnType
+        MssqlPhysicalSchemaVersion = $physicalVersion
     }
 }
 
@@ -1833,6 +1908,7 @@ function ConvertFrom-DocumentJsonColumnTypeRow {
         [AllowNull()]
         [string[]]$Row,
 
+        [Parameter(Mandatory = $true)]
         [ValidateSet("postgresql", "mssql")]
         [string]$DatabaseEngine
     )
@@ -1842,9 +1918,7 @@ function ConvertFrom-DocumentJsonColumnTypeRow {
         throw "No DocumentJson column was found in the dms schema; the database is not a provisioned DMS datastore."
     }
 
-    # Existing callers can pass query rows directly. The source and restore paths also pass
-    # the engine so a SQL Server result missing its proof field always fails closed.
-    $isMssql = if ($DatabaseEngine) { $DatabaseEngine -eq "mssql" } else { ($rows[0] -split '\|').Count -eq 3 }
+    $isMssql = $DatabaseEngine -eq "mssql"
     $expectedFields = if ($isMssql) { 3 } else { 2 }
     $carriers = [System.Collections.Generic.List[System.Collections.DictionaryEntry]]::new()
     $postgresqlTypesByTable = [ordered]@{}
@@ -3037,6 +3111,7 @@ Export-ModuleMember -Function `
     Assert-RestoreManifestShape, `
     Assert-RestoreJsonObject, `
     Read-RestoreManifest, `
+    ConvertFrom-MssqlRestoreManifestByte, `
     Get-PostgresqlAllowedExtensionName, `
     Get-InventorySchemaQuerySql, `
     Get-InventoryObjectQuerySql, `
@@ -3045,9 +3120,7 @@ Export-ModuleMember -Function `
     Get-EffectiveSchemaRowQuerySql, `
     Get-EngineVersionQuerySql, `
     Get-DatabaseCompatibilityLevelQuerySql, `
-    Get-MssqlPhysicalSchemaVersionQuerySql, `
-    Get-MssqlDocumentCacheObjectCheckQuerySql, `
-    Assert-MssqlDocumentCacheObjectCheck, `
+    Get-RestoreDocumentCacheCatalogFact, `
     Get-DocumentJsonColumnTypeQuerySql, `
     ConvertFrom-DocumentJsonColumnTypeRow, `
     Assert-CompleteRestoreArtifactScope, `

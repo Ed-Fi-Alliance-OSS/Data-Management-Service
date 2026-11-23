@@ -742,13 +742,28 @@ Describe "Read-RestoreManifest" {
         { Read-RestoreManifest -DatabaseEngine mssql -Path $fixture -Content $json } | Should -Throw "*duplicate member*"
     }
 
-    It "reads and validates a manifest file round-tripped through JSON" {
+    It "reads a SQL Server manifest with optional UTF-8 BOM (<Encoding>)" -ForEach @(
+        @{ Encoding = "utf8" },
+        @{ Encoding = "utf8BOM" }
+    ) {
         $manifestPath = Join-Path $TestDrive "restore-manifest.json"
-        New-ValidRestoreManifest -DatabaseEngine mssql | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+        New-ValidRestoreManifest -DatabaseEngine mssql | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding $Encoding
 
         $manifest = Read-RestoreManifest -DatabaseEngine mssql -Path $manifestPath
         $manifest.packageId | Should -Be "EdFi.Api.Minimal.Template.MsSql.5.2.0"
         $manifest.templateKind | Should -Be "Minimal"
+    }
+
+    It "rejects non-UTF-8 SQL Server manifest files" {
+        $manifestPath = Join-Path $TestDrive "non-utf8-restore-manifest.json"
+        $json = New-ValidRestoreManifest -DatabaseEngine mssql | ConvertTo-Json -Depth 10
+        Set-Content -LiteralPath $manifestPath -Value $json -Encoding unicode
+        { Read-RestoreManifest -DatabaseEngine mssql -Path $manifestPath } | Should -Throw "*strict UTF-8*"
+
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($json.Replace('"Minimal"', '"M#nimal"'))
+        $bytes[[Array]::IndexOf($bytes, [byte]35)] = 0xFF
+        [System.IO.File]::WriteAllBytes($manifestPath, $bytes)
+        { Read-RestoreManifest -DatabaseEngine mssql -Path $manifestPath } | Should -Throw "*strict UTF-8*"
     }
 
     It "fails with restore-eligibility guidance when the manifest file is absent (legacy package)" {
@@ -1333,17 +1348,17 @@ Describe "ConvertFrom-DocumentJsonColumnTypeRow" {
     }
 
     It "rejects a divergent case-distinct SQL Server carrier even when the native cache sorts last" {
-        { ConvertFrom-DocumentJsonColumnTypeRow -Row @("documentcache|nvarchar(max)|0", "DocumentCache|json|1") } |
+        { ConvertFrom-DocumentJsonColumnTypeRow -DatabaseEngine mssql -Row @("documentcache|nvarchar(max)|0", "DocumentCache|json|1") } |
             Should -Throw "*do not share one physical storage type*documentcache=nvarchar(max)*DocumentCache=json*"
     }
 
     It "requires positive SQL Server cache-table evidence from the catalog" {
-        { ConvertFrom-DocumentJsonColumnTypeRow -Row @("DocumentCache|json|0") } |
+        { ConvertFrom-DocumentJsonColumnTypeRow -DatabaseEngine mssql -Row @("DocumentCache|json|0") } |
             Should -Throw "*dms.DocumentCache.DocumentJson was not found*"
     }
 
     It "checks every SQL Server carrier even when formatted names coincide" {
-        { ConvertFrom-DocumentJsonColumnTypeRow -Row @(" DocumentCache|nvarchar(max)|0", "DocumentCache|json|1") } |
+        { ConvertFrom-DocumentJsonColumnTypeRow -DatabaseEngine mssql -Row @(" DocumentCache|nvarchar(max)|0", "DocumentCache|json|1") } |
             Should -Throw "*do not share one physical storage type*"
     }
 
@@ -1353,20 +1368,20 @@ Describe "ConvertFrom-DocumentJsonColumnTypeRow" {
     }
 
     It "returns the single physical type when dms.DocumentCache is the carrier" {
-        ConvertFrom-DocumentJsonColumnTypeRow -Row @("DocumentCache|jsonb") | Should -Be "jsonb"
-        ConvertFrom-DocumentJsonColumnTypeRow -Row @("", "DocumentCache|NVARCHAR(MAX)") | Should -Be "nvarchar(max)"
+        ConvertFrom-DocumentJsonColumnTypeRow -DatabaseEngine postgresql -Row @("DocumentCache|jsonb") | Should -Be "jsonb"
+        ConvertFrom-DocumentJsonColumnTypeRow -DatabaseEngine postgresql -Row @("", "DocumentCache|NVARCHAR(MAX)") | Should -Be "nvarchar(max)"
     }
 
     It "accepts additional carriers only when every carrier reports the same type" {
-        ConvertFrom-DocumentJsonColumnTypeRow -Row @("Document|jsonb", "DocumentCache|jsonb") | Should -Be "jsonb"
-        { ConvertFrom-DocumentJsonColumnTypeRow -Row @("Document|varchar", "DocumentCache|jsonb") } |
+        ConvertFrom-DocumentJsonColumnTypeRow -DatabaseEngine postgresql -Row @("Document|jsonb", "DocumentCache|jsonb") | Should -Be "jsonb"
+        { ConvertFrom-DocumentJsonColumnTypeRow -DatabaseEngine postgresql -Row @("Document|varchar", "DocumentCache|jsonb") } |
             Should -Throw "*do not share one physical storage type*Document=varchar*DocumentCache=jsonb*"
     }
 
     It "rejects an empty result, a missing DocumentCache carrier, and malformed rows" {
-        { ConvertFrom-DocumentJsonColumnTypeRow -Row @() } | Should -Throw "*No DocumentJson column was found*"
-        { ConvertFrom-DocumentJsonColumnTypeRow -Row @("SomethingElse|jsonb") } | Should -Throw "*dms.DocumentCache.DocumentJson was not found*"
-        { ConvertFrom-DocumentJsonColumnTypeRow -Row @("DocumentCache") } | Should -Throw "*malformed row*"
+        { ConvertFrom-DocumentJsonColumnTypeRow -DatabaseEngine postgresql -Row @() } | Should -Throw "*No DocumentJson column was found*"
+        { ConvertFrom-DocumentJsonColumnTypeRow -DatabaseEngine postgresql -Row @("SomethingElse|jsonb") } | Should -Throw "*dms.DocumentCache.DocumentJson was not found*"
+        { ConvertFrom-DocumentJsonColumnTypeRow -DatabaseEngine postgresql -Row @("DocumentCache") } | Should -Throw "*malformed row*"
     }
 }
 

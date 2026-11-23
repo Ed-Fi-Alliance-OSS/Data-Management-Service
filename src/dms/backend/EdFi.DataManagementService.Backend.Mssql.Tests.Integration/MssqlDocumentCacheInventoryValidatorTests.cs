@@ -67,11 +67,11 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
     [TestCase("DROP TABLE dms.MssqlPhysicalSchema")]
     [TestCase(
         """
-            ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
-            ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
-            ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;
-            ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson, OBJECT) = 1);
-            """
+        ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+        ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
+        ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;
+        ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson, OBJECT) = 1);
+        """
     )]
     public async Task It_rejects_invalid_physical_schema_before_cache_admission(string mutation)
     {
@@ -881,6 +881,15 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
             CHECK (ISJSON([DocumentJson]) = 1);
             """
         ).SetName("It_rejects_sqlserver_documentcache_json_object_check_that_allows_arrays");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+            ALTER TABLE dms.DocumentCache ADD [Document Json] json NULL;
+            ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject
+                CHECK (ISJSON([Document Json], OBJECT) = 1);
+            """
+        ).SetName("It_rejects_the_sqlserver_json_object_check_on_a_lookalike_column");
 
         yield return new TestCaseData(
             """

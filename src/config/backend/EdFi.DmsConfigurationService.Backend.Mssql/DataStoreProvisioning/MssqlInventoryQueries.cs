@@ -192,9 +192,10 @@ internal static class MssqlInventoryQueries
           AND ck.name COLLATE Latin1_General_100_BIN2 = N'CK_DocumentCache_IsJsonObject'
           AND ck.is_disabled = 0 AND ck.is_not_trusted = 0 AND ck.is_not_for_replication = 0
           AND REPLACE(REPLACE(REPLACE(
-                TRANSLATE(ck.definition COLLATE Latin1_General_100_CI_AS, N'()' + NCHAR(9) + NCHAR(10) + NCHAR(13), N'     '),
+                TRANSLATE(REPLACE(ck.definition COLLATE Latin1_General_100_BIN2, N'[DocumentJson]', N'DocumentJson')
+                    COLLATE Latin1_General_100_CI_AS, N'()' + NCHAR(9) + NCHAR(10) + NCHAR(13), N'     '),
                 N'ISJSON', N'ISJSON'), N'OBJECT', N'OBJECT'), N' ', N'')
-                COLLATE Latin1_General_100_BIN2 IN (N'ISJSON[DocumentJson],OBJECT=1', N'ISJSONDocumentJson,OBJECT=1');
+                COLLATE Latin1_General_100_BIN2 = N'ISJSONDocumentJson,OBJECT=1';
         """;
 
     /// <summary>

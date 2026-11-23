@@ -542,6 +542,10 @@ DocumentCache materializer/writer rather than the shaped API response. Snapshot 
 read-replica requests skip direct fill when derivative routing is available because those
 requests remain read-only.
 
+If a document exceeds a SQL Server native JSON storage limit, the cache writer rolls back
+that write and leaves its durable projection work pending. Projection can continue with
+other documents, and API reads for the affected document use the relational source.
+
 ### Create-only guardrails and reruns
 
 Provisioning is still create-only: it does not migrate an older DocumentCache shape,

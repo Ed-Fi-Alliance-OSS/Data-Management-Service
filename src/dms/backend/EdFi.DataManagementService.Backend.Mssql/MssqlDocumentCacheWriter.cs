@@ -31,17 +31,17 @@ internal sealed class MssqlDocumentCacheWriter(
         DocumentCacheLifecycleReaderSupport.GetQuery(SqlDialect.Mssql);
     private static readonly MssqlRelationalWriteExceptionClassifier WriteExceptionClassifier = new();
 
-    private readonly IDocumentCacheWriterRetryAdapter _retryAdapter =
-        retryAdapter ?? throw new ArgumentNullException(nameof(retryAdapter));
-    private readonly ILogger<MssqlDocumentCacheWriter> _logger =
-        logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly IDocumentCacheWriterRetryAdapter _retryAdapter = retryAdapter
+        ?? throw new ArgumentNullException(nameof(retryAdapter));
+    private readonly ILogger<MssqlDocumentCacheWriter> _logger = logger
+        ?? throw new ArgumentNullException(nameof(logger));
     private readonly IDocumentCacheProviderCommandTimeoutClassifier _providerCommandTimeoutClassifier =
         providerCommandTimeoutClassifier
         ?? throw new ArgumentNullException(nameof(providerCommandTimeoutClassifier));
-    private readonly ITransactionFaultInjectionObserver _faultInjectionObserver =
-        faultInjectionObserver ?? NoOpTransactionFaultInjectionObserver.Instance;
-    private readonly IDocumentCacheWriterTelemetry _telemetry =
-        telemetry ?? NoOpDocumentCacheWriterTelemetry.Instance;
+    private readonly ITransactionFaultInjectionObserver _faultInjectionObserver = faultInjectionObserver
+        ?? NoOpTransactionFaultInjectionObserver.Instance;
+    private readonly IDocumentCacheWriterTelemetry _telemetry = telemetry
+        ?? NoOpDocumentCacheWriterTelemetry.Instance;
     private readonly string? _sessionInitializationCommandText = string.IsNullOrWhiteSpace(
         sessionInitializationCommandText
     )
@@ -360,6 +360,18 @@ internal sealed class MssqlDocumentCacheWriter(
                 )
                 .ConfigureAwait(false);
             throw new DocumentCacheWriterRetryableDeleteRaceException();
+        }
+        // Only cache DML in this transaction binds a native JSON value. Leave work pending
+        // on representation limits, including when SQL Server already rolled back the transaction.
+        catch (SqlException exception) when (exception.Number is 13641 or (>= 13644 and <= 13649))
+        {
+            if (!MssqlTransactionStateProbe.Instance.IsAlreadyCompleted(connection, transaction, exception))
+            {
+                await transactionScope.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+
+            telemetryOutcome = DocumentCacheWriterOutcome.NativeJsonLimitExceeded;
+            return DocumentCacheWriterResult.NativeJsonLimitExceeded.Instance;
         }
         catch
         {

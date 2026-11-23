@@ -101,7 +101,7 @@ internal static class DocumentCacheInventoryValidatorSupport
                     inventoryIssues.Add(
                         new InventoryIssue(
                             DocumentCacheInventoryStatus.Invalid,
-                            "Verify the v2 marker is readable and dms.DocumentCache.DocumentJson uses native json, then reprovision any incompatible database.",
+                            "Verify the v2 marker is readable and dms.DocumentCache.DocumentJson uses non-null native json with an enabled and trusted CK_DocumentCache_IsJsonObject. Reprovision any incompatible database.",
                             CacheComponent
                         )
                     );
@@ -500,18 +500,21 @@ internal static class DocumentCacheInventoryValidatorSupport
                 cancellationToken
             )
             .ConfigureAwait(false);
-        await RequireCheckConstraintAsync(
-                connection,
-                dialect,
-                DocumentCacheInventoryDefinition.DocumentCache,
-                dialect == SqlDialect.Pgsql
-                    ? DocumentCacheInventoryDefinition.DocumentCacheConstraints.PgsqlJsonObject
-                    : DocumentCacheInventoryDefinition.DocumentCacheConstraints.MssqlJsonObject,
-                definition => HasExpectedDocumentCacheJsonObjectCheck(dialect, definition),
-                inventoryIssues,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        // MSSQL checks the object constraint as part of the physical baseline observation.
+        if (dialect == SqlDialect.Pgsql)
+        {
+            await RequireCheckConstraintAsync(
+                    connection,
+                    dialect,
+                    DocumentCacheInventoryDefinition.DocumentCache,
+                    DocumentCacheInventoryDefinition.DocumentCacheConstraints.PgsqlJsonObject,
+                    definition =>
+                        NormalizeCheckExpression(definition) == PgsqlDocumentCacheJsonObjectCheckExpression,
+                    inventoryIssues,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
         await RequireForeignKeyAsync(
                 connection,
                 dialect,
@@ -2415,21 +2418,6 @@ internal static class DocumentCacheInventoryValidatorSupport
 
     private static bool HasExpectedSingletonCheck(string definition, string singletonColumn) =>
         NormalizeCheckExpression(definition) == $"{NormalizeCheckToken(singletonColumn)}=1";
-
-    private static bool HasExpectedDocumentCacheJsonObjectCheck(SqlDialect dialect, string definition)
-    {
-        if (dialect == SqlDialect.Pgsql)
-        {
-            return NormalizeCheckExpression(definition) == PgsqlDocumentCacheJsonObjectCheckExpression;
-        }
-
-        // SQL Server adds identifier brackets and parentheses when storing this CHECK.
-        // Preserve operators and literal signs when comparing its catalog definition.
-        string expression = string.Concat(
-            definition.Where(c => !char.IsWhiteSpace(c) && c is not ('(' or ')' or '[' or ']'))
-        );
-        return expression.Equals("ISJSONDocumentJson,OBJECT=1", StringComparison.OrdinalIgnoreCase);
-    }
 
     private static bool HasExpectedDocumentCacheStateLifecycleCheck(SqlDialect dialect, string definition) =>
         NormalizeCheckExpression(definition)

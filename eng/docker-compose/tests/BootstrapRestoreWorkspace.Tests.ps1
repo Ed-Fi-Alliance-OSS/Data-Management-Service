@@ -153,7 +153,7 @@ Add-Content -LiteralPath '$LogPath' -Value "claims override=[`$env:DMS_BOOTSTRAP
     }
 
     function script:New-StubSchemaTool {
-        # A .ps1 api-schema-tools stand-in (Get-RestoreCandidateRelationalMappingVersion runs
+        # A .ps1 api-schema-tools stand-in (Get-RestoreCandidateSchemaVersions runs
         # .ps1 tools via a child pwsh): records its full argv and writes ddl.manifest.json with
         # the configured relational mapping version into the requested --output directory.
         param(
@@ -778,10 +778,10 @@ Describe "package-to-candidate cross-check" {
     It "keeps PostgreSQL candidate validation independent of ddl entry members" {
         $candidateDirectory = New-CandidateFixture -Directory $script:crossCheckRoot
         $tool = New-StubSchemaTool -Directory $script:crossCheckRoot -Ddl '[{"dialect":"pgsql","dialect":"pgsql"}]'
-        $mapping = Get-RestoreCandidateRelationalMappingVersion -DatabaseEngine postgresql `
-            -SchemaFilePath (Join-Path $candidateDirectory "ApiSchema/schemas/Ed-Fi/ApiSchema.json") `
-            -OutputRoot $script:stageDirectory -SchemaToolPath $tool.ToolPath
-        $mapping | Should -BeExactly "v2"
+        $manifest = New-CrossCheckManifest -Override @{ relationalMappingVersion = "v2" }
+        Invoke-RestoreCandidateCrossCheck -Manifest $manifest -CandidateDirectory $candidateDirectory `
+            -DatabaseEngine postgresql -StageDirectory $script:stageDirectory -SchemaToolPath $tool.ToolPath |
+            Should -Not -BeNullOrEmpty
     }
 
     It "refuses duplicate <Case> JSON members in the selected tool before Docker" -ForEach @(
@@ -796,23 +796,6 @@ Describe "package-to-candidate cross-check" {
             Should -Throw "*duplicate*"
         $candidateDirectory | Should -Not -Exist
         $script:stageDirectory | Should -Not -Exist
-    }
-
-    It "keeps the exported mapping version string and provides physical metadata on request" {
-        $candidateDirectory = New-CandidateFixture -Directory $script:crossCheckRoot
-        $tool = New-StubSchemaTool -Directory $script:crossCheckRoot
-        $arguments = @{
-            SchemaFilePath = @(Join-Path $candidateDirectory "ApiSchema/schemas/Ed-Fi/ApiSchema.json")
-            OutputRoot = $script:stageDirectory
-            SchemaToolPath = $tool.ToolPath
-        }
-        $mappingVersion = Get-RestoreCandidateRelationalMappingVersion @arguments -DatabaseEngine postgresql
-        $mappingVersion | Should -BeOfType [string]
-        $mappingVersion | Should -BeExactly "v2"
-
-        $versions = Get-RestoreCandidateRelationalMappingVersion @arguments -DatabaseEngine mssql -IncludePhysicalSchemaVersion
-        $versions.RelationalMappingVersion | Should -BeExactly "v2"
-        $versions.MssqlPhysicalSchemaVersion | Should -BeExactly "v2"
     }
 
     It "uses the mssql dialect for a SQL Server cross-check" {

@@ -96,10 +96,7 @@ public sealed class CdcInitialEnableWorkflow(
                 if (!established && !CdcQualifiedWorkerImage.CanServe(request))
                 {
                     return new CdcTransportResult<CdcWriterPublicationResult>.Unavailable(
-                        new(
-                            CdcDeploymentComponent.Worker,
-                            CdcDeploymentFailure.NativeDocumentCacheWorkerRequired
-                        )
+                        await CdcQualifiedWorkerImage.DiagnoseNativeRefusalAsync(request, Clock, token)
                     );
                 }
 

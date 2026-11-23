@@ -147,6 +147,40 @@ public class Given_A_Mssql_DocumentCacheWriter
             .And.NotBe(await ReadCacheTimestampAsync(source.DocumentId, "ComputedAt"));
     }
 
+    [TestCase(false, false)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    public async Task It_preserves_work_and_cache_when_a_candidate_exceeds_the_native_json_limit(
+        bool hasPreviousCacheRow,
+        bool xactAbort
+    )
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        var source = await InsertSourceDocumentAsync(contentVersion: 10);
+        if (hasPreviousCacheRow)
+        {
+            await InsertCacheRowAsync(source, contentVersion: 9);
+        }
+        var candidate = CreateCandidate(source, "oversized");
+        candidate.DocumentJson["items"] = new JsonArray(
+            Enumerable.Range(0, 65_536).Select(i => (JsonNode?)JsonValue.Create(i)).ToArray()
+        );
+        if (xactAbort)
+        {
+            _writer = CreateWriter(sessionInitializationCommandText: "SET XACT_ABORT ON");
+        }
+
+        var result = await WriteAsync(source, candidate);
+
+        result.Should().BeOfType<DocumentCacheWriterResult.NativeJsonLimitExceeded>();
+        (await ReadWorkRequiredContentVersionAsync(source.DocumentId)).Should().Be(10);
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(hasPreviousCacheRow ? 1 : 0);
+        if (hasPreviousCacheRow)
+        {
+            (await ReadCacheRowAsync(source.DocumentId)).ContentVersion.Should().Be(9);
+        }
+    }
+
     [TestCase("[1,2]", 547)]
     [TestCase("42", 13609)]
     [TestCase("{bad", 13609)]

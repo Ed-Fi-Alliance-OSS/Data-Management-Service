@@ -70,7 +70,7 @@ function ConvertTo-CdcRunbookStatusDiagnostic {
     }
     if ($Value['ControllerFailureCodes'] -is [array]) {
         $safe.ControllerFailureCodes = @($Value.ControllerFailureCodes | Where-Object {
-            $_ -is [string] -and $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed|NativeDocumentCacheWorkerRequired)\z'
+            $_ -is [string] -and $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed|NativeDocumentCacheWorkerRequired|IncompatibleDocumentCachePhysicalSchema)\z'
         } | Select-Object -Unique -First 16)
     }
     return $safe
@@ -129,7 +129,7 @@ function ConvertTo-CdcRunbookDiagnostic {
     if ($Value['ControllerExitCode'] -is [int] -or $Value['ControllerExitCode'] -is [long]) { $safe.ControllerExitCode = $Value.ControllerExitCode }
     if ($Value['ControllerFailureCodes'] -is [array]) {
         $codes = @($Value.ControllerFailureCodes | Where-Object {
-            $_ -is [string] -and $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed|NativeDocumentCacheWorkerRequired)\z'
+                $_ -is [string] -and $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed|NativeDocumentCacheWorkerRequired|IncompatibleDocumentCachePhysicalSchema)\z'
         } | Select-Object -Unique -First 16)
         if ($codes.Count -gt 0) { $safe.ControllerFailureCodes = $codes }
     }

@@ -22,6 +22,7 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
     [Test]
     public async Task It_rejects_a_worker_without_native_document_cache_qualification_before_registration()
     {
+        var jsonType = Provider == Ddl.CdcProvider.SqlServer ? "json" : "jsonb";
         var sources = CdcConnectorTemplateTestData
             .BuildRequiredSourceTableInventory(Provider)
             .Select(table =>
@@ -32,23 +33,25 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
                         table.EmittedQuotedTableName,
                         [
                             .. table.Columns,
-                            CdcConnectorTemplateTestData.BuildColumn(
-                                Provider,
-                                "DocumentJson",
-                                2,
-                                Provider == Ddl.CdcProvider.SqlServer ? "json" : "jsonb"
-                            ),
+                            CdcConnectorTemplateTestData.BuildColumn(Provider, "DocumentJson", 2, jsonType),
                         ]
                     )
                     : table
             )
             .ToArray();
+        var executor = A.Fake<Ddl.ICdcProviderDatabaseExecutor>();
+        IReadOnlyList<IReadOnlyDictionary<string, string?>> rows =
+        [
+            new Dictionary<string, string?> { ["physical_schema_version"] = "v2" },
+        ];
+        A.CallTo(() => executor.QueryAsync(A<string>._, A<CancellationToken>._)).Returns(rows);
         _request = CdcDeploymentRequestTestData.Request(
             Provider,
             worker: Provider == Ddl.CdcProvider.SqlServer
                 ? CdcDeploymentRequestTestData.Worker()
                 : _request.WorkerPolicy,
-            sourceInventory: sources
+            sourceInventory: sources,
+            databaseExecutor: executor
         );
 
         _trace.Clear();
@@ -58,6 +61,7 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
         if (Provider == Ddl.CdcProvider.Postgresql)
         {
             result.State.Should().Be(CdcTransportEvidenceState.Observed);
+            A.CallTo(() => executor.QueryAsync(A<string>._, A<CancellationToken>._)).MustNotHaveHappened();
             _posts.Should().Be(1);
             return;
         }
@@ -69,6 +73,8 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
             .Which.Failure.Should()
             .Be(CdcDeploymentFailure.NativeDocumentCacheWorkerRequired);
         result.Diagnostics[0].Message.Should().Contain("worker qualified for native DocumentJson");
+        A.CallTo(() => executor.QueryAsync(A<string>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
         _trace.Should().BeEmpty();
         _posts.Should().Be(0);
         ReadJournal().Operations.Should().NotContain(o => o.Effect == CdcWorkflowEffect.RegisterConnector);

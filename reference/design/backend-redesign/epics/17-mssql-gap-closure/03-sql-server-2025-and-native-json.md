@@ -86,6 +86,11 @@ The release-status gate below was executed on 2026-07-22 and the decision is def
 
 ### DMS-1328 adoption scope
 
+As of 2026-11-23, Microsoft lists the native `json` type as generally available in
+SQL Server 2025 (17.x). The [CU11 release notes](https://support.microsoft.com/en-us/servicing/sql/sql-server-2025/cumulative-update/kb5129223-cu11)
+list JSON fixes. The [feature availability statement](https://learn.microsoft.com/en-us/sql/t-sql/data-types/json-data-type?view=sql-server-ver17#feature-availability)
+defines the engine eligibility. Record the actual SQL Server build and SqlClient version with release qualification.
+
 [`DMS-1328`](https://edfi.atlassian.net/browse/DMS-1328) adopts native `json` for SQL Server
 `dms.DocumentCache.DocumentJson` in the `v2` physical baseline. The provider's generic
 `JsonColumnType` stays `nvarchar(max)` on SQL Server, including for

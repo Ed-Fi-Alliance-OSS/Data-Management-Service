@@ -149,6 +149,7 @@ SELECT "DocumentId", "ResourceKeyId", 'uri://template', 'school', 'School' FROM 
             @{ Name = 'disabled'; Sql = 'ALTER TABLE dms.DocumentCache NOCHECK CONSTRAINT CK_DocumentCache_IsJsonObject;' }
             @{ Name = 'untrusted'; Sql = 'ALTER TABLE dms.DocumentCache NOCHECK CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache CHECK CONSTRAINT CK_DocumentCache_IsJsonObject;' }
             @{ Name = 'weaker'; Sql = 'ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson]) = 1);' }
+            @{ Name = 'lookalike'; Sql = 'ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache ADD [Document Json] json NULL; ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([Document Json], OBJECT) = 1);' }
         ) {
             $healthyFacts = Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $source -MssqlPassword $password
             Invoke-TestSql $source $Sql | Out-Null
@@ -161,6 +162,9 @@ SELECT "DocumentId", "ResourceKeyId", 'uri://template', 'school', 'School' FROM 
             }
             finally {
                 Invoke-TestSql $source 'ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson], OBJECT) = 1);' | Out-Null
+                if ($Name -eq 'lookalike') {
+                    Invoke-TestSql $source 'ALTER TABLE dms.DocumentCache DROP COLUMN [Document Json];' | Out-Null
+                }
             }
             { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory $invalidPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } |
                 Should -Throw "*CK_DocumentCache_IsJsonObject*enabled and trusted*"
