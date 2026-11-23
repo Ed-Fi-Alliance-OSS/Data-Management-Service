@@ -626,7 +626,7 @@ public class Given_A_Sizing_Run
 [TestFixture]
 public class Given_Detection_And_Repeatability_Eligibility
 {
-    private static ComparisonBuilder Eligible(
+    internal static ComparisonBuilder Eligible(
         string purpose,
         IReadOnlyDictionary<string, decimal>? injection = null,
         int pairs = 5,

@@ -253,8 +253,8 @@ public sealed record PerfBenchmarkPairStatistics(
     double CandidateMeanMs,
     string BaselineCommandCounts,
     string CandidateCommandCounts,
-    double? BaselineDriverExecuteP50Ms,
-    double? CandidateDriverExecuteP50Ms
+    double? BaselineDriverExecuteP50Ms = null,
+    double? CandidateDriverExecuteP50Ms = null
 );
 
 /// <summary>
@@ -930,7 +930,10 @@ public static class PerfBenchmarkComparison
         if (available.Length > 0 && available.Min() < rules.MinHostAvailableMemoryMb)
         {
             invalid.Add(
-                $"{at}: rule: host available memory fell to {available.Min()} MB (minimum {rules.MinHostAvailableMemoryMb})."
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{at}: rule: host available memory fell to {available.Min()} MB (minimum {rules.MinHostAvailableMemoryMb})."
+                )
             );
         }
 
@@ -938,7 +941,10 @@ public static class PerfBenchmarkComparison
         if (databaseMemory.Length > 0 && databaseMemory.Max() > (double)rules.MaxDatabaseMemoryPercentOfLimit)
         {
             invalid.Add(
-                $"{at}: rule: database memory reached {databaseMemory.Max()}% of its limit (maximum {rules.MaxDatabaseMemoryPercentOfLimit}%)."
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{at}: rule: database memory reached {databaseMemory.Max()}% of its limit (maximum {rules.MaxDatabaseMemoryPercentOfLimit}%)."
+                )
             );
         }
 
@@ -957,7 +963,12 @@ public static class PerfBenchmarkComparison
         double[] idle = [.. Values(samples, metric, PerfBenchmarkMetrics.IdlePhase)];
         if (idle.Length > 0 && idle.Average() > (double)maximum)
         {
-            invalid.Add($"{at}: rule: idle {metric} averaged {idle.Average():0.##}% (maximum {maximum}%).");
+            invalid.Add(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{at}: rule: idle {metric} averaged {idle.Average():0.##}% (maximum {maximum}%)."
+                )
+            );
         }
     }
 
@@ -992,8 +1003,10 @@ public static class PerfBenchmarkComparison
                 if (observed < expected * (double)rules.MinCompletenessPercent / 100)
                 {
                     invalid.Add(
-                        $"{at}: rule: incomplete samples for {metric} in the {phase} phase: {observed} of {expected:0.#} "
-                            + $"expected (minimum {rules.MinCompletenessPercent}%)."
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"{at}: rule: incomplete samples for {metric} in the {phase} phase: {observed} of {expected:0.#} expected (minimum {rules.MinCompletenessPercent}%)."
+                        )
                     );
                 }
             }
@@ -1045,8 +1058,10 @@ public static class PerfBenchmarkComparison
                 if (!startBracket || !endBracket || gap)
                 {
                     invalid.Add(
-                        $"{at}: rule: measured window of {scenario} is not covered by {metric} samples "
-                            + $"(start bracket {startBracket}, end bracket {endBracket}, gap over {interval.TotalSeconds * 2} s {gap})."
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"{at}: rule: measured window of {scenario} is not covered by {metric} samples (start bracket {startBracket}, end bracket {endBracket}, gap over {interval.TotalSeconds * 2} s {gap})."
+                        )
                     );
                 }
             }
@@ -1215,14 +1230,23 @@ public static class PerfBenchmarkComparison
             bool flagged = medianP50 - 1 > threshold;
             bool p95Flagged = profile.Comparison.P95WarningsEnabled && medianP95 - 1 > threshold;
             bool suspected = flagged || p95Flagged;
-            string reason = $"median p50 ratio {medianP50:0.####} is within 1 + {threshold:0.##}";
+            string reason = string.Create(
+                CultureInfo.InvariantCulture,
+                $"median p50 ratio {medianP50:0.####} is within 1 + {threshold:0.##}"
+            );
             if (flagged)
             {
-                reason = $"median p50 ratio {medianP50:0.####} exceeds 1 + {threshold:0.##}";
+                reason = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"median p50 ratio {medianP50:0.####} exceeds 1 + {threshold:0.##}"
+                );
             }
             else if (p95Flagged)
             {
-                reason = $"median p95 ratio {medianP95:0.####} exceeds 1 + {threshold:0.##}";
+                reason = string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"median p95 ratio {medianP95:0.####} exceeds 1 + {threshold:0.##}"
+                );
             }
             scenarios.Add(
                 new PerfBenchmarkScenarioComparison(
@@ -1444,7 +1468,10 @@ public static class PerfBenchmarkComparison
                 {
                     0 => "the observed increase is zero",
                     < 0 => "the observed increase is negative",
-                    _ => $"the observed increase is below {MinimumSizingIncrease:0.##}",
+                    _ => string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"the observed increase is below {MinimumSizingIncrease:0.##}"
+                    ),
                 };
                 sizing.Add(
                     new PerfBenchmarkSizing(
@@ -1475,7 +1502,10 @@ public static class PerfBenchmarkComparison
                         PerfBenchmarkSizing.Inconclusive,
                         null,
                         input,
-                        $"the suggested factor {suggested} is outside (0, {PerfBenchmarkProfileLoader.MaximumInjectionFactor}]"
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"the suggested factor {suggested} is outside (0, {PerfBenchmarkProfileLoader.MaximumInjectionFactor}]"
+                        )
                     )
                 );
                 continue;
