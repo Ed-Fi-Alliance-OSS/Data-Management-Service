@@ -559,11 +559,43 @@ public class EducationOrganizationSnapshotReadTests
                 new TenantContextProvider { Context = new TenantContext.Multitenant(tenant, "gated") }
             ).DeleteDataStore(id);
             await WaitUntilBlockedAsync(applicationName, deleting);
+            (await BlockersOfAsync(applicationName))
+                .Should()
+                .Equal(
+                    new[] { first.ProcessID, second.ProcessID }.Order(),
+                    "the writer waits for the gate both readers share"
+                );
+
             await firstHold.RollbackAsync();
-            deleting.IsCompleted.Should().BeFalse("the other shared holder still holds off the writer");
+            (await BlockersOfAsync(applicationName))
+                .Should()
+                .Equal([second.ProcessID], "the other shared holder still holds off the writer");
+            deleting.IsCompleted.Should().BeFalse("the writer is still waiting for the gate");
             await secondHold.RollbackAsync();
 
             (await deleting).Should().BeOfType<DataStoreDeleteResult.Success>();
+        }
+
+        /// <summary>
+        /// The backends blocking the waiting session named <paramref name="applicationName"/>, in ascending order,
+        /// read from the lock manager rather than inferred from elapsed time.
+        /// </summary>
+        private async Task<int[]> BlockersOfAsync(string applicationName)
+        {
+            await using NpgsqlConnection observer = await DataSource!.OpenConnectionAsync();
+            return
+            [
+                .. await observer.QueryAsync<int>(
+                    """
+                    SELECT blocker
+                    FROM pg_stat_activity AS a
+                    CROSS JOIN LATERAL unnest(pg_blocking_pids(a.pid)) AS blocker
+                    WHERE a.application_name = @ApplicationName AND a.wait_event_type = 'Lock'
+                    ORDER BY blocker;
+                    """,
+                    new { ApplicationName = applicationName }
+                ),
+            ];
         }
     }
 }

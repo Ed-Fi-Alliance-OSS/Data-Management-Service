@@ -649,23 +649,72 @@ public class EducationOrganizationSnapshotReadTests
             int id = await InsertDataStoreAsync(900000002, "Gated store", tenant);
             await using SqlConnection first = await OpenConnectionAsync();
             await using SqlTransaction firstHold = (SqlTransaction)await first.BeginTransactionAsync();
+            short firstSession = await SessionIdAsync(first, firstHold);
             await DataStoreCatalog.AcquireSharedTenantGateAsync(firstHold, tenant, CancellationToken.None);
             await using SqlConnection second = await OpenConnectionAsync();
             await using SqlTransaction secondHold = (SqlTransaction)await second.BeginTransactionAsync();
+            short secondSession = await SessionIdAsync(second, secondHold);
 
             await DataStoreCatalog
                 .AcquireSharedTenantGateAsync(secondHold, tenant, CancellationToken.None)
                 .WaitAsync(TimeSpan.FromSeconds(4));
 
-            Task<DataStoreDeleteResult> deleting = DataStores(new TenantContext.Multitenant(tenant, "gated"))
+            string applicationName = NewApplicationName();
+            Task<DataStoreDeleteResult> deleting = DataStores(
+                    new TenantContext.Multitenant(tenant, "gated"),
+                    NamedOptions(applicationName)
+                )
                 .DeleteDataStore(id);
-            await WaitUntilGateWaiterAsync(deleting);
+            await WaitUntilBlockedAsync(applicationName, deleting);
+            (await HoldersOfAwaitedGateAsync(applicationName))
+                .Should()
+                .Equal(
+                    new[] { firstSession, secondSession }.Order(),
+                    "the writer waits for the gate both readers share"
+                );
+
             await firstHold.RollbackAsync();
-            await Task.Delay(TimeSpan.FromMilliseconds(200));
-            deleting.IsCompleted.Should().BeFalse("the other shared holder still holds off the writer");
+            (await HoldersOfAwaitedGateAsync(applicationName))
+                .Should()
+                .Equal([secondSession], "the other shared holder still holds off the writer");
+            deleting.IsCompleted.Should().BeFalse("the writer is still waiting for the gate");
             await secondHold.RollbackAsync();
 
             (await deleting).Should().BeOfType<DataStoreDeleteResult.Success>();
+        }
+
+        private static Task<short> SessionIdAsync(SqlConnection connection, SqlTransaction transaction) =>
+            connection.ExecuteScalarAsync<short>(
+                "SELECT CAST(@@SPID AS smallint);",
+                transaction: transaction
+            );
+
+        /// <summary>
+        /// The sessions granted the application lock that the session named <paramref name="applicationName"/>
+        /// waits for, in ascending order, read from the lock table rather than inferred from elapsed time.
+        /// </summary>
+        private static async Task<short[]> HoldersOfAwaitedGateAsync(string applicationName)
+        {
+            await using SqlConnection observer = await OpenConnectionAsync();
+            return
+            [
+                .. await observer.QueryAsync<short>(
+                    """
+                    SELECT CAST(holder.request_session_id AS smallint)
+                    FROM sys.dm_tran_locks AS waiter
+                    INNER JOIN sys.dm_exec_sessions AS session ON session.session_id = waiter.request_session_id
+                    INNER JOIN sys.dm_tran_locks AS holder
+                        ON holder.resource_type = waiter.resource_type
+                        AND holder.resource_database_id = waiter.resource_database_id
+                        AND holder.resource_description = waiter.resource_description
+                        AND holder.request_status = N'GRANT'
+                    WHERE session.program_name = @ApplicationName
+                      AND waiter.resource_type = N'APPLICATION' AND waiter.request_status = N'WAIT'
+                    ORDER BY holder.request_session_id;
+                    """,
+                    new { ApplicationName = applicationName }
+                ),
+            ];
         }
 
         [Test]
