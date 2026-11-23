@@ -2479,7 +2479,6 @@ function New-InstanceE2ECmsReadOnlyConnectionString {
     $login = "edorg_refresh_e2e_reader"
     $password = "E2e!" + [guid]::NewGuid().ToString("N")
     $container = if ($databaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
-    $containerPort = if ($databaseEngine -eq "mssql") { "1433" } else { "5432" }
 
     # The SQL travels on standard input, so the password never appears in a process argument list.
     if ($databaseEngine -eq "mssql") {
@@ -2514,17 +2513,36 @@ GRANT SELECT ON dmscs."Tenant", dmscs."JobSchedule", dmscs."Job" TO $login;
         throw "Creating the read-only Configuration Service database login failed (exit code $LASTEXITCODE)."
     }
 
-    # The published host address of the database port, for example 127.0.0.1:5435.
-    $published = @(docker port $container $containerPort) | Where-Object { $_ -match '^127\.0\.0\.1:\d+$' } | Select-Object -First 1
-    if (-not $published) {
-        throw "Container '$container' publishes no 127.0.0.1 address for port $containerPort."
-    }
-    $hostPort = ($published -split ':')[-1]
+    $hostPort = Get-InstanceE2EDatabaseHostPort -DatabaseEngine $databaseEngine
 
     if ($databaseEngine -eq "mssql") {
         return "Server=127.0.0.1,$hostPort;Database=$database;User Id=$login;Password=$password;TrustServerCertificate=true;"
     }
     return "Host=127.0.0.1;Port=$hostPort;Database=$database;Username=$login;Password=$password;"
+}
+
+function Get-InstanceE2EDatabaseHostPort {
+    <#
+    .SYNOPSIS
+        Returns the host port the Instance E2E database server is published on at 127.0.0.1, for example 5435. The
+        registered connection strings name the server as the Docker network reaches it; a test process on the host
+        reaches it through this port.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]
+        $DatabaseEngine
+    )
+
+    $container = if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
+    $containerPort = if ($DatabaseEngine -eq "mssql") { "1433" } else { "5432" }
+    $published = @(docker port $container $containerPort) | Where-Object { $_ -match '^127\.0\.0\.1:\d+$' } | Select-Object -First 1
+    if (-not $published) {
+        throw "Container '$container' publishes no 127.0.0.1 address for port $containerPort."
+    }
+
+    return [int](($published -split ':')[-1])
 }
 
 function Invoke-WithInstanceE2ETestProcessContext {
@@ -2590,6 +2608,9 @@ function Invoke-WithInstanceE2ETestProcessContext {
         # tenant, schedule and job tables, which the scheduled-refresh test inspects. Secret-bearing.
         "INSTANCE_E2E_EDORG_REFRESH_INTERVAL_MINUTES"  = [string]$Fixture.EducationOrganizationRefreshIntervalMinutes
         "INSTANCE_E2E_CMS_READONLY_CONNECTION_STRING"  = [string]$Fixture.CmsReadOnlyConnectionString
+        # The host port of the route databases' server, where the live refresh tests create scratch Configuration
+        # Service databases with the route credentials.
+        "INSTANCE_E2E_DATABASE_HOST_PORT"              = [string]$Fixture.DatabaseHostPort
     }
 
     # Capture existence independently from value (PowerShell retains empty/whitespace variables) so the
@@ -2751,7 +2772,7 @@ function RunDmsProjectionReaderE2E {
         Assert-DmsProjectionReaderKeycloakTrxResults -TrxFile $trxFile
     }
     else {
-        Assert-DmsProjectionReaderTrxResults -TrxFile $trxFile -MinimumLiveTests 37
+        Assert-DmsProjectionReaderTrxResults -TrxFile $trxFile -MinimumLiveTests 54
     }
 }
 
@@ -2981,6 +3002,7 @@ function InstanceE2ETests {
         -ConfigServiceConnectionString $operationalConfigService.Environment["DatabaseSettings__DatabaseConnection"]
     $instanceFixture | Add-Member -NotePropertyName EducationOrganizationRefreshIntervalMinutes -NotePropertyValue $operationalConfigService.RefreshIntervalMinutes
     $instanceFixture | Add-Member -NotePropertyName CmsReadOnlyConnectionString -NotePropertyValue $cmsReadOnlyConnectionString
+    $instanceFixture | Add-Member -NotePropertyName DatabaseHostPort -NotePropertyValue (Get-InstanceE2EDatabaseHostPort -DatabaseEngine $instanceSettings.DatabaseEngine)
 
     # Restart DMS exactly once AFTER registration so it picks up the registered route contexts, then
     # wait for DMS health (Restart-DmsContainer polls /health). There is no pre-registration or

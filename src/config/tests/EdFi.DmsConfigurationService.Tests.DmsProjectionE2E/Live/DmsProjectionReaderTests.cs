@@ -114,17 +114,19 @@ public static class DmsProjectionReaderTests
             Success.ContractVersion.Should().Be("educationOrganizationProjection.v1");
 
         [Test]
-        public void It_reads_discovery_once_then_one_token_then_one_walk() =>
-            Host
-                .Plan.Requests.Should()
+        public void It_reads_discovery_once_then_one_token_then_one_walk()
+        {
+            int seeded = Fixture.Environment.Route(ProjectionE2EFixture.SeededQualifier).DataStoreId;
+            Host.Plan.Requests.Should()
                 .Equal(
                     new RecordedRequest(RequestKind.Discovery, 0, 0),
                     new RecordedRequest(RequestKind.Token, 0, 0),
-                    new RecordedRequest(RequestKind.Page, 1, 1),
-                    new RecordedRequest(RequestKind.Page, 1, 2),
-                    new RecordedRequest(RequestKind.Page, 1, 3),
-                    new RecordedRequest(RequestKind.Page, 1, 4)
+                    new RecordedRequest(RequestKind.Page, 1, 1, seeded),
+                    new RecordedRequest(RequestKind.Page, 1, 2, seeded),
+                    new RecordedRequest(RequestKind.Page, 1, 3, seeded),
+                    new RecordedRequest(RequestKind.Page, 1, 4, seeded)
                 );
+        }
     }
 
     [TestFixture]

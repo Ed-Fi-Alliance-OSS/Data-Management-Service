@@ -1048,6 +1048,14 @@ There is no standalone 3.3 or 5.3 checkpoint. Checkpoint 2 is approved before ch
 - Validation: the projection shard of `build-dms.ps1 InstanceE2ETest` on PG, and on MS where supported. An engine not run is reported as a limitation.
 - Done when: all 6 cases pass on PG; MS status reported.
 - Risks: environment permissions; run time.
+- As implemented:
+  - **Server address.** The route connection string names the server as the Docker network reaches it, so `build-dms.ps1` also exports `INSTANCE_E2E_DATABASE_HOST_PORT`, the server's published port at `127.0.0.1`. `ScratchCmsDatabase` points the route credentials there.
+  - **Seeding.** Data stores carry the fixture identifiers and contexts. Tenants get new identifiers: DMS knows a tenant by name, and no tenant identifier reaches it.
+  - **One database per case.** Each of the six fixtures creates, deploys and seeds its own database; all are dropped through `CleanupRegistry` when the run ends.
+  - **Own credential.** The cases use a projection claim set and application of their own, created once per run, and read DMS's projection of `255901/2024` once per run for comparison. With the reader fixtures' credential, the run exceeded the Configuration Service's limit of active tokens per client (`BearerTokenPerClientLimit`, 15 in this environment), and the comparison read failed with `429` at the token stage.
+  - **Prior snapshots.** Cases 2 and 3 publish `255901/2025` with a real refresh-one before the faulted refresh, and so get case 1's snapshot. Case 4 cannot reach DMS, so it plants both snapshots directly; case 2 plants `255901/2024` directly.
+  - **Host.** `RefreshHost` registers the provider's job, lease, fence and snapshot repositories, `AddEducationOrganizationRefresh` with the production reader and the fault handler, `JobExecutor` and `JobWorkerService` (`PollInterval` 1 s, scheduler and retention off), and reads statuses through `IJobRepository.GetJobStatus` under the tenant's context.
+  - **Result guard.** The minimum live result count is 54: 37 plus the 17 tests of the six cases.
 
 **5.5 CMS E2E (deployed stack, both IdP modes; bootstrap, no DMS)**
 - Files: `CFG/tests/EdFi.DmsConfigurationService.Tests.E2E/Features/EducationOrganizations.feature` and its steps.

@@ -196,6 +196,30 @@ The fixture runs before the reader fixtures (NUnit `[Order(1)]`). Those fixtures
 fixture refuses to start when the tenant holds any data store besides the fixture's two routes, and restores the
 school's name in its `OneTimeTearDown`.
 
+`Live/EducationOrganizationRefreshLiveTests.cs` runs refresh jobs through a real Configuration Service job worker
+against this DMS (`Live/RefreshHost.cs`): the provider's job, lease, fence and snapshot repositories,
+`AddEducationOrganizationRefresh` with the production reader and the fault handler, and `JobWorkerService` polling
+every second. Each case gets its own Configuration Service database, `dmscs_refresh_e2e_<run>`, created on the route
+databases' server with the route credentials, deployed by the production `DatabaseDeploy`, and seeded with the
+fixture's tenants, its data stores under the identifiers DMS knows, and their contexts. Missing permission to create
+it fails the case. Each case reads the job's terminal status through the job repository, as `GET /v3/jobs/{jobId}`
+does, and the data stores' active snapshots:
+
+1. **Pagination.** A refresh of every data store of `Tenant_255901`, two items a page: `Completed`; `255901/2025` holds
+   exactly the seven seeded organizations, read in one walk of four pages, and `255901/2024` holds what DMS serves.
+2. **Mixed failure.** After a refresh publishes `255901/2025`, and with a planted snapshot in `255901/2024`, a
+   refresh of every data store gets `problem-target-schema-incompatible` on page 3 of `255901/2025`: `Error` with the
+   `EdOrgRefreshIncomplete` text listing `EdOrgProjectionTargetSchemaIncompatible`; `255901/2024` is replaced and
+   `255901/2025` keeps its previous snapshot.
+3. **Timeout.** With a one-second page timeout and one attempt, page 2 of `255901/2025` stalls until it is cancelled:
+   `Error` with `EdOrgRefreshTemporarilyUnavailable`; the previous snapshot is kept.
+4. **Unreachable DMS.** An unused local port and one attempt: `Error` with the composite listing only
+   `EdOrgRefreshTemporarilyUnavailable`; both planted snapshots are kept, and no page is requested.
+5. **Data store DMS does not have.** A data store with `255901/2025`'s contexts under an identifier the deployed
+   Configuration Service does not have: `Error` with the `EdOrgProjectionTargetNotFound` message, and no snapshot.
+6. **Retry.** Two attempts one second apart, with a transient failure on the first only: `Completed`, both data
+   stores published, and every data store read again on the second attempt.
+
 **When it runs.** On a full run (no `-TestFilter`), and on a run whose filter names
 `instance-management-ci-shard-1` under `Category` or `TestCategory`, as a whole word (so
 `instance-management-ci-shard-10` does not match). Each engine's CI lane therefore runs it once, with
@@ -219,7 +243,7 @@ project, and fails if any other function omits the flags.
 when:
 
 1. the file is missing or has no counters;
-2. fewer than **37** results are from live tests, or any live result is not `Passed` (failed,
+2. fewer than **54** results are from live tests, or any live result is not `Passed` (failed,
    skipped or not run). Live tests are the classes in the
    `EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Live` namespace, the Instance-stack tests
    that reach DMS; each result is mapped to its class through the TRX test definitions;
@@ -229,7 +253,7 @@ when:
 
 The project also holds harness tests (the `Harness` namespace) that need no stack, so the live
 results are counted on their own: a run that discovered or selected no live test cannot pass on
-harness tests alone, and the overall check still rejects a failed harness test. The minimum of 37
+harness tests alone, and the overall check still rejects a failed harness test. The minimum of 54
 equals the project's live test count, so a run that loses a live case fails; it counts results and
 does not name them, so it does not prove that a particular case ran.
 
@@ -259,7 +283,9 @@ The project also reads `INSTANCE_E2E_DATABASE_ENGINE`, `INSTANCE_E2E_DATABASE_2_
 `_VENDOR_ID`. A missing or malformed input fails every live test with
 `DMS projection reader E2E setup failed: ...`; no test is skipped. The scheduled-refresh fixture also reads
 `INSTANCE_E2E_EDORG_REFRESH_INTERVAL_MINUTES` and `INSTANCE_E2E_CMS_READONLY_CONNECTION_STRING` (the read-only
-login); without them it fails with `Operational refresh E2E setup failed: ...`.
+login); without them it fails with `Operational refresh E2E setup failed: ...`. The live refresh cases also read
+`INSTANCE_E2E_DATABASE_HOST_PORT`, the port the route databases' server is published on at `127.0.0.1`, and
+`INSTANCE_E2E_DATABASE_2_CONNECTION_STRING` for its credentials.
 
 **What it creates.** Per tenant: a claim set granting only `Read` on the projection claim, exported
 back to confirm the grant, and an application with no data stores or education organizations. In
@@ -269,7 +295,10 @@ without a `schoolYear` context. Each record is registered for cleanup as soon as
 before any later request or check, and everything is deleted newest first in `OneTimeTearDown`; a
 failed deletion fails the run, reported apart from any setup failure. The scheduled-refresh fixture
 changes one seeded school's name and writes the seeded name back before the reader fixtures run. The
-harness tests run without a stack:
+live refresh cases create six `dmscs_refresh_e2e_<run>` databases, and a projection claim set and
+application of their own in `Tenant_255901`, all registered for cleanup like the rest. The cases need their
+own credential because the Configuration Service limits each client's active tokens (`429` at the token
+stage beyond it), and every reader host takes one. The harness tests run without a stack:
 
 ```powershell
 dotnet test src/config/tests/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E --filter "FullyQualifiedName~.Harness."

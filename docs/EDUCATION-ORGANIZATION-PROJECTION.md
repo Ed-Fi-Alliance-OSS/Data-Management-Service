@@ -883,7 +883,9 @@ A grant beyond the limit is `429`, which the reader treats as transient
 
 The reader is a library in the Configuration Service backend
 (`AddDmsEducationOrganizationProjectionReader`) for the background jobs that use
-it; see [Configuration Service Background Jobs](./CONFIGURATION-SERVICE-BACKGROUND-JOBS.md). It
+it; see [Configuration Service Background Jobs](./CONFIGURATION-SERVICE-BACKGROUND-JOBS.md). The
+education organization refresh job is its consumer; see
+[Education Organization Refresh](./CMS-EDUCATION-ORGANIZATION-REFRESH.md). It
 talks to DMS over HTTP only: it opens no DMS database connection, and the
 backend references no DMS assembly and no database provider. Its settings are
 in

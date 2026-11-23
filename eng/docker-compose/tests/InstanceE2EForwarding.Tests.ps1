@@ -427,6 +427,7 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
             ConfigAdminClientSecret = "admin-secret"
             EducationOrganizationRefreshIntervalMinutes = 1
             CmsReadOnlyConnectionString = "Host=127.0.0.1;Port=5435;Database=cms;Username=reader;Password=readonly-secret;"
+            DatabaseHostPort = 5435
             Routes         = @(
                 [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2024"; DatabaseOrdinal = 1; DatabaseName = "db1"; DataStoreId = 201; DistrictContextId = 401; SchoolYearContextId = 402 },
                 [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2025"; DatabaseOrdinal = 2; DatabaseName = "db2"; DataStoreId = 202; DistrictContextId = 403; SchoolYearContextId = 404 },
@@ -445,7 +446,8 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
             "INSTANCE_E2E_FIXTURE_TENANT_2_CLIENT_KEY", "INSTANCE_E2E_FIXTURE_TENANT_2_CLIENT_SECRET",
             "INSTANCE_E2E_FIXTURE_DATASTORE_IDS", "INSTANCE_E2E_DMS_BASE_URL", "INSTANCE_E2E_CONFIG_SERVICE_URL",
             "INSTANCE_E2E_CONFIG_ADMIN_CLIENT_ID", "INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET",
-            "INSTANCE_E2E_EDORG_REFRESH_INTERVAL_MINUTES", "INSTANCE_E2E_CMS_READONLY_CONNECTION_STRING"
+            "INSTANCE_E2E_EDORG_REFRESH_INTERVAL_MINUTES", "INSTANCE_E2E_CMS_READONLY_CONNECTION_STRING",
+            "INSTANCE_E2E_DATABASE_HOST_PORT"
         )
     }
 
@@ -488,16 +490,17 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
         (Test-Path Env:INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET) | Should -BeFalse
     }
 
-    It "sets the operational refresh interval and the read-only Configuration Service connection, then removes them (DMS-1441)" {
+    It "sets the operational refresh interval, the read-only Configuration Service connection and the database host port, then removes them (DMS-1441)" {
         $script:observedOperationalInputs = $null
         Invoke-WithInstanceE2ETestProcessContext -InstanceE2ESettings $script:settings -Fixture $script:fixture -Action {
             $script:observedOperationalInputs = @(
                 $env:INSTANCE_E2E_EDORG_REFRESH_INTERVAL_MINUTES
                 $env:INSTANCE_E2E_CMS_READONLY_CONNECTION_STRING
+                $env:INSTANCE_E2E_DATABASE_HOST_PORT
             )
         }
 
-        $script:observedOperationalInputs | Should -Be @("1", $script:fixture.CmsReadOnlyConnectionString)
+        $script:observedOperationalInputs | Should -Be @("1", $script:fixture.CmsReadOnlyConnectionString, "5435")
         (Test-Path Env:INSTANCE_E2E_CMS_READONLY_CONNECTION_STRING) | Should -BeFalse
         (Test-Path Env:INSTANCE_E2E_EDORG_REFRESH_INTERVAL_MINUTES) | Should -BeFalse
     }
@@ -1196,7 +1199,7 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
             $script:executed[0] | Should -Not -Match "--no-build"
             $script:executed[0] | Should -Not -Match "--no-restore"
             Should -Invoke Assert-DmsProjectionReaderTrxResults -Times 1 -Exactly -ParameterFilter {
-                $MinimumLiveTests -eq 37 -and $TrxFile -like "*EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.mssql.trx"
+                $MinimumLiveTests -eq 54 -and $TrxFile -like "*EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.mssql.trx"
             }
             Should -Invoke Assert-DmsProjectionReaderKeycloakTrxResults -Times 0 -Exactly
         }
