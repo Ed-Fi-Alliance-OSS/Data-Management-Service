@@ -969,7 +969,7 @@ There is no standalone 3.3 or 5.3 checkpoint. Checkpoint 2 is approved before ch
     | `.env.example` | fresh local installs; `start-*`/`bootstrap-*` seed `.env` from it | bootstrap |
     | `.env.multitenancy` | multi-tenancy getting-started example | bootstrap |
     | `.env.e2e`, `.env.cursorpartitions.e2e` | DMS E2E, CDC, SDK, performance scripts | bootstrap |
-    | `.env.routeContext.e2e` | Instance Management E2E | bootstrap until 5.2 wires it as operational |
+    | `.env.routeContext.e2e` | Instance Management E2E | bootstrap at start; `build-dms.ps1 InstanceE2ETest` then recreates the Configuration Service as operational (step 5.2) |
     | `.env.smoke`, `.env.smoke.ds61` | scheduled smoke tests | bootstrap |
     | `.env.template`, `.env.template.ds61` | database template builds | bootstrap |
     | `.env.config.e2e`, `.env.config.mssql.e2e`, `.env.config.mssql.multitenant.e2e` | CMS E2E | bootstrap |
@@ -1001,6 +1001,19 @@ There is no standalone 3.3 or 5.3 checkpoint. Checkpoint 2 is approved before ch
 - Validation: `build-dms.ps1 InstanceE2ETest` for the projection shard (PG; MS when the environment supports it), with exact results.
 - Done when: green on PG; MS status reported.
 - Risks: E2E run time (+2–6 min); container recreation in setup; the read-only CMS database connection must stay test-only and never be logged.
+- As implemented:
+  - **Environment phase** (`build-dms.ps1`, between fixture registration and the single DMS restart):
+    - `Register-InstanceE2EEducationOrganizationReader` provisions the per-tenant claim set (`EdOrgRefreshE2E<tenant>`, Read on the projection claim, verified by export) and the application. The test fixture's own claim sets and applications stay in the test fixture.
+    - `Enable-InstanceE2EOperationalConfigService` recreates only the Configuration Service container. Compose renders it from the files on the container's Compose labels, the resolved environment file, process variables for the shipped `CONFIGURATION_SERVICE_JOBS_*` and `CONFIGURATION_SERVICE_DMS_EDORG_BASE_URL` mappings, and a generated override. The override holds the per-tenant credentials and the interval as `${VARIABLE:?}` references only.
+    - `Assert-ConfigServiceEnvironmentChange` requires the container's environment before and after to differ in exactly the planned settings, naming any other difference without values.
+    - `New-InstanceE2ECmsReadOnlyConnectionString` creates a login with `SELECT` on `dmscs.Tenant`, `dmscs.JobSchedule` and `dmscs.Job` only; on PostgreSQL its sessions are also read-only by default. The SQL travels on standard input.
+    - Exported: `INSTANCE_E2E_EDORG_REFRESH_INTERVAL_MINUTES`, `INSTANCE_E2E_CMS_READONLY_CONNECTION_STRING`.
+  - **Fixture order.** The reader fixtures register data stores in `Tenant_255901` that a refresh of every data store cannot complete, and they are removed only at the end of the run. `OperationalRefreshTests` therefore runs first (`[Order(1)]`) and refuses to start when the tenant holds any data store besides the two fixture routes.
+  - **T1.** It is the latest `ScheduledOccurrence` among the schedule's completed jobs when the aggregate first shows the seeded hierarchy.
+  - **Additional check.** Before the manual refresh, the tenant has no refresh job without a schedule, so the publications in steps 2 and 3 came from scheduled jobs.
+  - **Rename.** The rename is reverted in the fixture's `OneTimeTearDown`, before the reader fixtures, which read the seeded names.
+  - **Result guard.** `Assert-DmsProjectionReaderTrxResults` now requires at least 37 live results, the project's live test count with the five new tests.
+  - **Documentation.** The scheduling instructions are in `docs/CMS-EDUCATION-ORGANIZATION-REFRESH.md` ("Requirements", "Scheduled refresh", "Checking that scheduled refresh runs"), with `AppSettings:EdOrgsRefreshIntervalInMins` in `docs/CONFIGURATION.md`. The rest of §6.14 is added to the same document later.
 
 **5.3 Operator documentation** (§6.14)
 - Depends on: 5.2.

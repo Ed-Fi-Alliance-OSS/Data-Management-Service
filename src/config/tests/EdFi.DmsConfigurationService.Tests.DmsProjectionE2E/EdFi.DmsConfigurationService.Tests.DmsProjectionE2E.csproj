@@ -8,7 +8,10 @@
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="FluentAssertions" />
+        <!-- Only for the read-only queries of the Configuration Service's schedule and job tables (Live/CmsJobDatabase.cs). -->
+        <PackageReference Include="Microsoft.Data.SqlClient" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />
+        <PackageReference Include="Npgsql" />
         <PackageReference Include="NUnit" />
         <PackageReference Include="NUnit.Analyzers">
             <PrivateAssets>all</PrivateAssets>
@@ -20,7 +23,7 @@
         <Using Include="NUnit.Framework" />
     </ItemGroup>
     <ItemGroup>
-        <!-- The production reader only: no DMS project, database driver or other CMS backend. -->
+        <!-- The production reader only: no DMS project or other CMS backend. -->
         <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
     </ItemGroup>
 </Project>

@@ -135,13 +135,40 @@ suite-owned fixture before any scenario runs:
    under `Tenant_255902`); two route-context records per data store — a `districtId` and a
    `schoolYear` context, 6 total; and one application per tenant (2 applications) — all using
    engine-correct **opaque** connection strings (secrets are never logged).
-3. Restart DMS **exactly once** after registration, wait for `/health`, then run the routed
+3. Make the Configuration Service operational (see
+   [Operational Configuration Service](#operational-configuration-service)).
+4. Restart DMS **exactly once** after registration, wait for `/health`, then run the routed
    scenarios, which hydrate their tenant/route state from the fixture rather than creating it.
 
 The route-context suite deliberately matches the local image's DS 5.2 core + TPDM schema surface
 so the provisioned databases and the DMS runtime compute an identical `EffectiveSchemaHash`
 (otherwise every routed data request returns 503). Schema-extension coverage (Sample, Homograph)
 belongs to the standard DMS E2E suite, not this one.
+
+## Operational Configuration Service
+
+The Configuration Service starts in bootstrap (`CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED=false` in
+`.env.routeContext.e2e`), because the credential its DMS reader needs can only be created through the running
+service. After registering the fixture, `build-dms.ps1` makes it operational, as an operator would (see
+[Bootstrap and operational modes](../../../../docs/CONFIGURATION.md#bootstrap-and-operational-modes)):
+
+1. **Reader credentials.** In each tenant, it imports a claim set `EdOrgRefreshE2E<tenant>` granting only `Read` on
+   the projection claim, exports it back to confirm that single grant, and creates an application on it with no data
+   stores or education organizations.
+2. **Recreation.** It recreates only the Configuration Service container, with workers and the scheduler on, the
+   reader pointed at `http://ed-fi-api:<DMS_HTTP_PORTS>/` with each tenant's credential, and
+   `AppSettings:EdOrgsRefreshIntervalInMins=1`. Compose renders the service from the files recorded on the running
+   container, the resolved environment file, and a generated override. The worker, scheduler and base URL go through
+   the shipped `CONFIGURATION_SERVICE_JOBS_*` and `CONFIGURATION_SERVICE_DMS_EDORG_BASE_URL` variables. The override
+   carries the per-tenant credentials and the interval as `${VARIABLE}` references, so no secret is written to disk.
+   The container's settings before and after must differ in exactly those settings; any other difference fails the
+   target, naming the settings and never their values. The target then waits for the service's token endpoint.
+3. **Read-only login.** It creates `edorg_refresh_e2e_reader`, a database login that can only read `dmscs.Tenant`,
+   `dmscs.JobSchedule` and `dmscs.Job` in the Configuration Service database. The scheduled-refresh test uses it to
+   find the tenant's schedule and its jobs, which no API lists.
+
+The reader credentials and the login are not deleted; the next run's teardown removes the stack's volumes. A shard 2
+run also gets the operational service; only a run that includes the reader project checks it.
 
 ## Configuration Service projection reader project
 
@@ -152,6 +179,22 @@ which drives the production
 (`AddDmsEducationOrganizationProjectionReader`) against this stack: Discovery, real tokens, a
 multi-page read of a seeded hierarchy, an empty data store, unknown, unavailable and unroutable
 data stores, and injected page failures, restarts and caller cancellation.
+
+It also checks that the [operational Configuration Service](#operational-configuration-service) refreshes
+`Tenant_255901` on its own schedule (`Live/OperationalRefreshTests.cs`). With no manual refresh until the last step,
+the fixture checks four things, each wait bounded by three refresh intervals:
+
+- the tenant's `EducationOrganization.ScheduledRefresh` schedule is enabled at the configured interval;
+- a `Completed` job whose `SourceScheduleId` is that schedule published the seeded hierarchy to
+  `GET /v3/tenants/Tenant_255901/dataStores/edOrgs`;
+- after the fixture renames school `100001` through DMS, a `Completed` job of the same schedule with a later
+  `ScheduledOccurrence` published the new name, and no refresh job without a schedule exists;
+- a manual `POST /v3/dataStores/edOrgs/refresh` completes, and its job has no `SourceScheduleId`.
+
+The fixture runs before the reader fixtures (NUnit `[Order(1)]`). Those fixtures register data stores in
+`Tenant_255901` that a refresh of every data store cannot complete, and the stores remain until the run ends. The
+fixture refuses to start when the tenant holds any data store besides the fixture's two routes, and restores the
+school's name in its `OneTimeTearDown`.
 
 **When it runs.** On a full run (no `-TestFilter`), and on a run whose filter names
 `instance-management-ci-shard-1` under `Category` or `TestCategory`, as a whole word (so
@@ -176,7 +219,7 @@ project, and fails if any other function omits the flags.
 when:
 
 1. the file is missing or has no counters;
-2. fewer than **28** results are from live tests, or any live result is not `Passed` (failed,
+2. fewer than **37** results are from live tests, or any live result is not `Passed` (failed,
    skipped or not run). Live tests are the classes in the
    `EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Live` namespace, the Instance-stack tests
    that reach DMS; each result is mapped to its class through the TRX test definitions;
@@ -186,7 +229,7 @@ when:
 
 The project also holds harness tests (the `Harness` namespace) that need no stack, so the live
 results are counted on their own: a run that discovered or selected no live test cannot pass on
-harness tests alone, and the overall check still rejects a failed harness test. The minimum of 28
+harness tests alone, and the overall check still rejects a failed harness test. The minimum of 37
 equals the project's live test count, so a run that loses a live case fails; it counts results and
 does not name them, so it does not prove that a particular case ran.
 
@@ -214,7 +257,9 @@ Configuration Service URLs and the system-administrator credential the Reqnroll 
 The project also reads `INSTANCE_E2E_DATABASE_ENGINE`, `INSTANCE_E2E_DATABASE_2_CONNECTION_STRING`,
 `INSTANCE_E2E_ROUTE_MANIFEST` and both fixture tenants' `INSTANCE_E2E_FIXTURE_TENANT_<N>_NAME` and
 `_VENDOR_ID`. A missing or malformed input fails every live test with
-`DMS projection reader E2E setup failed: ...`; no test is skipped.
+`DMS projection reader E2E setup failed: ...`; no test is skipped. The scheduled-refresh fixture also reads
+`INSTANCE_E2E_EDORG_REFRESH_INTERVAL_MINUTES` and `INSTANCE_E2E_CMS_READONLY_CONNECTION_STRING` (the read-only
+login); without them it fails with `Operational refresh E2E setup failed: ...`.
 
 **What it creates.** Per tenant: a claim set granting only `Read` on the projection claim, exported
 back to confirm the grant, and an application with no data stores or education organizations. In
@@ -222,8 +267,9 @@ back to confirm the grant, and an application with no data stores or education o
 `EdFiSandbox` application. Two more data stores, one naming a database that does not exist and one
 without a `schoolYear` context. Each record is registered for cleanup as soon as its id is known,
 before any later request or check, and everything is deleted newest first in `OneTimeTearDown`; a
-failed deletion fails the run, reported apart from any setup failure. The harness tests run
-without a stack:
+failed deletion fails the run, reported apart from any setup failure. The scheduled-refresh fixture
+changes one seeded school's name and writes the seeded name back before the reader fixtures run. The
+harness tests run without a stack:
 
 ```powershell
 dotnet test src/config/tests/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E --filter "FullyQualifiedName~.Harness."

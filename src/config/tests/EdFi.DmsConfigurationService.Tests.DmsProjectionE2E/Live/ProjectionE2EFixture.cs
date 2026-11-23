@@ -46,6 +46,9 @@ public class ProjectionE2EFixture
     /// <summary>The projection credential of each tenant, as a CMS job's settings would hold it.</summary>
     public Dictionary<string, ClientCredentials> ProjectionClients { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>The <c>EdFiSandbox</c> application that wrote the seeded hierarchy, and can change it.</summary>
+    public ClientCredentials Seeder { get; private set; } = null!;
+
     [OneTimeSetUp]
     public async Task OneTimeSetUpAsync()
     {
@@ -101,7 +104,7 @@ public class ProjectionE2EFixture
     private async Task SeedHierarchyAsync()
     {
         FixtureRoute route = Environment.Route(SeededQualifier);
-        ClientCredentials seeder = await Services.CreateApplicationAsync(
+        Seeder = await Services.CreateApplicationAsync(
             SeededTenant,
             "Projection Reader E2E seeder",
             "EdFiSandbox",
@@ -111,7 +114,7 @@ public class ProjectionE2EFixture
                     .Select(r => r.DataStoreId),
             ]
         );
-        string token = await Services.ClientTokenAsync(seeder);
+        string token = await Services.ClientTokenAsync(Seeder);
         await ProjectionHierarchySeed.SeedAsync(Services, token, route);
     }
 }

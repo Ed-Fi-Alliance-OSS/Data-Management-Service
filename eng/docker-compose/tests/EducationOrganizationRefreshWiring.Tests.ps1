@@ -267,3 +267,123 @@ Describe 'Configuration Service worker and reader wiring' {
         }
     }
 }
+
+# The operational Configuration Service that build-dms.ps1 InstanceE2ETest recreates after provisioning the readers.
+# Client-side only: the plan is rendered with docker compose config, never started.
+Describe 'Instance E2E operational Configuration Service' {
+    BeforeAll {
+        function Get-BuildScriptFunctionText {
+            param([Parameter(Mandatory)] [string] $FunctionName)
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:buildScript, [ref]$tokens, [ref]$parseErrors)
+            $functionAst = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName }, $true) | Select-Object -First 1
+            if ($null -eq $functionAst) { throw "Function '$FunctionName' was not found in '$script:buildScript'." }
+            return $functionAst.Extent.Text
+        }
+
+        $script:buildScript = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'build-dms.ps1'))
+        $script:composeRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+        foreach ($name in 'Get-InstanceE2EOperationalConfigServicePlan', 'Assert-ConfigServiceEnvironmentChange') {
+            . ([scriptblock]::Create((Get-BuildScriptFunctionText -FunctionName $name)))
+        }
+
+        $script:readers = @(
+            [pscustomobject]@{ TenantName = 'Tenant_255901'; ClientId = 'reader-key-1'; ClientSecret = 'reader-secret-1' },
+            [pscustomobject]@{ TenantName = 'Tenant_255902'; ClientId = 'reader-key-2'; ClientSecret = 'reader-secret-2' }
+        )
+        $script:plan = Get-InstanceE2EOperationalConfigServicePlan -Readers $script:readers -DmsBaseUrl 'http://ed-fi-api:8080/'
+    }
+
+    It 'plans workers, scheduler, reader base URL, one-minute interval and each tenant''s credential' {
+        $script:plan.ExpectedEnvironment['JobSettings__WorkerEnabled'] | Should -BeExactly 'true'
+        $script:plan.ExpectedEnvironment['JobSettings__SchedulerEnabled'] | Should -BeExactly 'true'
+        $script:plan.ExpectedEnvironment['DmsEducationOrganizationProjectionSettings__DmsBaseUrl'] | Should -BeExactly 'http://ed-fi-api:8080/'
+        $script:plan.ExpectedEnvironment['AppSettings__EdOrgsRefreshIntervalInMins'] | Should -BeExactly '1'
+        $script:plan.ExpectedEnvironment['DmsEducationOrganizationProjectionSettings__TenantCredentials__Tenant_255901__ClientId'] | Should -BeExactly 'reader-key-1'
+        $script:plan.ExpectedEnvironment['DmsEducationOrganizationProjectionSettings__TenantCredentials__Tenant_255902__ClientSecret'] | Should -BeExactly 'reader-secret-2'
+        $script:plan.ExpectedEnvironment.Count | Should -Be 8
+    }
+
+    It 'writes no credential into the override file' {
+        $script:plan.OverrideYaml | Should -Not -Match 'reader-key|reader-secret'
+        $script:plan.OverrideYaml | Should -Match ([regex]::Escape('${INSTANCE_E2E_EDORG_TENANT_2_CLIENT_SECRET:?'))
+    }
+
+    It 'refuses a tenant name that cannot form a configuration key' {
+        { Get-InstanceE2EOperationalConfigServicePlan -Readers @([pscustomobject]@{ TenantName = 'Tenant:1'; ClientId = 'k'; ClientSecret = 's' }) -DmsBaseUrl 'http://dms/' } |
+            Should -Throw '*letters, digits and underscores*'
+    }
+
+    It 'renders every planned setting over the bootstrap route-context environment, through the shipped worker and reader variables' {
+        $overrideFile = Join-Path $TestDrive 'operational.yml'
+        [IO.File]::WriteAllText($overrideFile, $script:plan.OverrideYaml, [Text.UTF8Encoding]::new($false))
+
+        # Compose prefers the process environment over --env-file, which is what lets the plan turn workers on over
+        # the environment file's bootstrap value. Restore every variable afterwards.
+        $saved = @{}
+        foreach ($name in $script:plan.ProcessVariables.Keys) {
+            $saved[$name] = [Environment]::GetEnvironmentVariable($name)
+            [Environment]::SetEnvironmentVariable($name, [string]$script:plan.ProcessVariables[$name])
+        }
+        $arguments = @(
+            'compose', '-p', 'edorgrefreshoperational', '--project-directory', $script:composeRoot,
+            '-f', (Join-Path $script:composeRoot 'postgresql.compose.yml'),
+            '-f', (Join-Path $script:composeRoot 'local-config.compose.yml'),
+            '-f', $overrideFile,
+            '--env-file', (Join-Path $script:composeRoot '.env.routeContext.e2e'),
+            'config', '--format', 'json'
+        )
+        try {
+            $rendered = & docker @arguments 2> (Join-Path $TestDrive 'operational.stderr')
+            $exitCode = $LASTEXITCODE
+        }
+        finally {
+            foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
+        }
+
+        # Rendered output holds secrets, so only the exit code and setting names are reported.
+        $exitCode | Should -Be 0 -Because 'the compose files and the override must render'
+        $environment = (($rendered | Out-String) | ConvertFrom-Json -AsHashtable).services.config.environment
+        $mismatched = @($script:plan.ExpectedEnvironment.Keys | Where-Object { [string]$environment[$_] -cne [string]$script:plan.ExpectedEnvironment[$_] })
+        $mismatched | Should -BeNullOrEmpty
+    }
+
+    Context 'the environment-change guard' {
+        BeforeAll {
+            $script:before = @{ PATH = '/usr/bin'; JobSettings__WorkerEnabled = 'false'; DatabaseSettings__DatabaseConnection = 'db-secret' }
+            $script:expected = @{ JobSettings__WorkerEnabled = 'true'; AppSettings__EdOrgsRefreshIntervalInMins = '1' }
+        }
+
+        It 'accepts a container that changed exactly the planned settings' {
+            $after = @{ PATH = '/usr/bin'; JobSettings__WorkerEnabled = 'true'; AppSettings__EdOrgsRefreshIntervalInMins = '1'; DatabaseSettings__DatabaseConnection = 'db-secret' }
+            { Assert-ConfigServiceEnvironmentChange -Before $script:before -After $after -Expected $script:expected } | Should -Not -Throw
+        }
+
+        It 'compares the generic dictionaries the container inspection returns against the plan''s ordered map' {
+            $before = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
+            $before['PATH'] = '/usr/bin'
+            $before['JobSettings__WorkerEnabled'] = 'false'
+            $after = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
+            $after['PATH'] = '/usr/bin'
+            $after['JobSettings__WorkerEnabled'] = 'true'
+            $after['path'] = 'added'
+            $expected = [ordered]@{ JobSettings__WorkerEnabled = 'true' }
+
+            { Assert-ConfigServiceEnvironmentChange -Before $before -After $after -Expected $expected } |
+                Should -Throw '*changed unexpectedly: path.'
+            $after.Remove('path') | Out-Null
+            { Assert-ConfigServiceEnvironmentChange -Before $before -After $after -Expected $expected } | Should -Not -Throw
+        }
+
+        It 'names an unplanned change, an unplanned removal and a missed setting, without any value' {
+            $after = @{ PATH = '/usr/local/bin'; JobSettings__WorkerEnabled = 'false'; AppSettings__EdOrgsRefreshIntervalInMins = '1' }
+            $failure = { Assert-ConfigServiceEnvironmentChange -Before $script:before -After $after -Expected $script:expected } |
+                Should -Throw -PassThru
+            $message = $failure.Exception.Message
+            $message | Should -Match 'not set as expected: JobSettings__WorkerEnabled'
+            $message | Should -Match 'changed unexpectedly: DatabaseSettings__DatabaseConnection, PATH'
+            $message | Should -Not -Match 'db-secret|/usr'
+        }
+    }
+}

@@ -300,7 +300,8 @@ Scheduled jobs run through the same worker and the same lifecycle as any other j
 only keeps one schedule's own jobs from overlapping. It does not coordinate a scheduled job with
 manually enqueued jobs or with jobs from other schedules that touch the same tenant or target. A
 consumer that needs that, such as the education-organization refresh (DMS-1441), must deduplicate
-or serialize that work itself.
+or serialize that work itself. The education organization refresh serializes it with a lease on each data store; see
+[Scheduled refresh](./CMS-EDUCATION-ORGANIZATION-REFRESH.md#scheduled-refresh).
 
 ## Recovery
 

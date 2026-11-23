@@ -64,13 +64,13 @@ public static class ProjectionHierarchySeed
 
         foreach (EducationOrganizationProjectionItem item in Items)
         {
-            (string resource, JsonObject body) = Body(item);
+            (string resource, JsonObject body) = Document(item);
             await services.PostResourceAsync(token, route, resource, body, allowExisting: false);
         }
     }
 
     /// <summary>The resource and body that make DMS serve <paramref name="item"/> with its expected parent.</summary>
-    private static (string Resource, JsonObject Body) Body(EducationOrganizationProjectionItem item)
+    public static (string Resource, JsonObject Body) Document(EducationOrganizationProjectionItem item)
     {
         JsonObject body = new() { ["nameOfInstitution"] = item.NameOfInstitution };
         if (item.ShortNameOfInstitution is { } shortName)
