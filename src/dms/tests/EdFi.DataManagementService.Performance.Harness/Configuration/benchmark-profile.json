@@ -1,0 +1,122 @@
+{
+  "profileVersion": "0.1.0",
+  "workloadDefinitionVersion": "1.0.0",
+  "supportedRange": {
+    "floorCommit": "df7e23425beef2de46fa98b3b5b48578cb2d3692"
+  },
+  "approvedReferenceCommit": "df7e23425beef2de46fa98b3b5b48578cb2d3692",
+  "workload": {
+    "fixture": "primary-500k",
+    "deepOffset": 450000,
+    "reads": {
+      "warmupIterations": 10,
+      "measuredIterations": 60
+    },
+    "writes": {
+      "warmupIterations": 20,
+      "measuredIterations": 200
+    },
+    "concurrency": 1,
+    "authorization": "bypassed",
+    "logLevel": "Warning",
+    "connectionRegime": "ownership-published",
+    "connection": {
+      "postgresql": {
+        "pooling": true,
+        "minPoolSize": 0,
+        "maxPoolSize": 100,
+        "noResetOnClose": true,
+        "autoPrepareMinUsages": 3,
+        "maxAutoPrepare": 256
+      },
+      "mssql": {
+        "pooling": true,
+        "minPoolSize": 0,
+        "maxPoolSize": 100
+      }
+    }
+  },
+  "smokeWorkload": {
+    "fixture": "smoke-10k",
+    "deepOffset": 9000,
+    "reads": {
+      "warmupIterations": 5,
+      "measuredIterations": 30
+    },
+    "writes": {
+      "warmupIterations": 5,
+      "measuredIterations": 20
+    },
+    "injectionFactors": {
+      "student-put-collection-update": 1.0,
+      "traditional-offset-zero/25": 1.0
+    }
+  },
+  "requiredEnvironment": {
+    "osFamily": "Windows",
+    "architecture": "x64",
+    "acPowerOnline": true,
+    "databaseStorageMountType": "volume"
+  },
+  "comparison": {
+    "pairs": 5,
+    "rule": "median-of-pair-p50-ratios",
+    "p95WarningsEnabled": false,
+    "p50Thresholds": {
+      "postgresql": {
+        "traditional-offset-zero/25": 0.10,
+        "traditional-offset-zero/500": 0.10,
+        "traditional-offset-shallow/25": 0.10,
+        "traditional-offset-shallow/500": 0.10,
+        "traditional-offset-deep/25": 0.10,
+        "traditional-offset-deep/500": 0.10,
+        "student-put-collection-update": 0.10
+      },
+      "mssql": {
+        "traditional-offset-zero/25": 0.10,
+        "traditional-offset-zero/500": 0.10,
+        "traditional-offset-shallow/25": 0.10,
+        "traditional-offset-shallow/500": 0.10,
+        "traditional-offset-deep/25": 0.10,
+        "traditional-offset-deep/500": 0.10,
+        "student-put-collection-update": 0.10
+      }
+    }
+  },
+  "detection": {
+    "scenarios": [
+      "student-put-collection-update",
+      "traditional-offset-zero/25"
+    ],
+    "targetIncrease": 0.20,
+    "tolerance": 0.02,
+    "margin": 0.05,
+    "capAboveTarget": 0.05,
+    "requiredRepeats": 3,
+    "injectionFactors": {
+      "postgresql": {
+        "student-put-collection-update": null,
+        "traditional-offset-zero/25": null
+      },
+      "mssql": {
+        "student-put-collection-update": null,
+        "traditional-offset-zero/25": null
+      }
+    }
+  },
+  "environment": {
+    "settleSeconds": 30,
+    "idleSeconds": 10,
+    "hostSampleIntervalSeconds": 1,
+    "dockerSampleIntervalSeconds": 2,
+    "maxIdleHostCpuPercent": 15,
+    "maxIdleDatabaseCpuPercent": 5,
+    "minHostAvailableMemoryMb": 2048,
+    "maxDatabaseMemoryPercentOfLimit": 90,
+    "minCompletenessPercent": 90,
+    "qualifiedEnvironments": {
+      "postgresql": null,
+      "mssql": null
+    }
+  }
+}
