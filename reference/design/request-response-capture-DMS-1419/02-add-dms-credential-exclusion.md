@@ -32,7 +32,8 @@ Unprefixed paths are relative to the repository root.
 - One type in DMS core defines every column of a capture row and its class, *server-generated* or *client-derived*, starting from the outline in design.md ("### Column Classes").
 - A test fails when a column has no class.
 - The method is the `RequestMethod` value, and `UNSUPPORTED` for any other verb. The raw verb text is never a field of the row.
-- The tenant is the validated tenant, and the profile is the resolved profile name.
+- The path is the full request path as received, including the path base and the tenant and route-qualifier segments, not core's `/{dmsPath}`. The component takes it as an input; the capture-pipeline story supplies it.
+- The tenant is the grant's canonical tenant name from the snapshot, never the route spelling, and the profile is the resolved profile name.
 - The trace ID holds the correlation ID only when DMS generated it. A client-supplied correlation ID goes only to the client-derived correlation ID column. The component takes the source as an input; the capture-pipeline story supplies it.
 
 **The withholding rule**
@@ -41,7 +42,8 @@ Unprefixed paths are relative to the repository root.
 - When no trigger holds, every client-derived field is stored as given, subject only to the cap.
 - Trigger 1: a listed name is a query parameter name, or a JSON property name at any depth of the request or response body.
 - Trigger 2: the request's bearer token appears in a client-derived field as stored, JSON-unescaped, or percent-decoded. The decoders never throw, and leave an invalid sequence as it is.
-- Trigger 3: an unparseable request body contains a listed name, or contains a NUL byte; the body state is `Unread` or `NotRetained`; or the examination stopped at a depth or size bound.
+- Trigger 3: an unparseable request body contains a listed name, contains a NUL byte, or is not valid UTF-8; the body state is `Unread` or `NotRetained`; or the examination stopped at a depth or size bound.
+- A retained body is examined the same way on every route, including a 405 route's body, which DMS reads only for the copy: as JSON when it parses, and as text when it does not.
 - Names are compared after unescaping or percent-decoding, with ordinal case folding and `_` and `-` removed, as whole names.
 - The credential-name list is the one in design.md ("### The Withholding Rule").
 
@@ -58,7 +60,7 @@ Unprefixed paths are relative to the repository root.
 **The generative proof**
 
 - A CsCheck 5.0.1 test in `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/` follows `docs/property-based-testing/`.
-- Its generator produces request and response JSON, malformed bodies, UTF-16 and gzip-encoded bodies, every body state, and query strings with repeated and mixed-case names. It plants credential names and the token in every client-derived field, in random decoded forms.
+- Its generator produces request and response JSON, malformed bodies, UTF-16 bodies, gzip-, deflate-, and brotli-encoded bodies, Latin-1 bodies, every body state, and query strings with repeated and mixed-case names. It plants credential names and the token in every client-derived field, in random decoded forms.
 - An independent oracle implements D4 exactly, and the properties hold:
     - a trigger means every client-derived field is withheld and every server-generated field is present
     - no trigger means every field is stored as given, capped
@@ -73,7 +75,10 @@ Each is an example test:
 - `%61lpha%FF`, and a secret-free `{"note":"%FF"}` that is stored
 - a malformed body naming a credential
 - a UTF-16 body and a gzip body, each naming a credential, that are withheld
+- a short brotli body naming a credential that contains no NUL byte: withheld, because it is not valid UTF-8
+- a malformed Latin-1 body naming no credential: withheld, because it is not valid UTF-8
 - a GET or DELETE carrying a body
+- a retained PATCH body naming no credential, sent to a data route: stored, with its path and the 405 response
 - a `NotRetained` body with `?note=alpha` in the query: withheld, and `alpha` appears in no field
 - repeated and mixed-case credential names in the query
 - a look-alike name, such as `customizationKey`, that is stored

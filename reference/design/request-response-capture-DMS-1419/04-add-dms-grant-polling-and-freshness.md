@@ -36,7 +36,8 @@ Unprefixed paths are relative to the repository root.
 **The snapshot**
 
 - Each successful poll of a tenant replaces that tenant's entry in an immutable snapshot keyed by tenant and client key.
-- A lookup by tenant, client key, and time returns the active grant or none, with no I/O and no allocation.
+- Tenants compare with `StringComparer.OrdinalIgnoreCase`, as `ConfigurationServiceDataStoreProvider` keys loaded tenants, because DMS serves every spelling of a tenant route. Client keys compare ordinally (`reference/adr-client-id-casing.md`).
+- A lookup by tenant, client key, and time returns the active grant, including its canonical tenant name, or none, with no I/O and no allocation.
 - A tenant that has not been polled yet has no grants.
 
 **Freshness**
@@ -59,6 +60,7 @@ Unprefixed paths are relative to the repository root.
     - several tenants, each answering in just under `T`, all stay within `A`
     - tenant X's polls fail while tenant Y's succeed: X returns no grant once its entry is older than `A`, and Y keeps returning its grant
     - a single-tenant deployment polls without a `Tenant` header and returns the granted client's grant
+    - a grant polled under `Tenant1` is returned for a lookup on `tenant1`, and a lookup with the client key in another case returns none
 - Two-replica tests run two pollers against one fake CMS and cover:
     - healthy: enable and disable reach both within `A`
     - CMS unreachable during a disable: both stop capturing within `A`

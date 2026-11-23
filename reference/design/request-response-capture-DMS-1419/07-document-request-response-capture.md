@@ -44,6 +44,13 @@ A new `docs/REQUEST-RESPONSE-CAPTURE.md` states:
 - `docs/PRD-Ed-Fi-API-v8.0.md`:
     - NFR-OBS-2 and its warning reflect that request capture expires on its own
     - NFR-OBS-3 records the interpretation or exception decided in design.md, D5
+- `docs/API-CLIENT-AND-INSTANCE-CONFIGURATION.md`:
+    - "Confirmed CMS-only extensions to Management API v3" adds the request-capture grant endpoints (`POST`, `DELETE` and `GET /v3/apiClients/{id}/requestCapture`, and `GET /v3/requestCaptureGrants/active`) as one extension group, and the section's count of groups follows
+    - the identifier rules that say `PUT`, `DELETE` and `reset-credential` take only the numeric `id` include `requestCapture`, which takes only the numeric `id` too
+- `docs/ROLES-SCOPES.md` ("Supported Scopes"): the `edfi_admin_api/authMetadata_readonly_access` row lists `GET /v3/requestCaptureGrants/active` among the reads DMS makes.
+- `docs/PRD-CS-v8.2.md` adds functional requirements for:
+    - per-client request-capture grants: create with a mode and a bounded duration, end early, and list a client's history, with rows never overwritten and the caller recorded
+    - the active-grants read the Ed-Fi API polls, scoped by tenant
 - `docs/changelog/8.2.0.md` adds the feature under Improvements, linking the operator guide.
 
 **Checks**

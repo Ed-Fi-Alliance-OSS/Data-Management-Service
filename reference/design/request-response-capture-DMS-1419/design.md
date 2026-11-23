@@ -155,7 +155,7 @@ This rests on GitHub code search for `RequestResponseContentLog`, which indexes 
 | What is captured | A log4net level. A 500 with a recorded exception logs at Error, any other status of 400 or above except 500 at Info, and everything else at Debug (`mw.cs:70-82`). The documented default threshold, ERROR, captures only exception 500s (`ODS docs:75-78`, `:88`, `:93`) | A per-grant mode: `Failures`, the default, or `All`. Failures means status 400 or above, or an exception ([D2](#d2-control-surface), [D6](#d6-capture-store-and-retention)) | R9, as a mode rather than a log level |
 | The docs on levels | "Change ERROR to INFO to log all calls" (`ODS docs:75-78`). Stale since v7.2: v7.0 and v7.1 logged every non-500 at Info, and v7.2 moved responses below 400 to Debug. INFO now captures failures only, and all calls need DEBUG | Not applicable | Recorded so the parity claim is against behavior, not the docs |
 | Routes | `/data` and `/composites` only. The token endpoint is never captured | The core data-plane pipelines only, as listed in [D4](#capture-scope) | R4, and DMS-1419's scope |
-| Fields | Date (log4net `RawTimeStampLayout`, local time, no zone), thread, correlation ID (a client header, else a `correlationId` query parameter, else generated, `Ed-Fi-ODS:Application/EdFi.Ods.Api/Middleware/RequestCorrelationMiddleware.cs:25-39`), the numeric API client id (`Ed-Fi-ODS:Application/EdFi.Ods.Api/Middleware/EdFiApiAuthenticationMiddleware.cs:123`; `Ed-Fi-ODS:Application/EdFi.Common/Security/ApiClientDetails.cs:79`), level, URL with the raw query string (`mw.cs:224`, 255 characters), method (10 characters), the raw profile content-type header (`Ed-Fi-ODS:Application/EdFi.Ods.Features/Profiles/ProfileContentTypeContextMiddleware.cs:84`, `:106`), full uncapped bodies, the status name or problem details as the message (`mw.cs:138-172`), and the exception (2000 characters) (`ODS docs:26-40`, `:95-187`) | Every column is classed server-generated or client-derived ([D4](#d4-credential-exclusion)). Adds the status code, duration, tenant, data store and grant. Stores the validated client key, the profile name DMS resolved, and the method as a server value. Stored bodies are capped and flagged ([D6](#d6-capture-store-and-retention)) | R6 and R12: BI tooling needs the status code and the tenant, and a capped body bounds one row |
+| Fields | Date (log4net `RawTimeStampLayout`, local time, no zone), thread, correlation ID (a client header, else a `correlationId` query parameter, else generated, `Ed-Fi-ODS:Application/EdFi.Ods.Api/Middleware/RequestCorrelationMiddleware.cs:25-39`), the numeric API client id (`Ed-Fi-ODS:Application/EdFi.Ods.Api/Middleware/EdFiApiAuthenticationMiddleware.cs:123`; `Ed-Fi-ODS:Application/EdFi.Common/Security/ApiClientDetails.cs:79`), level, URL with the raw query string (`mw.cs:224`, 255 characters), method (10 characters), the raw profile content-type header (`Ed-Fi-ODS:Application/EdFi.Ods.Features/Profiles/ProfileContentTypeContextMiddleware.cs:84`, `:106`), full uncapped bodies, the status name or problem details as the message (`mw.cs:138-172`), and the exception (2000 characters) (`ODS docs:26-40`, `:95-187`) | Every column is classed server-generated or client-derived ([D4](#d4-credential-exclusion)). Adds the status code, duration, tenant, data store and grant. Stores the full request path as received, with the raw query string, as ODS stores the URL. Stores the validated client key, the profile name DMS resolved, and the method as a server value. Stored bodies are capped and flagged ([D6](#d6-capture-store-and-retention)) | R6 and R12: BI tooling needs the status code and the tenant, and a capped body bounds one row |
 | Not captured | Headers other than the profile header, the status code, the tenant, the duration | See the row above | |
 | Correlation ID | Always stored (`NOT NULL` in the DDL) | Always stored. A client-supplied ID is withheld with the other client-derived fields when the D4 rule fires; an ID DMS generated is kept ([D4](#d4-credential-exclusion)) | R4: a client-supplied ID is client text. A departure from R12 for that case, recorded for the gate |
 | Exception detail | log4net `ExceptionLayout`: the exception text, truncated to 2000 characters | The exception type plus a server-chosen description, never the message chain ([D4](#d4-credential-exclusion)) | R4: DMS exception chains can quote a connection string. A departure from R12's exception detail, recorded for the gate |
@@ -261,6 +261,11 @@ It calls the active-grants read for each tenant the replica has loaded (`Configu
 Each result replaces that tenant's entry in an immutable snapshot keyed by tenant and client key.
 A request's capture decision is a lookup in that snapshot, so the per-request cost is a dictionary read and no CMS call.
 
+Tenants compare case-insensitively (`StringComparer.OrdinalIgnoreCase`), and client keys compare ordinally.
+DMS serves every spelling of a tenant route: it keys loaded tenants case-insensitively (`ConfigurationServiceDataStoreProvider.cs:38-39`), and CMS resolves a tenant name case-insensitively (`src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Repositories/TenantRepository.cs:136`).
+A case-sensitive snapshot would serve a client's `/tenant1/...` requests for CMS tenant `Tenant1` and never capture them.
+Client keys stay ordinal because tokens carry the canonical stored `client_id` (`reference/adr-client-id-casing.md`).
+
 ### Freshness
 
 Three values bound how current the snapshot is:
@@ -294,7 +299,7 @@ A tenant whose polls keep failing therefore stops capturing within `A` while the
 A request's capture decision is made once, at **authenticated selection**.
 
 - When the frontend reads a request, it checks whether the client named in the not-yet-validated token has a grant, only to decide whether to keep a raw copy of the body ([D6](#placement-in-the-request-path)). That check is provisional: the client is not authenticated yet.
-- The selection step runs after `JwtAuthentication`. It looks up the validated client key in the current snapshot and freezes the decision for that request.
+- The selection step runs immediately after `JwtAuthentication`, before `ResolveDataStore`. It looks up the validated client key in the current snapshot and freezes the decision for that request.
 - A disable that lands before selection prevents capture.
 - A disable that lands after selection does not cancel the request: it is captured, and rows already queued for writing are written.
 
@@ -371,12 +376,12 @@ The outline below is that contract's starting point; the story fixes the names a
 | Method | Server-generated | The `RequestMethod` value; `UNSUPPORTED` for any other verb |
 | Status code | Server-generated | The status of the response DMS sent |
 | Client key | Server-generated | The `ClientId` that `JwtAuthentication` validated |
-| Tenant, data store | Server-generated | The validated tenant, and the data store DMS resolved |
+| Tenant, data store | Server-generated | The grant's canonical tenant name from the snapshot, never the route spelling; and the data store DMS resolved, empty when resolution failed |
 | Profile | Server-generated | The resolved profile name, or empty |
 | Body state, truncation flags | Server-generated | `NoBody`, `Unread`, `Retained` or `NotRetained` ([D6](#placement-in-the-request-path)), and whether stored output was capped |
 | Withheld, withholding reason | Server-generated | Whether the rule fired, and which trigger, from a fixed set |
 | Exception type, exception description | Server-generated | The exception's type, and a description DMS chooses from a fixed set by type, never the message chain |
-| Path, query | Client-derived | The request path, and the raw query string with every repeated value |
+| Path, query | Client-derived | The full request path as received, including the path base and the tenant and route-qualifier segments; and the raw query string with every repeated value |
 | Trace ID | Server-generated | The correlation ID when DMS generated it: `CorrelationIdHeader` is not set, or the client sent no usable value. Empty otherwise |
 | Correlation ID | Client-derived | The normalized correlation ID when the client supplied it through `CorrelationIdHeader`. Empty otherwise |
 | Request body, response body | Client-derived | The JSON as sent and as answered; a response can echo request content |
@@ -393,8 +398,8 @@ If any trigger below holds, every client-derived column is stored empty, `Withhe
    The decoders are lenient and never fail: an invalid escape or percent sequence is left as it is.
 3. **Incomplete discovery.**
    - A request body fails to parse as JSON, and its text contains a listed name in any spelling the comparison below accepts.
-   - A request body fails to parse as JSON, and it contains a NUL byte. UTF-16 or UTF-32 text, and compressed content such as a gzip body, which DMS does not decompress, hide listed names from the text comparison. JSON text never carries a raw NUL byte, so one marks a body the rule cannot read. This also keeps U+0000 out of PostgreSQL `text` columns, which reject it.
-   - A body was sent to a route that does not read one (GET, DELETE, the change-query routes, and the 405 answer). DMS never reads that body, so the rule cannot examine it, and unexamined input fails closed. Such bodies are rare, and DMS ignores them.
+   - A request body fails to parse as JSON, and it contains a NUL byte or is not valid UTF-8. UTF-16 or UTF-32 text, and compressed content such as a gzip, deflate, or brotli body, which DMS does not decompress (it reads no `Content-Encoding`), hide listed names from the text comparison. UTF-16 and UTF-32 text carries NUL bytes, and a compressed stream is invalid UTF-8 with overwhelming probability; a NUL test alone catches gzip only through its header, and a short deflate or brotli stream often contains no NUL. JSON text is valid UTF-8 and never carries a raw NUL byte, so either condition marks a body the rule cannot read. A malformed body in a legacy encoding such as Latin-1 is withheld too. This also keeps U+0000 out of PostgreSQL `text` columns, which reject it.
+   - A body was sent to a route that does not read one (GET, DELETE, and the change-query routes), or to a 405 route for a client the frontend kept no copy for. DMS never reads that body, so the rule cannot examine it, and unexamined input fails closed. Such bodies are rare on those routes, and DMS ignores them. The 405 routes read a granted client's body ([D6](#placement-in-the-request-path)), because PATCH, the most common unsupported verb, nearly always carries one.
    - A body was read but not kept: its state is `NotRetained`, because the client's grant became visible after extraction ([D6](#placement-in-the-request-path)). The rule cannot examine that body either, so it fails closed in the same way.
    - The examination stopped before finishing, for example at a depth or size bound.
 
@@ -495,7 +500,8 @@ DMS's runtime credential then needs only to insert, read, and delete rows in tha
 DMS has no deploy-on-startup setting, unlike CMS, and provisioning stays an explicit operator step, as it already is for data stores.
 
 The command is idempotent: it creates what is missing and leaves an existing table alone.
-Captured rows are disposable troubleshooting data with a short retention, so a later release that changes the table can recreate it rather than migrate it.
+Captured rows are disposable troubleshooting data with a short retention, so a release that changes the table has the operator drop it and run the command again, rather than migrating it.
+The writer checks the table when it starts ([Semantics](#semantics)), so a table that is missing or out of date with the row contract is reported once instead of failing every insert.
 
 **Rejected:** DDL at DMS startup.
 It removes one operator step, but it gives the DMS runtime schema-changing rights, and it is the only place DMS would run DDL.
@@ -506,7 +512,9 @@ Capture touches the request at three points.
 
 **1. Extraction, in the frontend.**
 `FromRequest` attaches an immutable **capture context** to every in-scope request.
-It holds the receive time, the raw query string with every repeated value, whether the client supplied the correlation ID, and the request body's state.
+It holds the receive time, the full request path as received, the raw query string with every repeated value, whether the client supplied the correlation ID, and the request body's state.
+The path is taken here because core receives only `/{dmsPath}`, the part after `data/` (`AspNetCoreFrontend.cs:698`).
+Without the tenant and route-qualifier segments, a request that `ResolveDataStore` answers 404 because its qualifiers match no data store would leave no record of the values the client sent: that 404 body names none (`Response/FailureResponse.cs:436-445`), and route values are kept out of Information logs (`docs/LOGGING.md:204-209`).
 The correlation ID's source is known only in the frontend (`AspNetCoreFrontend.cs:473-480`), and core receives only the normalized ID, so the context carries it to the [D4](#column-classes) trace ID and correlation ID columns.
 
 The body state is one of:
@@ -519,6 +527,7 @@ The body state is one of:
 | `NotRetained` | The body was read, but no copy was kept, because no grant could apply when it was read. If selection still captures the request, [D4](#the-withholding-rule) trigger 3 withholds the row |
 
 The raw copy is taken before the frontend clears its buffer, and only when a grant could apply.
+On the two 405 routes, which DMS otherwise never reads, the frontend reads the body only to take this copy, for a granted client; the 405 answer does not use it, and the D4 rule examines it as it examines any retained body.
 It is the bytes as sent, so a malformed body, a duplicate property, or a value that coercion later changes is stored as the client sent it.
 The raw query string is kept because `FromRequest` keeps only the last value of a repeated parameter (`AspNetCoreFrontend.cs:704`).
 
@@ -539,6 +548,9 @@ The stored request body is only ever the raw copy, never rebuilt from the parsed
 **2. Selection, after `JwtAuthentication`.**
 A new step looks up the validated client key in the current snapshot ([D2](#the-in-flight-boundary)) and freezes the decision on the request.
 It is added only to the in-scope pipelines of [D4](#capture-scope).
+It runs immediately after `JwtAuthentication`, before `ResolveDataStore`, so a request that `ResolveDataStore` answers is still selected: its 403 for a client with no authorized data stores, 404 for route qualifiers that match no data store, 400 for an ambiguous route, and 503 (`Middleware/ResolveDataStoreMiddleware.cs:47-49`, `:149-151`, `:246`, `:172`).
+Those are the client-specific failures capture exists to diagnose.
+Every pipeline, token-info included, starts from `GetCommonInitialSteps` (`ApiService.cs:234-246`), whose last step is `ResolveDataStore`, so the step is inserted there behind a flag that only the in-scope pipelines set.
 An in-scope request with no capture context is not captured, and a warning is logged, so a route added later without one fails safe.
 
 **3. Finalization, outside `CoreExceptionLogging`.**
@@ -576,7 +588,9 @@ The D4 rule is applied to the full body first, so a body that triggers it is wit
 Rows go to a bounded in-memory queue, and a background writer inserts them in batches.
 When the queue is full, by rows or by body bytes, the row is dropped.
 The drop warning is rate-limited per grant and carries only the grant id and the number of rows dropped since the last warning, so a full queue under `All` cannot flood the logs.
-When the store fails, the rows are dropped and a warning is logged with metadata only.
+When the writer starts, it checks that the capture table exists with the row contract's columns.
+If it does not, the writer logs one error naming the provisioning command and stays disabled: rows are dropped, DMS still starts, and capture fails open.
+When the store fails, the rows are dropped and a warning is logged with metadata only, rate-limited like the drop warning, so a store that keeps failing cannot flood the logs either.
 The request is never delayed or failed by capture: the writer fails open.
 On shutdown, the writer drains what it can within the host's shutdown timeout.
 
