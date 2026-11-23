@@ -41,7 +41,7 @@ foreach ($case in @(
                 if ($LASTEXITCODE -ne 0) { throw "Test SQL failed in $Database" }
                 return $result
             }
-            function Invoke-TestPackageCapture([string]$Label) {
+            function Invoke-TestPackageCapture([string]$Label, $CapturedSourceFacts = $null) {
                 $directory = Join-Path $TestDrive $Label
                 $staging = Join-Path $directory 'staging'
                 New-Item -ItemType Directory $staging | Out-Null
@@ -50,14 +50,14 @@ foreach ($case in @(
                 # build the package the way Build-TemplateNuGetPackage does: capture the source facts,
                 # pass the DMS-only gate, dump, and write restore-manifest.json beside the artifact.
                 & (Get-Module Template-Management) {
-                    param($Engine, $Container, $Database, $SaSecret, $Directory, $ArtifactName)
+                    param($Engine, $Container, $Database, $SaSecret, $Directory, $ArtifactName, $CapturedSourceFacts)
                     $schemas = @(Get-UserSchemaNames -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $Database -MssqlPassword $SaSecret)
-                    $facts = Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $Database -MssqlPassword $SaSecret -ArtifactSchemaName ([string[]]$schemas)
+                    $facts = $CapturedSourceFacts ?? (Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $Database -MssqlPassword $SaSecret -ArtifactSchemaName ([string[]]$schemas))
                     $partition = Assert-DmsOnlyTemplateSource -Facts $facts -DatabaseEngine $Engine -DatabaseName $Database
                     Invoke-DatabaseDump -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $Database -DatabaseSchemas $schemas -BackupDirectory $Directory -BackupFileName $ArtifactName -MssqlPassword $SaSecret | Out-Null
                     Write-TemplateRestoreManifest -Facts $facts -Partition $partition -Config @{ Id = 'Focused.Template'; DatabaseBackupName = $ArtifactName } `
                         -PackageVersion '0.0.0-test' -DatabaseEngine $Engine -TemplateKind Minimal -StandardVersion '5.2.0' -BackupDirectory $Directory | Out-Null
-                } $Engine $Container $source $password $staging $artifactName
+                } $Engine $Container $source $password $staging $artifactName $CapturedSourceFacts
                 Compress-Archive -Path (Join-Path $staging '*') -DestinationPath (Join-Path $directory 'package.zip')
                 Move-Item (Join-Path $directory 'package.zip') (Join-Path $directory 'Focused.Template.nupkg')
                 Remove-Item -LiteralPath $staging -Recurse -Force
@@ -144,6 +144,27 @@ SELECT "DocumentId", "ResourceKeyId", 'uri://template', 'school', 'School' FROM 
             { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory $script:correctPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw 'API checkpoint after live catalogs and data'
             Should -Invoke Get-CmsToken -Times 1 -Exactly
             @(Invoke-TestSql $script:restored $fingerprintSql) | Should -Be $fingerprint
+        }
+        It 'Rejects a native SQL Server source and restored package with a <Name> object-only CHECK' -Skip:($Engine -ne 'mssql') -ForEach @(
+            @{ Name = 'disabled'; Sql = 'ALTER TABLE dms.DocumentCache NOCHECK CONSTRAINT CK_DocumentCache_IsJsonObject;' }
+            @{ Name = 'untrusted'; Sql = 'ALTER TABLE dms.DocumentCache NOCHECK CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache CHECK CONSTRAINT CK_DocumentCache_IsJsonObject;' }
+            @{ Name = 'weaker'; Sql = 'ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson]) = 1);' }
+        ) {
+            $healthyFacts = Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $source -MssqlPassword $password
+            Invoke-TestSql $source $Sql | Out-Null
+            try {
+                { Invoke-TestPackageCapture "invalid-$Name" } |
+                    Should -Throw "*CK_DocumentCache_IsJsonObject*enabled and trusted*"
+                Test-Path (Join-Path $TestDrive "invalid-$Name/staging/Focused.Template.bak") | Should -BeFalse
+                # Simulate a producer that did not inspect the CHECK, with a valid artifact hash.
+                $invalidPackage = Invoke-TestPackageCapture "drifted-$Name" $healthyFacts
+            }
+            finally {
+                Invoke-TestSql $source 'ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson], OBJECT) = 1);' | Out-Null
+            }
+            { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory $invalidPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } |
+                Should -Throw "*CK_DocumentCache_IsJsonObject*enabled and trusted*"
+            Should -Invoke Get-CmsToken -Times 0 -Exactly
         }
         It 'Rejects a pre-change restored package with the same fingerprint before API setup' {
             { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory $script:oldPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw "Template schema catalog assertions failed for '$script:restored'."

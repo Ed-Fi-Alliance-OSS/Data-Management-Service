@@ -52,7 +52,8 @@ function Invoke-BootstrapCdcDockerInspection {
 
 function Get-BootstrapCdcHostProcessCommand {
     if ($IsLinux -or $IsMacOS) {
-        $commands = @(& ps -eo args= 2>$null)
+        $processList = Get-Command ps -CommandType Application -ErrorAction Stop
+        $commands = @(& $processList -eo args= 2>$null)
         if ($LASTEXITCODE -ne 0) { throw 'CDC host process inspection is unavailable.' }
         return $commands
     }
@@ -260,13 +261,19 @@ function Invoke-BootstrapCdcEnable {
             $failure = ($output -join "`n") | ConvertFrom-Json
             $codes = @($failure.diagnostics | ForEach-Object {
                 if ($_.component -cin @('Request', 'WorkflowState', 'Projection', 'ProviderSetup', 'Kafka', 'Connect', 'Worker', 'Metrics', 'WriterPublication') -and
-                    $_.failure -cin @('InvalidInput', 'Unavailable', 'Timeout', 'AuthenticationFailed', 'Conflict', 'ValidationFailed')) {
+                    $_.failure -cin @('InvalidInput', 'Unavailable', 'Timeout', 'AuthenticationFailed', 'Conflict', 'ValidationFailed', 'NativeDocumentCacheWorkerRequired')) {
                     "$($_.component)/$($_.failure)"
                 }
             } | Select-Object -Unique)
         }
         catch { $codes = @() }
-        $enableError = [InvalidOperationException]::new("CDC enable did not authorize writer publication (exit $exitCode). Retain the original state and inspect with SchemaTools cdc status.")
+        $message = if ('Worker/NativeDocumentCacheWorkerRequired' -cin $codes) {
+            "SQL Server native DocumentCache CDC requires a DMS release with a qualified Kafka Connect worker. Retain the original state and update DMS and its pinned worker together before retrying."
+        }
+        else {
+            "CDC enable did not authorize writer publication (exit $exitCode). Retain the original state and inspect with SchemaTools cdc status."
+        }
+        $enableError = [InvalidOperationException]::new($message)
         $enableError.Data['CdcFailureCodes'] = $codes
         throw $enableError
     }

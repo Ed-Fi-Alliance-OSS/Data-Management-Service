@@ -27,6 +27,7 @@ public static class DmsTargetValidator
     public const string CompatibilityLevelCheck = "CompatibilityLevel";
     public const string MssqlPhysicalSchemaVersionCheck = "MssqlPhysicalSchemaVersion";
     public const string DocumentJsonColumnTypeCheck = "DocumentJsonColumnType";
+    public const string MssqlDocumentCacheObjectCheck = "MssqlDocumentCacheObjectCheck";
     public const string InventoryHashCheck = "InventoryHash";
     public const string ContentProfileCheck = "ContentProfile";
     public const string ProjectSetCheck = "ProjectSet";
@@ -254,9 +255,15 @@ public static class DmsTargetValidator
             return Invalid(DmsProvisioningFailureCode.TargetIncompatible, MssqlPhysicalSchemaVersionCheck);
         }
 
-        return DocumentJsonColumnTypeMatches(facts.DocumentJsonColumns, manifest)
-            ? null
-            : Invalid(DmsProvisioningFailureCode.TargetIncompatible, DocumentJsonColumnTypeCheck);
+        if (!DocumentJsonColumnTypeMatches(facts.DocumentJsonColumns, manifest))
+        {
+            return Invalid(DmsProvisioningFailureCode.TargetIncompatible, DocumentJsonColumnTypeCheck);
+        }
+
+        return
+            manifest.DatabaseEngine == RestoreManifest.MssqlEngine && !facts.HasMssqlDocumentCacheObjectCheck
+            ? Invalid(DmsProvisioningFailureCode.TargetIncompatible, MssqlDocumentCacheObjectCheck)
+            : null;
     }
 
     /// <summary>
@@ -392,9 +399,8 @@ public static class DmsTargetValidator
                 !string.Equals(name, ConfigurationServiceSchemaName, StringComparison.OrdinalIgnoreCase)
             ),
         ];
-        bool everyResourceHasCompanion = Array.TrueForAll(
-            resourceSchemas,
-            resource => partition.TrackedChangesProjects.Contains(resource, StringComparer.Ordinal)
+        bool everyResourceHasCompanion = Array.TrueForAll(resourceSchemas, resource =>
+            partition.TrackedChangesProjects.Contains(resource, StringComparer.Ordinal)
         );
         bool everyCompanionHasResource = partition.TrackedChangesProjects.All(project =>
             partition.ResourceSchemas.Contains(project, StringComparer.Ordinal)

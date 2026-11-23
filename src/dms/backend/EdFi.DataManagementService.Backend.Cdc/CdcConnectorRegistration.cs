@@ -100,6 +100,14 @@ public sealed class CdcConnectorRegistration
         var token = timeout.Token;
         try
         {
+            if (!CdcQualifiedWorkerImage.CanServe(request))
+            {
+                return Failure(
+                    CdcDeploymentComponent.Worker,
+                    CdcDeploymentFailure.NativeDocumentCacheWorkerRequired
+                );
+            }
+
             await using var session = await _store.AcquireAsync(
                 request.Timing.CallTimeout,
                 request.Timing.PollInterval < request.Timing.CallTimeout

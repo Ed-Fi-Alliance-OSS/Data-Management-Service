@@ -18,11 +18,23 @@ Import-Module (Join-Path $PSScriptRoot 'cdc-qualification.psm1') -Force
 if ($Suite -ne 'All' -and $Lane -notin @('Postgresql', 'Mssql')) {
     throw 'A suite selection requires one provider lane.'
 }
+$mssqlNativeDocumentCache = [object]::Equals((Get-CdcQualificationWorkerImage)['mssqlNativeDocumentCache'], $true)
 $jobs = @(
     if ($Lane -in @('All', 'Kafka')) { @{ lane = 'Kafka'; suite = 'All' } }
     foreach ($provider in @('Postgresql', 'Mssql')) {
         if ($Lane -notin @('All', $provider)) { continue }
-        foreach ($phase in (Get-CdcQualificationProviderSuite -Provider $provider).Keys) {
+        $suites = Get-CdcQualificationProviderSuite -Provider $provider -MssqlNativeDocumentCache $mssqlNativeDocumentCache
+        if ($provider -eq 'Mssql' -and -not $mssqlNativeDocumentCache) {
+            if ($Suite -ne 'All' -and -not $suites.Contains($Suite)) {
+                throw "Mssql/$Suite requires a shipped worker qualified for native DocumentJson."
+            }
+            if ($Suite -in @('All', 'Admission', 'History')) {
+                $notice = 'SQL Server native CDC admission success, managed lifecycle, recovery, record size, API E2E and managed retirement are deferred pending a qualified worker. The Admission job verifies refusal on a fresh native datastore.'
+                Write-Warning $notice
+                if ($env:GITHUB_STEP_SUMMARY) { $notice >> $env:GITHUB_STEP_SUMMARY }
+            }
+        }
+        foreach ($phase in $suites.Keys) {
             if ($Suite -eq 'All' -or $Suite -eq $phase) { @{ lane = $provider; suite = $phase } }
         }
     }

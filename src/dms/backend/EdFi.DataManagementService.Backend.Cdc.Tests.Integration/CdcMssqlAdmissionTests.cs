@@ -5,12 +5,75 @@
 
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.SchemaTools.Provisioning;
+using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Cdc.Tests.Integration.CdcProviderAdmissionFixture;
 using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
+
+[TestFixture]
+[Category("CdcMssqlNativeWorkerRefusal")]
+[Category("MssqlIntegration")]
+[Category("DatabaseIntegration")]
+public sealed class Given_SqlServer_Native_Cache_Without_A_Qualified_Worker
+{
+    [Test]
+    public async Task It_refuses_native_initial_enable_before_provider_setup_or_writer_publication()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(12));
+        var token = timeout.Token;
+        await using var fixture = await CdcProviderAdmissionFixture.StartAsync(
+            CdcProvider.SqlServer,
+            token,
+            offlineKafka: true
+        );
+        var request = fixture.Request;
+        request.WorkerPolicy.QualifiedImageDigest.Should().Be(CdcQualifiedWorkerImage.Digest);
+        (
+            await fixture.ScalarAsync<string>(
+                "SELECT TYPE_NAME(user_type_id) FROM sys.columns WHERE object_id = OBJECT_ID(N'dms.DocumentCache') AND name = N'DocumentJson';",
+                token
+            )
+        )
+            .Should()
+            .Be("json");
+        var before = await fixture.JournalAsync(token);
+        var workflow = new CdcInitialEnableWorkflow(
+            fixture.Infrastructure.StateRoot,
+            fixture.Provider,
+            fixture.Templates,
+            fixture.Kafka,
+            fixture.Infrastructure.Connect,
+            fixture.Infrastructure.Worker,
+            A.Fake<ICdcWorkerStartupTransport>(),
+            fixture.Infrastructure.Metrics,
+            A.Fake<CoreCdc.ICdcProviderSourcePositionAdapter>()
+        );
+
+        var result = await workflow.EnableAsync(request, fixture.Runtime, 60_000, token);
+
+        var refusal = result
+            .Should()
+            .BeOfType<CdcTransportResult<CdcWriterPublicationResult>.Unavailable>()
+            .Subject;
+        refusal.Diagnostic.Component.Should().Be(CdcDeploymentComponent.Worker);
+        refusal.Diagnostic.Failure.Should().Be(CdcDeploymentFailure.NativeDocumentCacheWorkerRequired);
+        var after = await fixture.JournalAsync(token);
+        after.Operations.Select(op => op.Effect).Should().Equal(before.Operations.Select(op => op.Effect));
+        after.WriterPublicationAuthorized.Should().BeFalse();
+        fixture.ProviderModes.Should().BeEmpty();
+        (
+            await fixture.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.database_principals WHERE name = N'dms_connector'",
+                token
+            )
+        )
+            .Should()
+            .Be(0);
+    }
+}
 
 [TestFixture]
 [Category(CdcControllerCategories.Admission)]
@@ -634,18 +697,15 @@ public sealed class Given_SqlServer_Controller_Admission
         var source = _fixture.CreateManagedSource(database);
         bool created = false;
         bool interrupted = false;
-        var wrapper = new CreationBoundary(
-            source,
-            () =>
+        var wrapper = new CreationBoundary(source, () =>
+        {
+            created = true;
+            if (fault == "lost-create-result")
             {
-                created = true;
-                if (fault == "lost-create-result")
-                {
-                    interrupted = true;
-                    throw new IOException("lost CREATE result");
-                }
+                interrupted = true;
+                throw new IOException("lost CREATE result");
             }
-        );
+        });
         _fixture.Hooks.OnBoundary = e =>
         {
             if (
@@ -1065,18 +1125,15 @@ public sealed class Given_SqlServer_Controller_Admission
     {
         await _fixture.RegisterAsync(Token);
         int unavailable = 0;
-        var kafka = _fixture.Hooks.Decorate<ICdcKafkaAdminAdapter>(
-            _fixture.Kafka,
-            name =>
+        var kafka = _fixture.Hooks.Decorate<ICdcKafkaAdminAdapter>(_fixture.Kafka, name =>
+        {
+            if (name == nameof(ICdcKafkaAdminAdapter.InspectSchemaHistoryAsync))
             {
-                if (name == nameof(ICdcKafkaAdminAdapter.InspectSchemaHistoryAsync))
-                {
-                    unavailable++;
-                    throw new IOException("injected unavailable schema history observation");
-                }
-                return CdcControllerBoundary.Observation;
+                unavailable++;
+                throw new IOException("injected unavailable schema history observation");
             }
-        );
+            return CdcControllerBoundary.Observation;
+        });
         (
             await _fixture
                 .AdmissionWithKafka(kafka)

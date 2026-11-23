@@ -394,13 +394,78 @@ jobs:
           path: |
             **/*.trx
 
+  build-cms-mssql-templates:
+    name: Build Native MSSQL ${{ matrix.kind }} Template for CMS
+    needs: detect-fresh-build-changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.config_relevant == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [Minimal, Populated]
+    env:
+      TEMPLATE_KIND: ${{ matrix.kind }}
+      TEMPLATE_DATABASE: edfi_datamanagementservice_template
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build the DMS image
+        run: docker build --tag ed-fi-api-local:latest --build-context parentdir=./src --file src/dms/Dockerfile src/dms
+
+      - name: Provision and seed the native template source
+        shell: pwsh
+        working-directory: eng/docker-compose
+        run: |
+          ./bootstrap-local-dms.ps1 -DatabaseEngine mssql -DataStandardVersion 5.2 -SeparateConfigDatabase `
+            -DataStoreDatabaseName $env:TEMPLATE_DATABASE -LoadSeedData -SeedTemplate $env:TEMPLATE_KIND
+
+      - name: Package the DMS datastore for live CMS restore tests
+        shell: pwsh
+        working-directory: eng/DatabaseTemplates
+        run: |
+          $ErrorActionPreference = "Stop"
+          Import-Module ./Template-Management.psm1 -Force
+          Import-Module ../docker-compose/bootstrap-restore.psm1 -Force
+          $schema = Get-RestoreCandidateSchemaFact -CandidateDirectory "../docker-compose/.bootstrap"
+          Build-TemplateNuGetPackage -ConfigFilePath "./${env:TEMPLATE_KIND}TemplateSettings.psd1" `
+            -DatabaseEngine mssql -StandardVersion 5.2.0 -PackageVersion "1.0.0-ci.$env:GITHUB_RUN_ID" `
+            -TemplateKind $env:TEMPLATE_KIND -DatabaseName $env:TEMPLATE_DATABASE `
+            -DumpAllUserSchemas -SchemaFilePath $schema.SchemaFilePaths
+          $packages = @(Get-ChildItem -LiteralPath . -Filter "*.nupkg" -File)
+          if ($packages.Count -ne 1) {
+              throw "Expected one native MSSQL template package."
+          }
+          (Get-FileHash -Algorithm SHA256 -LiteralPath $packages[0].FullName).Hash |
+            Set-Content -LiteralPath "package.sha256"
+
+      - name: Upload the workflow-local template
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cms-mssql-${{ matrix.kind }}-template
+          path: |
+            eng/DatabaseTemplates/*.nupkg
+            eng/DatabaseTemplates/package.sha256
+          if-no-files-found: error
+          retention-days: 7
+
   # Live DMS template provisioning lanes (DMS-1438) on both engines: builder packages plus the
-  # released template packages from the public feed, which the tests sign with an ephemeral key.
+  # real packages, which the tests sign with an ephemeral key.
   # SQL Server restores from a runner directory it reads through the runner's group, so it runs
   # through docker run instead of services: (a service starts before the directory exists).
   run-dms-provisioning-integration-tests:
     name: Run DMS Provisioning Integration Tests
-    needs: detect-fresh-build-changes
+    needs: [detect-fresh-build-changes, build-cms-mssql-templates]
     if: >-
       github.event_name != 'pull_request' ||
       needs.detect-fresh-build-changes.outputs.config_relevant == 'true'
@@ -417,8 +482,8 @@ jobs:
       ConnectionStrings__MssqlAdmin: "Server=tcp:127.0.0.1,1433;User Id=sa;Password=DmsProvisioning1!;TrustServerCertificate=true"
       DMS_PROVISIONING_PSQL_PATH: /usr/lib/postgresql/18/bin/psql
       DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH: /var/opt/dms-template-staging
-      # The released template packages and the effective schema hash their manifests declare.
-      TEMPLATE_PACKAGE_VERSION: "8.1.0"
+      # PostgreSQL uses released packages. Both engines use the DS 5.2 effective schema.
+      POSTGRESQL_TEMPLATE_PACKAGE_VERSION: "8.1.0"
       DMS_EXPECTED_EFFECTIVE_SCHEMA_HASH: "6f7cac1476c6ede6140762df73f04c9b71f3af95f57b0ed03e0e6fa44a799d78"
     services:
       postgres:
@@ -497,20 +562,18 @@ jobs:
           exit 1
 
       # Pinned by SHA-256: the tests sign whatever they find, so a changed package must fail here.
-      - name: Download the Template Packages
+      - name: Download the Released PostgreSQL Template Packages
         run: |
           $ErrorActionPreference = "Stop"
           $expected = [ordered]@{
               "EdFi.Api.Minimal.Template.PostgreSql.5.2.0" = "bdc9142e730d2b28cbf7e4e821d26e6b74d6ad3d53ee069f528fcc4d52e67af2"
               "EdFi.Api.Populated.Template.PostgreSql.5.2.0" = "034c1c3e1051e56c5658a4feba13f9d7987a0240e3afa1b0da324c9db46f4d20"
-              "EdFi.Api.Minimal.Template.MsSql.5.2.0" = "c87ba7d9ec1802007987cb97874a39a68d4171c4a4adbbe39a7a0e6b7901f8a6"
-              "EdFi.Api.Populated.Template.MsSql.5.2.0" = "9bd0a54a10fbe345a56fea05d419a6c8d8b532db8948ba4e915aa4f86a53b66b"
           }
           $index = Invoke-RestMethod "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi%40Release/nuget/v3/index.json"
           $baseAddress = @($index.resources | Where-Object { $_."@type" -like "PackageBaseAddress*" })[0]."@id"
           $directory = Join-Path $env:RUNNER_TEMP "dms-template-packages"
           New-Item -ItemType Directory -Force -Path $directory | Out-Null
-          $version = $env:TEMPLATE_PACKAGE_VERSION
+          $version = $env:POSTGRESQL_TEMPLATE_PACKAGE_VERSION
           foreach ($id in $expected.Keys) {
               $lowerId = $id.ToLowerInvariant()
               $file = Join-Path $directory "$id.$version.nupkg"
@@ -522,6 +585,27 @@ jobs:
               Write-Output "$id $version $actual"
           }
           "DMS_TEMPLATE_PACKAGE_DIRECTORY=$directory" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Download the Native MSSQL Templates
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: cms-mssql-*-template
+          path: ${{ runner.temp }}/cms-mssql-templates
+
+      # The fixtures sign a copy with an ephemeral key. Check it against the producing job first.
+      - name: Check the Native MSSQL Template Inputs
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($kind in "Minimal", "Populated") {
+              $directory = Join-Path $env:RUNNER_TEMP "cms-mssql-templates/cms-mssql-$kind-template"
+              $packages = @(Get-ChildItem -LiteralPath $directory -Filter "*.nupkg" -File)
+              $expected = (Get-Content -LiteralPath (Join-Path $directory "package.sha256") -Raw).Trim()
+              if ($packages.Count -ne 1 -or
+                  (Get-FileHash -Algorithm SHA256 -LiteralPath $packages[0].FullName).Hash -cne $expected) {
+                  throw "The native MSSQL $kind template does not match the package built by this workflow."
+              }
+              Copy-Item -LiteralPath $packages[0].FullName -Destination $env:DMS_TEMPLATE_PACKAGE_DIRECTORY
+          }
 
       - name: Build
         run: ./build-config.ps1 Build -Configuration ${{ env.CONFIGURATION }}
@@ -1097,6 +1181,7 @@ jobs:
       - verify-security-metadata-tools
       - run-unit-tests
       - run-integration-tests
+      - build-cms-mssql-templates
       - run-dms-provisioning-integration-tests
       - run-e2e-tests
       - run-e2e-tests-mssql

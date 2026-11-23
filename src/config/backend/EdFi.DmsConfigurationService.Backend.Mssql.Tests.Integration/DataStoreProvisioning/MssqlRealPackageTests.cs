@@ -18,7 +18,7 @@ using static EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataSt
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning;
 
 /// <summary>
-/// Step 5.1 on SQL Server: the real feed packages in <c>DMS_TEMPLATE_PACKAGE_DIRECTORY</c>, signed with an ephemeral
+/// Live SQL Server restore uses the native templates in <c>DMS_TEMPLATE_PACKAGE_DIRECTORY</c>, signed with an ephemeral
 /// key and allowlisted through the real catalog, staged through the directory shared with the server and restored.
 /// Minimal and Sample each create a target that carries the expected identity, the manifest's effective schema and
 /// canonical inventory, and passes every validation gate including security; a second create reconciles without

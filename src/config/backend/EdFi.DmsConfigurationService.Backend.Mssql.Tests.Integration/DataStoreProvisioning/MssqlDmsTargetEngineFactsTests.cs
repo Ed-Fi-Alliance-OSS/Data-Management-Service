@@ -136,6 +136,32 @@ public class MssqlDmsTargetEngineFactsTests
     }
 
     [TestFixture]
+    public class Given_a_drifted_native_document_cache_check
+    {
+        [TestCase("ALTER TABLE dms.DocumentCache NOCHECK CONSTRAINT CK_DocumentCache_IsJsonObject;")]
+        [TestCase(
+            "ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; "
+                + "ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson]) = 1);"
+        )]
+        public async Task It_rejects_the_target_before_promotion(string mutation)
+        {
+            RequireConfiguredOrSkip();
+            await using TestDatabase database = await CreateDmsShapedDatabaseAsync("cachecheck");
+            await database.ExecuteAsync(mutation);
+            (DmsTargetFacts facts, DmsIdentityRead identity) = await ReadAsync(database);
+
+            Validate(facts, identity, new DmsTargetValidationRule.Staging(Guid.NewGuid()))
+                .Should()
+                .Be(
+                    new DmsTargetValidation.Invalid(
+                        DmsProvisioningFailureCode.TargetIncompatible,
+                        DmsTargetValidator.MssqlDocumentCacheObjectCheck
+                    )
+                );
+        }
+    }
+
+    [TestFixture]
     public class Given_the_dms_shaped_database
     {
         private TestDatabase? _database;

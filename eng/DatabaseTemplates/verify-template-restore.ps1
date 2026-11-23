@@ -188,7 +188,7 @@ try {
 
     Assert-DocumentTableShape -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $VerificationDatabaseName -MssqlPassword $MssqlPassword
 
-    # --- Restore-manifest assertions (version-1 restore contract) ---
+    # --- Restore-manifest assertions ---
     # Prove the package carries a shape-valid restore manifest that matches the restored
     # database exactly, using the same independent derivation a restore consumer performs:
     # kind, engine, artifact identity and hash, effective-schema fields, physical baseline,
@@ -211,7 +211,7 @@ try {
         if ($null -eq $manifestFile) {
             throw "Package '$($manifestPackage.Name)' does not contain a $(Get-RestoreManifestFileName); packages without a restore manifest are not eligible for restore."
         }
-        $restoreManifest = Read-RestoreManifest -Path $manifestFile.FullName
+        $restoreManifest = Read-RestoreManifest -Path $manifestFile.FullName -DatabaseEngine $DatabaseEngine
 
         if ([string]$restoreManifest.templateKind -cne $ExpectedTemplateKind) {
             throw "Restore manifest declares templateKind '$($restoreManifest.templateKind)' but this verification expects '$ExpectedTemplateKind'."

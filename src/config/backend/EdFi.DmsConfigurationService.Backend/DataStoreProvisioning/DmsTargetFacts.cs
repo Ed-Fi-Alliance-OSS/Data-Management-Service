@@ -46,6 +46,9 @@ public sealed record DmsTargetFacts
     /// <summary>The physical version proven by the SQL Server singleton marker, when present.</summary>
     public string? MssqlPhysicalSchemaVersion { get; init; }
 
+    /// <summary>Whether SQL Server enforces the required object-only check on non-null DocumentJson.</summary>
+    public bool HasMssqlDocumentCacheObjectCheck { get; init; }
+
     /// <summary>Every <c>dms.*.DocumentJson</c> column and its type (item 3).</summary>
     public required IReadOnlyList<DmsDocumentJsonColumn> DocumentJsonColumns { get; init; }
 

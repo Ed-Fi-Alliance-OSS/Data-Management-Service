@@ -164,7 +164,7 @@ bash "$CLASSIFIER"
         @{ Job = 'verify-security-metadata-tools' }
         @{ Job = 'run-unit-tests' }
         @{ Job = 'run-e2e-tests' }
-        @{ Job = 'run-dms-provisioning-integration-tests' }
+        @{ Job = 'build-cms-mssql-templates' }
     ) {
         $block = Get-JobBlock $Job
         $block | Should -Match '(?m)^    needs: detect-fresh-build-changes$'
@@ -198,13 +198,28 @@ bash "$CLASSIFIER"
         $job | Should -Match '--volume "\$DMS_PROVISIONING_MSSQL_STAGING_PATH:\$DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH"'
     }
 
-    It 'downloads the four released template packages pinned by SHA-256' {
+    It 'downloads the two released PostgreSQL templates pinned by SHA-256' {
         $job = Get-JobBlock 'run-dms-provisioning-integration-tests'
         $job | Should -Match '_packaging/EdFi%40Release/nuget/v3/index\.json'
         $pins = [regex]::Matches($job, '(?m)^\s+"EdFi\.Api\.(Minimal|Populated)\.Template\.(PostgreSql|MsSql)\.5\.2\.0" = "[0-9a-f]{64}"$')
         @($pins | ForEach-Object { "$($_.Groups[1].Value)/$($_.Groups[2].Value)" } | Sort-Object -Unique) |
-            Should -Be @('Minimal/MsSql', 'Minimal/PostgreSql', 'Populated/MsSql', 'Populated/PostgreSql')
+            Should -Be @('Minimal/PostgreSql', 'Populated/PostgreSql')
         $job | Should -Match 'if \(\$actual -ne \$expected\[\$id\]\)'
+    }
+
+    It 'requires both native same-run MSSQL package builds before exercising live CMS restore' {
+        $producer = Get-JobBlock 'build-cms-mssql-templates'
+        $producer | Should -Match 'kind: \[Minimal, Populated\]'
+        $producer | Should -Match 'bootstrap-local-dms\.ps1 -DatabaseEngine mssql'
+        $producer | Should -Match 'Build-TemplateNuGetPackage'
+        $producer | Should -Not -Match 'secrets\.|packages: write|id-token: write|contents: write'
+
+        $consumer = Get-JobBlock 'run-dms-provisioning-integration-tests'
+        $consumer | Should -Match 'needs: \[detect-fresh-build-changes, build-cms-mssql-templates\]'
+        $consumer | Should -Match "github.event_name != 'pull_request' \|\|\s+needs.detect-fresh-build-changes.outputs.config_relevant == 'true'"
+        $consumer | Should -Match 'pattern: cms-mssql-\*-template'
+        $consumer | Should -Match 'Get-FileHash -Algorithm SHA256 .+\.Hash -cne \$expected'
+        (Get-JobBlock 'config-ci-gate') | Should -Match '(?m)^      - run-dms-provisioning-integration-tests$'
     }
 
     It 'runs versioning and workflow tests plus the reusable local package smoke without publication' {

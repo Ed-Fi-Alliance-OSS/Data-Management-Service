@@ -93,6 +93,16 @@ public sealed class CdcInitialEnableWorkflow(
                 established = journal.Operations.Any(o =>
                     o.Effect == CdcWorkflowEffect.EstablishConnector && o.Completions.Length == 1
                 );
+                if (!established && !CdcQualifiedWorkerImage.CanServe(request))
+                {
+                    return new CdcTransportResult<CdcWriterPublicationResult>.Unavailable(
+                        new(
+                            CdcDeploymentComponent.Worker,
+                            CdcDeploymentFailure.NativeDocumentCacheWorkerRequired
+                        )
+                    );
+                }
+
                 if (established)
                 {
                     // Retry consumes fresh terminal evidence under this session before setup guards

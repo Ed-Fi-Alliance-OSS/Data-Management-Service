@@ -45,6 +45,14 @@ internal static class CdcConnectorTemplateSharedRules
         );
     }
 
+    internal static bool IsNativeSqlServerDocumentCache(CdcSourceTableInventory table) =>
+        table.TableKind == CdcSourceTableKind.DocumentCache
+        && table.TableName == DocumentCacheInventoryDefinition.DocumentCache
+        && table.Columns.Any(column =>
+            column.ColumnName == DocumentCacheInventoryDefinition.DocumentCacheColumns.DocumentJson
+            && string.Equals(column.ProviderDataType, "json", StringComparison.OrdinalIgnoreCase)
+        );
+
     internal static IReadOnlyList<CdcExpectedMessageKeyColumns> OrderedMessageKeyColumns(
         CdcConnectorTemplateRequest request
     )

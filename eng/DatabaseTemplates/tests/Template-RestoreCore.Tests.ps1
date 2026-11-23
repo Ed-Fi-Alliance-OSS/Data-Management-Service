@@ -429,7 +429,8 @@ Describe "Assert-RestoreManifestShape" {
     It "requires the physical version member under its exact wire name" {
         $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
         $json = ($manifest | ConvertTo-Json -Depth 10).Replace('"mssqlPhysicalSchemaVersion"', '"MSSQLPhysicalSchemaVersion"')
-        { Read-RestoreManifest -Content $json -Path "restore-manifest.json" } | Should -Throw "*mssqlPhysicalSchemaVersion*"
+        { Read-RestoreManifest -DatabaseEngine mssql -Content $json -Path "restore-manifest.json" } |
+            Should -Throw "*MSSQLPhysicalSchemaVersion*not part of the format-2 contract*"
     }
 
     It "rejects a PostgreSQL manifest carrying even a null MSSQL version" {
@@ -595,7 +596,7 @@ Describe "Read-RestoreManifest" {
         $manifest.templateKind = @("Minimal")
         $manifest.version = @(1)
         $json = $manifest | ConvertTo-Json -Depth 10
-        $parsed = Read-RestoreManifest -Path "restore-manifest.json" -Content $json
+        $parsed = Read-RestoreManifest -DatabaseEngine postgresql -Path "restore-manifest.json" -Content $json
         $parsed.databaseEngine | Should -BeExactly "postgresql"
         $parsed.templateKind[0] | Should -BeExactly "Minimal"
     }
@@ -603,14 +604,14 @@ Describe "Read-RestoreManifest" {
     It "requires native SQL Server scalar field kinds even when the legacy reader unwraps singletons" {
         $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
         $manifest.templateKind = @("Minimal")
-        { Read-RestoreManifest -Path "restore-manifest.json" -Content ($manifest | ConvertTo-Json -Depth 10) } |
+        { Read-RestoreManifest -DatabaseEngine mssql -Path "restore-manifest.json" -Content ($manifest | ConvertTo-Json -Depth 10) } |
             Should -Throw "*templateKind*"
     }
 
     It "rejects a singleton array root around the SQL Server format-2 fixture" {
         $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.mssql.json"
         $json = "[" + [IO.File]::ReadAllText($fixture) + "]"
-        { Read-RestoreManifest -Path $fixture -Content $json } | Should -Throw "*root*JSON object*"
+        { Read-RestoreManifest -DatabaseEngine mssql -Path $fixture -Content $json } | Should -Throw "*root*JSON object*"
     }
 
     It "rejects case-variant and unknown SQL Server format-2 members" -ForEach @(
@@ -621,14 +622,14 @@ Describe "Read-RestoreManifest" {
         $json = [IO.File]::ReadAllText($fixture)
         $json.Contains($From) | Should -BeTrue
         $json = $json.Replace($From, $To)
-        { Read-RestoreManifest -Path $fixture -Content $json } | Should -Throw "*not part of the format-2 contract*"
+        { Read-RestoreManifest -DatabaseEngine mssql -Path $fixture -Content $json } | Should -Throw "*not part of the format-2 contract*"
     }
 
     It "rejects unknown SQL Server inventory members before canonical hashing" {
         $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
         $manifest.inventory["unexpected"] = 1
         $json = $manifest | ConvertTo-Json -Depth 20
-        { Read-RestoreManifest -Path "restore-manifest.json" -Content $json } | Should -Throw "*inventory*not part of the format-2 contract*"
+        { Read-RestoreManifest -DatabaseEngine mssql -Path "restore-manifest.json" -Content $json } | Should -Throw "*inventory*not part of the format-2 contract*"
     }
 
     It "rejects unknown SQL Server nested schema and object members before canonical hashing" {
@@ -636,14 +637,14 @@ Describe "Read-RestoreManifest" {
         $manifest.inventory.schemas[0]["unexpected"] = 1
         $manifest.inventory.schemas[0].objects[0]["unexpected"] = 1
         $json = $manifest | ConvertTo-Json -Depth 20
-        { Read-RestoreManifest -Path "restore-manifest.json" -Content $json } | Should -Throw "*inventory*not part of the format-2 contract*"
+        { Read-RestoreManifest -DatabaseEngine mssql -Path "restore-manifest.json" -Content $json } | Should -Throw "*inventory*not part of the format-2 contract*"
     }
 
     It "rejects singleton array schema names in SQL Server inventories before canonical hashing" {
         $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
         $manifest.inventory.schemas[0].schemaName = @($manifest.inventory.schemas[0].schemaName)
         $json = $manifest | ConvertTo-Json -Depth 20
-        { Read-RestoreManifest -Path "restore-manifest.json" -Content $json } | Should -Throw "*schemaName*JSON string*"
+        { Read-RestoreManifest -DatabaseEngine mssql -Path "restore-manifest.json" -Content $json } | Should -Throw "*schemaName*JSON string*"
     }
 
     It "rejects case-variant nested SQL Server inventory members before canonical hashing" -ForEach @(
@@ -654,7 +655,7 @@ Describe "Read-RestoreManifest" {
         $json = [IO.File]::ReadAllText($fixture)
         $json.Contains($From) | Should -BeTrue
         $json = $json.Replace($From, $To)
-        { Read-RestoreManifest -Path $fixture -Content $json } | Should -Throw $Expected
+        { Read-RestoreManifest -DatabaseEngine mssql -Path $fixture -Content $json } | Should -Throw $Expected
     }
 
     It "rejects Int32 overflow in SQL Server numeric fields before restore" -ForEach @(
@@ -675,7 +676,7 @@ Describe "Read-RestoreManifest" {
     It "rejects malformed Unicode in SQL Server string leaves" {
         $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.mssql.json"
         $json = [IO.File]::ReadAllText($fixture).Replace('"engineVersion": "17.0.900.7"', '"engineVersion": "17.0.900.7\uD800"')
-        { Read-RestoreManifest -Path $fixture -Content $json } | Should -Throw "*not valid JSON*"
+        { Read-RestoreManifest -DatabaseEngine mssql -Path $fixture -Content $json } | Should -Throw "*not valid JSON*"
     }
 
     It "checks SQL Server dictionary key sets through the dictionary enumerator" {
@@ -688,33 +689,34 @@ Describe "Read-RestoreManifest" {
     It "preserves PostgreSQL format-1 singleton array handling" {
         $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.postgresql.json"
         $json = "[" + [IO.File]::ReadAllText($fixture) + "]"
-        (Read-RestoreManifest -Path $fixture -Content $json).databaseEngine | Should -BeExactly "postgresql"
+        (Read-RestoreManifest -DatabaseEngine postgresql -Path $fixture -Content $json).databaseEngine | Should -BeExactly "postgresql"
     }
 
     It "preserves PostgreSQL format-1 singleton root and version array handling together" {
         $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.postgresql.json"
         $json = [IO.File]::ReadAllText($fixture).Replace('"version": 1', '"version": [1]')
         $json = "[" + $json + "]"
-        (Read-RestoreManifest -Path $fixture -Content $json).databaseEngine | Should -BeExactly "postgresql"
+        (Read-RestoreManifest -DatabaseEngine postgresql -Path $fixture -Content $json).databaseEngine | Should -BeExactly "postgresql"
     }
 
     It "preserves PostgreSQL format-1 nested ignored fields up to ConvertFrom-Json's legacy depth" {
         $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.postgresql.json"
         $nested = ("[" * 70) + "0" + ("]" * 70)
         $json = [IO.File]::ReadAllText($fixture).Replace('"version": 1,', '"version": 1, "ignored": ' + $nested + ',')
-        (Read-RestoreManifest -Path $fixture -Content $json).databaseEngine | Should -BeExactly "postgresql"
+        (Read-RestoreManifest -DatabaseEngine postgresql -Path $fixture -Content $json).databaseEngine | Should -BeExactly "postgresql"
     }
 
     It "preserves PostgreSQL format-1 parsing of <Case>" -ForEach @(
         @{ Case = "an unrelated repeated field"; Value = '"engineVersion": "18", "engineVersion": "18.1"' }
         @{ Case = "a comment"; Value = '/* PostgreSQL engine */ "engineVersion": "18.1"' }
         @{ Case = "a single-quoted value"; Value = '"engineVersion": ''18.1''' }
+        @{ Case = "an apostrophe in a comment beside a single-quoted value"; Value = '/* DMS''s template */ "engineVersion": ''18.1''' }
     ) {
         $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.postgresql.json"
         $original = [IO.File]::ReadAllText($fixture)
         $original.Contains('"engineVersion": "18.1"') | Should -BeTrue
         $json = $original.Replace('"engineVersion": "18.1"', $Value)
-        (Read-RestoreManifest -Path $fixture -Content $json).engineVersion | Should -BeExactly "18.1"
+        (Read-RestoreManifest -DatabaseEngine postgresql -Path $fixture -Content $json).engineVersion | Should -BeExactly "18.1"
     }
 
     It "preserves escaped apostrophes in PostgreSQL format-1 single-quoted legacy values" {
@@ -724,51 +726,43 @@ Describe "Read-RestoreManifest" {
         $replacement = '"engineVersion": "18.1", "legacyNote": ' + $apostrophe + 'DMS\' + $apostrophe + 's template' + $apostrophe
         $json = $original.Replace('"engineVersion": "18.1"', $replacement)
 
-        (Read-RestoreManifest -Path $fixture -Content $json).engineVersion | Should -BeExactly "18.1"
+        (Read-RestoreManifest -DatabaseEngine postgresql -Path $fixture -Content $json).engineVersion | Should -BeExactly "18.1"
     }
 
-    It "refuses an ambiguous <Field> discriminator even when the final value selects PostgreSQL format 1" -ForEach @(
-        @{ Field = "version"; Original = '"version": 1'; Ambiguous = '"version": 2, "version": 1' }
-        @{ Field = "databaseEngine"; Original = '"databaseEngine": "postgresql"'; Ambiguous = '"databaseEngine": "mssql", "databaseEngine": "postgresql"' }
-    ) {
-        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.postgresql.json"
-        $json = [IO.File]::ReadAllText($fixture).Replace($Original, $Ambiguous)
-        { Read-RestoreManifest -Path $fixture -Content $json } | Should -Throw "*duplicate*"
+    It "requires the PostgreSQL reader to reject a SQL Server manifest" {
+        $manifest = New-ValidRestoreManifest -DatabaseEngine mssql
+        $json = $manifest | ConvertTo-Json -Depth 20
+        { Read-RestoreManifest -DatabaseEngine postgresql -Path "restore-manifest.json" -Content $json } |
+            Should -Throw "*declares databaseEngine 'mssql'*selected 'postgresql'*"
     }
 
-    It "rejects duplicate PostgreSQL discriminators before single-quoted legacy values are materialized" -ForEach @(
-        @{ Original = '"version": 1'; Ambiguous = '"version": 2, "version": 1' }
-        @{ Original = '"databaseEngine": "postgresql"'; Ambiguous = '"databaseEngine": "mssql", "databaseEngine": "postgresql"' }
-        @{ Original = '"databaseEngine": "postgresql"'; Ambiguous = '"databaseEngine": "postgresql", "DatabaseEngine": "mssql"' }
-        @{ Original = '"version": 1'; Ambiguous = '"version": 1, "Version": 2' }
-    ) {
-        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.postgresql.json"
-        $json = [IO.File]::ReadAllText($fixture).Replace($Original, $Ambiguous)
-        $json = $json.Replace('"engineVersion": "18.1"', '"engineVersion": ''18.1''')
-        { Read-RestoreManifest -Path $fixture -Content $json } | Should -Throw "*duplicate discriminator*"
+    It "rejects duplicate SQL Server manifest members before materialization" {
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.mssql.json"
+        $json = [IO.File]::ReadAllText($fixture).Replace('"version": 2', '"version": 1, "version": 2')
+        { Read-RestoreManifest -DatabaseEngine mssql -Path $fixture -Content $json } | Should -Throw "*duplicate member*"
     }
 
     It "reads and validates a manifest file round-tripped through JSON" {
         $manifestPath = Join-Path $TestDrive "restore-manifest.json"
         New-ValidRestoreManifest -DatabaseEngine mssql | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding utf8
 
-        $manifest = Read-RestoreManifest -Path $manifestPath
+        $manifest = Read-RestoreManifest -DatabaseEngine mssql -Path $manifestPath
         $manifest.packageId | Should -Be "EdFi.Api.Minimal.Template.MsSql.5.2.0"
         $manifest.templateKind | Should -Be "Minimal"
     }
 
     It "fails with restore-eligibility guidance when the manifest file is absent (legacy package)" {
-        { Read-RestoreManifest -Path (Join-Path $TestDrive "missing.json") } | Should -Throw "*not eligible for restore*"
+        { Read-RestoreManifest -DatabaseEngine mssql -Path (Join-Path $TestDrive "missing.json") } | Should -Throw "*not eligible for restore*"
     }
 
     It "fails on an empty or malformed manifest file" {
         $emptyPath = Join-Path $TestDrive "empty.json"
         Set-Content -LiteralPath $emptyPath -Value "" -Encoding utf8 -NoNewline
-        { Read-RestoreManifest -Path $emptyPath } | Should -Throw "*is empty*"
+        { Read-RestoreManifest -DatabaseEngine mssql -Path $emptyPath } | Should -Throw "*is empty*"
 
         $malformedPath = Join-Path $TestDrive "malformed.json"
         Set-Content -LiteralPath $malformedPath -Value "{ not json" -Encoding utf8
-        { Read-RestoreManifest -Path $malformedPath } | Should -Throw "*not valid JSON*"
+        { Read-RestoreManifest -DatabaseEngine mssql -Path $malformedPath } | Should -Throw "*not valid JSON*"
     }
 }
 
@@ -1816,7 +1810,7 @@ Describe "New-TemplateRestoreManifest" {
 
     It "preserves positional PostgreSQL manifest arguments and bytes" {
         $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.postgresql.json"
-        $f = Read-RestoreManifest -Path $fixture
+        $f = Read-RestoreManifest -DatabaseEngine postgresql -Path $fixture
         $positional = New-TemplateRestoreManifest $f.packageId $f.packageVersion $f.databaseEngine $f.templateKind `
             $f.dataStandardVersion $f.projects $f.apiSchemaFormatVersion $f.effectiveSchemaHash $f.resourceKeyCount `
             $f.resourceKeySeedHashB64 $f.relationalMappingVersion $f.engineVersion $null $f.documentJsonColumnType `

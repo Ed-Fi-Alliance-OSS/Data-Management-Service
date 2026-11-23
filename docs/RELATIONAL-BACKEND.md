@@ -496,8 +496,9 @@ later. For an in-use datastore, plan the data carry-forward and the cache/CDC
 cutover before replacing it.
 
 Cache rollout requires a qualified native-v2 runtime. CDC rollout also requires a
-compatible, qualified worker. Template-backed rollout requires a matching, verified
-`v2` package and compatible restore tools.
+compatible, qualified worker. Managed CDC enablement rejects native SQL Server targets
+until the DMS release qualifies its pinned worker for native `DocumentJson`. Template-backed
+rollout requires a matching, verified `v2` package and compatible restore tools.
 The [adoption record](../reference/design/backend-redesign/epics/17-mssql-gap-closure/03-sql-server-2025-and-native-json.md#dms-1328-adoption-scope)
 tracks these boundaries.
 

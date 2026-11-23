@@ -71,7 +71,8 @@ CREATE TABLE [dms].[DocumentCache]
     [DocumentUuid] uniqueidentifier NOT NULL,
     [DocumentJson] json NOT NULL,
     [ComputedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
-    CONSTRAINT [PK_DocumentCache] PRIMARY KEY CLUSTERED ([DocumentId])
+    CONSTRAINT [PK_DocumentCache] PRIMARY KEY CLUSTERED ([DocumentId]),
+    CONSTRAINT [CK_DocumentCache_IsJsonObject] CHECK (ISJSON([DocumentJson], OBJECT) = 1)
 );
 
 CREATE TABLE [dms].[MssqlPhysicalSchema]

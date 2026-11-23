@@ -284,6 +284,7 @@ public class DmsTargetValidatorTests
             DmsTargetFacts mssqlFacts = facts with
             {
                 MssqlPhysicalSchemaVersion = "v2",
+                HasMssqlDocumentCacheObjectCheck = true,
                 DocumentJsonColumns =
                 [
                     new DmsDocumentJsonColumn("dms", "DocumentCache", "json")

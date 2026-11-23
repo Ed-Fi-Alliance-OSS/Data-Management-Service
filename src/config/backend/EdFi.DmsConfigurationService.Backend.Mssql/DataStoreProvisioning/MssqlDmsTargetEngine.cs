@@ -417,6 +417,12 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
             },
             cancellationToken
         );
+        List<int> documentCacheObjectChecks = await ReadRowsAsync(
+            connection,
+            MssqlInventoryQueries.DocumentCacheObjectCheck,
+            reader => reader.GetInt32(0),
+            cancellationToken
+        );
         List<string> schemaNames = await ReadRowsAsync(
             connection,
             MssqlInventoryQueries.SchemaNames,
@@ -454,6 +460,7 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
             CompatibilityLevel = compatibilityLevel,
             DocumentJsonColumns = documentJsonColumns,
             MssqlPhysicalSchemaVersion = physicalVersions.SingleOrDefault(),
+            HasMssqlDocumentCacheObjectCheck = documentCacheObjectChecks.Count == 1,
             SchemaNames = schemaNames,
             InventoryObjects = inventoryObjects,
             Principals = principals,

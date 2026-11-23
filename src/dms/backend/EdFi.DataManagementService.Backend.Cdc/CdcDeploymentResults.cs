@@ -29,6 +29,7 @@ public enum CdcDeploymentFailure
     AuthenticationFailed,
     Conflict,
     ValidationFailed,
+    NativeDocumentCacheWorkerRequired,
 }
 
 /// <summary>Only allow-listed classifications cross the workflow output boundary.</summary>
@@ -57,6 +58,8 @@ public sealed class CdcDeploymentDiagnostic
             CdcDeploymentFailure.Conflict =>
                 "The operation conflicted with current state; reconcile before retrying.",
             CdcDeploymentFailure.ValidationFailed => "Observed state does not satisfy the required contract.",
+            CdcDeploymentFailure.NativeDocumentCacheWorkerRequired =>
+                "SQL Server native DocumentCache CDC requires a DMS release with a worker qualified for native DocumentJson. Update DMS and its pinned Kafka Connect worker together before enabling CDC.",
             _ => "Authoritative evidence is unavailable; reconcile live state before retrying.",
         };
 

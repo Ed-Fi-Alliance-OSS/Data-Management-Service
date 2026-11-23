@@ -1392,6 +1392,7 @@ Describe "Get-TemplateSourceCatalogFacts" {
                 if ($query -match 'ProductVersion') { return '17.0.900.7' }
                 if ($query -match 'compatibility_level') { return '170' }
                 if ($query -match 'MssqlPhysicalSchemaVersion') { return 'v2' }
+                if ($query -match 'CK_DocumentCache_IsJsonObject') { return '1' }
                 if ($query -match 'sys\.columns') { return 'DocumentCache|json|1' }
                 # The schema query also names sys.objects (built-in schemas show only when
                 # non-empty), so it is told apart by what it selects.
@@ -1662,7 +1663,7 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
                 Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.123" -TemplateKind "Minimal" -DumpAllUserSchemas -SchemaFilePath "ApiSchema.json"
 
                 # Read-RestoreManifest shape-validates the written manifest as a consumer would.
-                $manifest = Read-RestoreManifest -Path "./restore-manifest.json"
+                $manifest = Read-RestoreManifest -Path "./restore-manifest.json" -DatabaseEngine postgresql
                 $manifest.packageId | Should -Be "EdFi.Api.Minimal.Template.PostgreSql.5.2.0"
                 $manifest.packageVersion | Should -Be "1.0.123"
                 $manifest.databaseEngine | Should -Be "postgresql"

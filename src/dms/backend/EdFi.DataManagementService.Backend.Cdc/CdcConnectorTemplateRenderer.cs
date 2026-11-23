@@ -6,7 +6,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
-using EdFi.DataManagementService.Backend.External;
 using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc;
@@ -229,13 +228,7 @@ internal sealed class CdcConnectorTemplateRenderer(
             request,
             CdcSourceTableKind.DocumentCache
         );
-        if (
-            cacheTable.TableName == DocumentCacheInventoryDefinition.DocumentCache
-            && cacheTable.Columns.Any(column =>
-                column.ColumnName == DocumentCacheInventoryDefinition.DocumentCacheColumns.DocumentJson
-                && string.Equals(column.ProviderDataType, "json", StringComparison.OrdinalIgnoreCase)
-            )
-        )
+        if (CdcConnectorTemplateSharedRules.IsNativeSqlServerDocumentCache(cacheTable))
         {
             config["converters"] = "edfiCacheJson";
             config["edfiCacheJson.type"] =
@@ -255,8 +248,7 @@ internal sealed class CdcConnectorTemplateRenderer(
         config["schema.history.internal.kafka.bootstrap.servers"] = request
             .DeploymentPolicy
             .KafkaBootstrapServers;
-        config["schema.history.internal.kafka.topic"] =
-            request.SchemaHistoryTopicName
+        config["schema.history.internal.kafka.topic"] = request.SchemaHistoryTopicName
             ?? throw new InvalidOperationException(
                 "CDC connector template SQL Server schema-history topic was not derived."
             );

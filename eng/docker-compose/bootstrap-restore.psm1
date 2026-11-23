@@ -512,7 +512,7 @@ function Initialize-RestorePackageStage {
             throw "Package '$packageFileName' must contain exactly one $(Get-RestoreManifestFileName), found $($manifestEntries.Count). Packages without a restore manifest are not eligible for restore."
         }
         $manifestText = Read-RestorePackageArchiveEntryText -Entry $manifestEntries[0] -DatabaseEngine $DatabaseEngine
-        $manifest = Read-RestoreManifest -Path "$packageFileName!/$($manifestEntries[0].FullName)" -Content $manifestText
+        $manifest = Read-RestoreManifest -Path "$packageFileName!/$($manifestEntries[0].FullName)" -Content $manifestText -DatabaseEngine $DatabaseEngine
 
         Assert-RestoreManifestMatchesRequest -Manifest $manifest -DatabaseEngine $DatabaseEngine -RestoreTemplate $RestoreTemplate -DataStandardVersion $Package.DataStandardVersion
 
@@ -2387,6 +2387,12 @@ function Get-RestoreDatabaseCatalogFact {
         -Query (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine $DatabaseEngine) `
         -FailureMessage "Failed to read the DocumentJson column type from '$DatabaseName'."
     $documentJsonColumnType = ConvertFrom-DocumentJsonColumnTypeRow -Row $documentJsonRows -DatabaseEngine $DatabaseEngine
+    if ($DatabaseEngine -eq "mssql") {
+        $objectCheckRows = Invoke-RestoreCatalogQuery @queryParameters `
+            -Query (Get-MssqlDocumentCacheObjectCheckQuerySql) `
+            -FailureMessage "Failed to inspect CK_DocumentCache_IsJsonObject in '$DatabaseName'."
+        Assert-MssqlDocumentCacheObjectCheck -Row $objectCheckRows -DatabaseName $DatabaseName
+    }
 
     $schemaRows = Invoke-RestoreCatalogQuery @queryParameters `
         -Query (Get-InventorySchemaQuerySql -DatabaseEngine $DatabaseEngine -Purpose InventoryEnumeration) `

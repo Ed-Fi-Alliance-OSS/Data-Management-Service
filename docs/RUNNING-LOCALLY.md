@@ -316,7 +316,7 @@ from these variables:
 | --- | --- | --- |
 | `ConnectionStrings__PostgresqlDmsAdmin` | PostgreSQL | Superuser connection to a PostgreSQL 18 server, database `postgres` |
 | `DMS_PROVISIONING_PSQL_PATH` | PostgreSQL | `psql` 18 executable |
-| `ConnectionStrings__MssqlDmsAdmin` | SQL Server | `sysadmin` connection to SQL Server 2022 or later (CI uses 2025, which the real packages need) |
+| `ConnectionStrings__MssqlDmsAdmin` | SQL Server | `sysadmin` connection to SQL Server 2025 or later |
 | `DMS_PROVISIONING_MSSQL_STAGING_PATH`, `DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH` | SQL Server | A directory the server also sees, as the tests see it and as the server sees it |
 | `DMS_TEMPLATE_PACKAGE_DIRECTORY` | Both | The four `EdFi.Api.{Minimal,Populated}.Template.{PostgreSql,MsSql}` packages, for the real-package tests |
 | `DMS_EXPECTED_EFFECTIVE_SCHEMA_HASH` | Both | Optional: the hash those packages must declare |
@@ -327,7 +327,8 @@ run skipped nothing. The PostgreSQL tests that replay a template need `psql`
 and a POSIX shell and skip on Windows, so run the whole PostgreSQL lane on
 Linux. The job in
 `.github/workflows/on-config-pullrequest.yml` shows a complete setup, including
-the package download pinned by SHA-256.
+released PostgreSQL format-1 packages pinned by SHA-256 and workflow-local MSSQL
+format-2 packages built from the same ref.
 
 ## CMS DMS-template provisioning: SQL Server staging with separate identities
 

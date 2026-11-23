@@ -19,6 +19,61 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Platform(Exclude = "Win", Reason = "Local CDC state requires Unix owner-only permissions.")]
 internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcRegistrationTestBase(provider)
 {
+    [Test]
+    public async Task It_rejects_a_worker_without_native_document_cache_qualification_before_registration()
+    {
+        var sources = CdcConnectorTemplateTestData
+            .BuildRequiredSourceTableInventory(Provider)
+            .Select(table =>
+                table.TableKind == Ddl.CdcSourceTableKind.DocumentCache
+                    ? new Ddl.CdcSourceTableInventory(
+                        table.TableKind,
+                        table.TableName,
+                        table.EmittedQuotedTableName,
+                        [
+                            .. table.Columns,
+                            CdcConnectorTemplateTestData.BuildColumn(
+                                Provider,
+                                "DocumentJson",
+                                2,
+                                Provider == Ddl.CdcProvider.SqlServer ? "json" : "jsonb"
+                            ),
+                        ]
+                    )
+                    : table
+            )
+            .ToArray();
+        _request = CdcDeploymentRequestTestData.Request(
+            Provider,
+            worker: Provider == Ddl.CdcProvider.SqlServer
+                ? CdcDeploymentRequestTestData.Worker()
+                : _request.WorkerPolicy,
+            sourceInventory: sources
+        );
+
+        _trace.Clear();
+
+        var result = await RunAsync();
+
+        if (Provider == Ddl.CdcProvider.Postgresql)
+        {
+            result.State.Should().Be(CdcTransportEvidenceState.Observed);
+            _posts.Should().Be(1);
+            return;
+        }
+
+        result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Failure.Should()
+            .Be(CdcDeploymentFailure.NativeDocumentCacheWorkerRequired);
+        result.Diagnostics[0].Message.Should().Contain("worker qualified for native DocumentJson");
+        _trace.Should().BeEmpty();
+        _posts.Should().Be(0);
+        ReadJournal().Operations.Should().NotContain(o => o.Effect == CdcWorkflowEffect.RegisterConnector);
+    }
+
     [TestCase(CdcDeploymentFailure.Unavailable, false)]
     [TestCase(CdcDeploymentFailure.Timeout, false)]
     [TestCase(CdcDeploymentFailure.Unavailable, true)]

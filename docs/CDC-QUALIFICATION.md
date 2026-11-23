@@ -51,9 +51,11 @@ See the [procedure-to-test mappings](../reference/cdc-documentation/cdc-inv-evid
 for the consumer unit/broker split. Store generated reports outside the repository
 and link retained artifacts from the relevant PR or release record with their tested revision.
 
-All 17 live qualification jobs—Kafka plus Admission, Lifecycle, Recovery, RecordSize, Telemetry, History, MessageContract and ApiE2E for both providers—run independently in [Nightly CDC Qualification](../.github/workflows/nightly-cdc-qualification.yml) every day at 08:17 UTC, including Saturday. They do not also run in [DMS Weekend Build](../.github/workflows/dms-weekend-build.yml) and do not block the regular DMS CI gate. Nightly success/failure notifications use a single-line Slack summary, with selection and qualification status on failure; raw diagnostic logs are not published. This is post-merge integration evidence, not proof that each PR passed the live suites before merging.
+The [Nightly CDC Qualification](../.github/workflows/nightly-cdc-qualification.yml) matrix runs daily at 08:17 UTC. The full matrix contains Kafka plus Admission, Lifecycle, Recovery, RecordSize, Telemetry, History, MessageContract and ApiE2E for each provider. These jobs run independently of the regular DMS CI gate. Nightly posts the selected job count on success and the selection and qualification status on failure. Raw diagnostic logs stay private.
 
-For targeted pre-merge validation, manually dispatch Nightly CDC Qualification on the desired branch with `lane` set to `Postgresql` or `Mssql` and a specific `suite`. `suite: All` runs that provider's eight jobs; `lane: Kafka` with `suite: All` selects the Kafka job. The default `All`/`All` selection runs all 17 jobs. A specific suite without a provider lane fails rather than silently selecting another scope.
+Until the shipped worker qualifies for native SQL Server `DocumentJson`, the SQL Server Admission job verifies refusal on a freshly provisioned native datastore before provider setup or writer publication. SQL Server Telemetry, MessageContract, packaged History, and provider artifact cleanup continue to run. Successful native admission, the SQL Server live wrapper, Lifecycle, Recovery, RecordSize, ApiE2E and the managed retirement case within History require the qualified worker. The default nightly matrix runs 13 jobs during the hold and returns to 17 when the shipped qualification record enables native support.
+
+For targeted pre-merge validation, manually dispatch Nightly CDC Qualification on the desired branch with `lane` set to `Postgresql` or `Mssql` and a specific `suite`. `suite: All` runs the provider's available jobs. `lane: Kafka` with `suite: All` selects the Kafka job. A specific suite requires a provider lane and any required native worker capability.
 
 The nightly workflow loads `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` from the checked-out `CdcQualifiedWorkerImage.json` record. The nightly workflow and the manually dispatched CDC connector-template smoke job load `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` from the checked-in default in `eng/docker-compose/postgresql.compose.yml`, using `eng/ci/Get-CdcQualificationPostgresqlImage.ps1`. The qualification runner and smoke workflow select the shipped Apache Kafka image through `eng/ci/Get-CdcQualificationKafkaImage.ps1`, which requires matching digest pins in Compose and `CdcComposeBrokerSizeDeployment.BrokerImage`. SQL Server still uses the `CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE` repository variable. No Redpanda image or compatibility lane is required.
 
@@ -65,7 +67,7 @@ persistence case. See [Kafka startup and persistence](KAFKA-UPGRADE.md) and the
 [dated image security assessment](KAFKA-IMAGE-SECURITY.md). Retained managed
 startup requires the deployment's original Compose fingerprint.
 
-Both workflows call [Invoke-CdcQualification.ps1](../eng/ci/Invoke-CdcQualification.ps1); its default `All` selection runs Contract and all 17 live jobs sequentially locally. `-Lane` selects one complete lane; a provider `-Suite` selects one complete CI job. Results default to a unique system temporary directory. An explicit `-ResultsDirectory` must be new and outside the checkout. CI uploads sanitized results from the runner temporary directory with 14-day retention; generated diagnostics are never committed.
+Both workflows call [Invoke-CdcQualification.ps1](../eng/ci/Invoke-CdcQualification.ps1). Its default `All` selection runs Contract and the available live jobs sequentially. `-Lane` selects a lane, and a provider `-Suite` selects one CI job. Results default to a unique system temporary directory. An explicit `-ResultsDirectory` must be new and outside the checkout. CI uploads sanitized results from the runner temporary directory with 14-day retention.
 
 Qualification requires PowerShell 7.5 or newer, including direct Pester runs of the CDC lifecycle and qualification tests. Retained Compose input checks distinguish empty environment variables from absent ones; PowerShell 7.4 removes variables assigned an empty string. Check `$PSVersionTable.PSVersion` before running locally.
 
@@ -77,7 +79,7 @@ require the exact shipped Kafka image; overriding it can start the candidate bro
 but then return authorization `Unavailable`. The qualification runner always selects
 the shipped pin.
 
-Admission and Lifecycle also require `CDC_RUNBOOK_OWNED_STACK=1` and a disposable, exclusively owned
+The live Admission and Lifecycle wrappers also require `CDC_RUNBOOK_OWNED_STACK=1` and a disposable, exclusively owned
 local/published Compose environment with no retained containers, volumes or bootstrap
 workspace. The shared live runbook fixture requires two PostgreSQL setup cases and
 three SQL Server setup cases (local, published and direct DMS E2E); missing or skipped

@@ -177,6 +177,26 @@ internal static class MssqlInventoryQueries
                 AND MAX(CASE WHEN CONVERT(varbinary(2), MssqlPhysicalSchemaVersion) = 0x7632 THEN 1 ELSE 0 END) = 1';
         """;
 
+    /// <summary>Validates the generated v2 CHECK. Mirrors Get-MssqlDocumentCacheObjectCheckQuerySql.</summary>
+    public const string DocumentCacheObjectCheck = """
+        SET NOCOUNT ON;
+        SELECT 1
+        FROM sys.check_constraints AS ck
+        JOIN sys.tables AS t ON t.object_id = ck.parent_object_id
+        JOIN sys.schemas AS s ON s.schema_id = t.schema_id
+        JOIN sys.columns AS c ON c.object_id = t.object_id
+        WHERE s.name COLLATE Latin1_General_100_BIN2 = N'dms'
+          AND t.name COLLATE Latin1_General_100_BIN2 = N'DocumentCache'
+          AND c.name COLLATE Latin1_General_100_BIN2 = N'DocumentJson'
+          AND c.is_nullable = 0
+          AND ck.name COLLATE Latin1_General_100_BIN2 = N'CK_DocumentCache_IsJsonObject'
+          AND ck.is_disabled = 0 AND ck.is_not_trusted = 0 AND ck.is_not_for_replication = 0
+          AND REPLACE(REPLACE(REPLACE(
+                TRANSLATE(ck.definition COLLATE Latin1_General_100_CI_AS, N'()' + NCHAR(9) + NCHAR(10) + NCHAR(13), N'     '),
+                N'ISJSON', N'ISJSON'), N'OBJECT', N'OBJECT'), N' ', N'')
+                COLLATE Latin1_General_100_BIN2 IN (N'ISJSON[DocumentJson],OBJECT=1', N'ISJSONDocumentJson,OBJECT=1');
+        """;
+
     /// <summary>
     /// Every <c>DocumentJson</c> carrier in the <c>dms</c> schema with its type and a bit identifying
     /// the exactly named column on the cache user table. Mirrors <c>Get-DocumentJsonColumnTypeQuerySql</c>.

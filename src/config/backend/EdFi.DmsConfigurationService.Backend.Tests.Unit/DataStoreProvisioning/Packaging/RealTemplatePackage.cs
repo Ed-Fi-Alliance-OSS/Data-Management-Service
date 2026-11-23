@@ -13,9 +13,9 @@ using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Trus
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 
 /// <summary>
-/// A template package from the public feed, placed in <c>DMS_TEMPLATE_PACKAGE_DIRECTORY</c> exactly as downloaded
-/// (Step 5.1). Feed packages carry no attestation until signing is live (F-J4), so a lane signs its own copy with an
-/// ephemeral key and writes a trust policy listing that key: the path an operator takes with their own key, through
+/// A template package from the public feed or the current build, placed in <c>DMS_TEMPLATE_PACKAGE_DIRECTORY</c>.
+/// A lane signs its own copy with an ephemeral key and writes a trust policy listing that key:
+/// the path an operator takes with their own key, through
 /// the real catalog, with no product bypass. The deployment's <c>Compatibility</c> values come from the package's
 /// manifest; when <c>DMS_EXPECTED_EFFECTIVE_SCHEMA_HASH</c> is set, <see cref="Find"/> refuses a package whose manifest
 /// declares another hash, so a lane never runs against a package built for another schema.
@@ -41,7 +41,7 @@ public sealed class RealTemplatePackage
 
     public static bool IsConfigured => !string.IsNullOrWhiteSpace(PackageDirectory);
 
-    /// <summary>The downloaded package, never written to.</summary>
+    /// <summary>The source package, never written to.</summary>
     public string SourcePath { get; }
 
     public RestoreManifest Manifest { get; }
@@ -152,8 +152,7 @@ public sealed class RealTemplatePackage
     public void ExtractArtifactTo(string path)
     {
         using ZipArchive archive = ZipFile.OpenRead(SourcePath);
-        ZipArchiveEntry entry =
-            archive.GetEntry(Manifest.ArtifactFileName)
+        ZipArchiveEntry entry = archive.GetEntry(Manifest.ArtifactFileName)
             ?? throw new InvalidOperationException(
                 "The package does not carry the artifact its manifest names."
             );

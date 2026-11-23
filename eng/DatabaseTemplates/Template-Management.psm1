@@ -1691,6 +1691,15 @@ function Get-TemplateSourceCatalogFacts {
         -Query (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine $DatabaseEngine) `
         -FailureMessage "Failed to read the DocumentJson column type from '$DatabaseName'."
     $documentJsonColumnType = ConvertFrom-DocumentJsonColumnTypeRow -Row $documentJsonRows -DatabaseEngine $DatabaseEngine
+    if ($DatabaseEngine -eq "mssql") {
+        if ($documentJsonColumnType -cne (Get-RestoreDocumentJsonBaselineType -DatabaseEngine mssql)) {
+            throw "Cannot verify native json for dms.DocumentCache.DocumentJson in '$DatabaseName'. Reprovision the template."
+        }
+        $objectCheckRows = Invoke-TemplateCatalogQuery @queryParameters `
+            -Query (Get-MssqlDocumentCacheObjectCheckQuerySql) `
+            -FailureMessage "Failed to inspect CK_DocumentCache_IsJsonObject in '$DatabaseName'."
+        Assert-MssqlDocumentCacheObjectCheck -Row $objectCheckRows -DatabaseName $DatabaseName
+    }
 
     $schemaRows = Invoke-TemplateCatalogQuery @queryParameters `
         -Query (Get-InventorySchemaQuerySql -DatabaseEngine $DatabaseEngine -Purpose InventoryEnumeration) `

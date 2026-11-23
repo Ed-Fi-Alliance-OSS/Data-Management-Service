@@ -43,7 +43,8 @@ internal static class CdcDeploymentRequestTestData
         CdcSourceFingerprint? setupFingerprint = null,
         CdcProviderArtifactNames? setupArtifacts = null,
         CdcWorkerDeploymentPolicy? worker = null,
-        string password = "${env:DATABASE_PASSWORD}"
+        string password = "${env:DATABASE_PASSWORD}",
+        IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null
     )
     {
         CdcConnectorTemplateRequest template = BuildRequest(provider);
@@ -63,7 +64,7 @@ internal static class CdcDeploymentRequestTestData
             new(new("connector-principal")),
             setupArtifacts ?? BuildProviderArtifactNames(provider),
             new(false),
-            BuildRequiredSourceTableInventory(provider),
+            sourceInventory ?? BuildRequiredSourceTableInventory(provider),
             [
                 new(
                     CdcDmsManagedTableKind.Core,

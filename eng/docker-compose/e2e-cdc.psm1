@@ -374,7 +374,7 @@ function Invoke-E2ECdcSetup {
     catch {
         $cancelled = $_.Exception -is [OperationCanceledException]
         $failureCodes = @($_.Exception.Data['CdcFailureCodes'] | Where-Object {
-            $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed)$'
+            $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed|NativeDocumentCacheWorkerRequired)$'
         })
         # Qualification opts in. Capture the failed worker before stop changes its state.
         $workerDiagnostic = @{}

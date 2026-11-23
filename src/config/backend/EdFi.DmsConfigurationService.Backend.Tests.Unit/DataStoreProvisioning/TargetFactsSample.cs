@@ -135,8 +135,8 @@ internal static class TargetFactsSample
             RelationalMappingVersion = "v3",
             EngineVersion = engineVersion,
             DatabaseCompatibilityLevel = databaseCompatibilityLevel,
-            DocumentJsonColumnType =
-                documentJsonColumnType ?? RestoreManifest.DocumentJsonColumnTypeFor(databaseEngine),
+            DocumentJsonColumnType = documentJsonColumnType
+                ?? RestoreManifest.DocumentJsonColumnTypeFor(databaseEngine),
             Inventory = inventory,
             InventorySha256 = CanonicalInventoryHash.Compute(inventory),
             ArtifactFileName = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql",
@@ -214,6 +214,7 @@ internal static class TargetFactsSample
             EngineMajorVersion = 17,
             CompatibilityLevel = 170,
             MssqlPhysicalSchemaVersion = "v2",
+            HasMssqlDocumentCacheObjectCheck = true,
             DocumentJsonColumns =
             [
                 new DmsDocumentJsonColumn("dms", "DocumentCache", "json")
