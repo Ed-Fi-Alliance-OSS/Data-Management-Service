@@ -307,7 +307,8 @@ jobs:
             "eng/smoke_test/tests/SmokeTest.Tests.ps1",
             "eng/northridge/tests/SchemaSnapshotSecurity.Tests.ps1",
             "eng/northridge/tests/NorthridgeFailClosedGuards.Tests.ps1",
-            "eng/DatabaseTemplates/tests/Smoke-LegSelection.Tests.ps1"
+            "eng/DatabaseTemplates/tests/Smoke-LegSelection.Tests.ps1",
+            "eng/performance/tests/BenchmarkComparison.Tests.ps1"
           )
           $result = Invoke-Pester -Path $paths -Output Detailed -PassThru
           # A syntax error or a discovery-time failure is recorded in FailedContainersCount or
