@@ -59,16 +59,19 @@ public static class PgsqlPlanCapture
 
     /// <summary>
     /// Splits the generated hydration batch into classified statements. The splitter handles
-    /// exactly the constructs the batch generator emits — double-quoted identifiers and
+    /// exactly the constructs the batch generator emits — double-quoted identifiers, plain
+    /// single-quoted string literals (such as the <c>'#'</c> of a descriptor URI projection,
+    /// with <c>''</c> as the only escape, as standard_conforming_strings defines them) and
     /// semicolon terminators — and refuses anything it cannot split or classify safely
-    /// (string literals, dollar quoting, comments, unexpected leading keywords), because a
-    /// missplit batch would silently produce wrong plan evidence.
+    /// (prefixed string literals such as <c>E''</c>, dollar quoting, comments, unexpected
+    /// leading keywords), because a missplit batch would silently produce wrong plan evidence.
     /// </summary>
     public static IReadOnlyList<PgsqlBatchStatement> SplitHydrationBatch(string hydrationBatchSql)
     {
         List<PgsqlBatchStatement> statements = [];
         StringBuilder current = new();
         bool inQuotedIdentifier = false;
+        bool inStringLiteral = false;
 
         void FlushStatement()
         {
@@ -96,14 +99,27 @@ public static class PgsqlPlanCapture
                 continue;
             }
 
+            if (inStringLiteral)
+            {
+                // A doubled quote ('') closes here and reopens on the next character, so the
+                // escape needs no lookahead.
+                current.Append(character);
+                inStringLiteral = character != '\'';
+                continue;
+            }
+
             switch (character)
             {
                 case '"':
                     inQuotedIdentifier = true;
                     current.Append(character);
                     break;
+                case '\'' when index > 0 && IsLiteralPrefix(hydrationBatchSql[index - 1]):
+                    throw Unsupported("a prefixed string literal");
                 case '\'':
-                    throw Unsupported("a string literal");
+                    inStringLiteral = true;
+                    current.Append(character);
+                    break;
                 case '$':
                     throw Unsupported("dollar quoting");
                 case '-' when Peek(hydrationBatchSql, index + 1) == '-':
@@ -122,6 +138,11 @@ public static class PgsqlPlanCapture
         if (inQuotedIdentifier)
         {
             throw Unsupported("an unterminated quoted identifier");
+        }
+
+        if (inStringLiteral)
+        {
+            throw Unsupported("an unterminated string literal");
         }
 
         FlushStatement();
@@ -364,6 +385,13 @@ public static class PgsqlPlanCapture
         ?? throw new PerfObservationException($"EXPLAIN JSON plan carries no '{propertyName}' value.");
 
     private static char? Peek(string text, int index) => index < text.Length ? text[index] : null;
+
+    /// <summary>
+    /// A quote directly after a letter, digit, underscore or ampersand opens a prefixed
+    /// literal (E'', B'', X'', U&amp;''), whose escape rules the splitter does not implement.
+    /// </summary>
+    private static bool IsLiteralPrefix(char previous) =>
+        char.IsLetterOrDigit(previous) || previous is '_' or '&';
 
     private static PerfObservationException Unsupported(string construct) =>
         new(
