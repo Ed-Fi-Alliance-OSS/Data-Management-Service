@@ -121,6 +121,11 @@ public class DmsEducationOrganizationProjectionStartupTests
         "Credentials must set both ClientId and ClientSecret"
     )]
     [TestFixture("TenantCredentials:Tenant1:ClientSecret", Secret, "TenantCredentials:Tenant1 must set both")]
+    [TestFixture(
+        "ContractVersions:0",
+        "educationOrganizationProjection.v9",
+        "ContractVersions must list distinct"
+    )]
     public class Given_an_invalid_projection_setting_without_a_base_url_at_startup(
         string key,
         string value,

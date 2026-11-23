@@ -293,6 +293,10 @@ public class EducationOrganizationSnapshotReadTests
             await InsertContextAsync(Nine, "schoolYear", "2024");
             await InsertContextAsync(Nine, "Region", "x");
             await InsertContextAsync(_foreign, "schoolYear", "2023");
+            // Management records are not refresh targets: Two is linked to one, a pending record has no data store,
+            // and Nine and Ten are unmanaged.
+            await InsertManageAsync("targets-two", "Created", Two, Two, _tenant);
+            await InsertManageAsync("targets-pending", "PendingCreate", null, null, _tenant);
             // Bytes no encryption key can decrypt.
             await Connection!.ExecuteAsync(
                 "UPDATE dmscs.DataStore SET ConnectionString = 0x00DEADBEEF WHERE Id = @Id;",
@@ -428,13 +432,14 @@ public class EducationOrganizationSnapshotReadTests
                 tenant
             );
 
-            // Store ten: generation 1 superseded, generation 2 active and unpruned, generation 3 staged only.
-            await PublishAsync(Ten, [Item(1), Item(2)], prune: false, repository: repository);
+            // Store ten: generation 1 superseded, generation 2 active and unpruned, generation 3 staged only. Organization 3
+            // is in all three, and the active generation's single copy is the only one read.
+            await PublishAsync(Ten, [Item(1), Item(3)], prune: false, repository: repository);
             await PublishAsync(Ten, [Item(3)], prune: false, repository: repository);
             EducationOrganizationSnapshotLease staged = await AcquiredAsync(repository, Ten);
-            (await repository.StageAsync(staged, [Item(4)], ContractVersion, CancellationToken.None))
+            (await repository.StageAsync(staged, [Item(3), Item(4)], ContractVersion, CancellationToken.None))
                 .Should()
-                .Be(new SnapshotTargetResult.Success(1));
+                .Be(new SnapshotTargetResult.Success(2));
             EducationOrganizationProjectionItem[] storeTwo =
             [
                 Organization(10, "Ten Elementary", "TE", "edfi.School", 2),

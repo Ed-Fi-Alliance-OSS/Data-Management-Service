@@ -1402,6 +1402,73 @@ public class EducationOrganizationRefreshJobTests
         }
     }
 
+    /// <summary>
+    /// A refresh of one data store whose read fails permanently (§6.5): the job fails on its first attempt with that
+    /// code and its registered text, and the snapshot published earlier is kept.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_refresh_of_one_data_store_whose_schema_is_incompatible : RefreshJobTestBase
+    {
+        private RefreshHarness _harness = null!;
+        private JobExecutionResult _planting = null!;
+        private JobExecutionResult _result = null!;
+        private JobStatusResponse _status = null!;
+        private TargetState _target = null!;
+        private List<long> _ids = [];
+        private int _store;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _store = await InsertDataStoreAsync("incompatible");
+            _harness = Harness();
+            _harness.Reader.Answer = (dataStoreId, call) =>
+                call == 1
+                    ? SignalledReader.Organizations(dataStoreId * 100 + call)
+                    : SignalledReader.Fails(FailureCode.TargetSchemaIncompatible);
+
+            await EnqueueAsync(RefreshOne(_store));
+            _planting = await _harness.RunAsync(await ClaimRefreshAsync(_harness, OwnerA));
+            RefreshJob job = await EnqueueAsync(RefreshOne(_store));
+            _result = await _harness.RunAsync(await ClaimRefreshAsync(_harness, OwnerA));
+
+            _status = await StatusAsync(job);
+            _target = await TargetAsync(_store);
+            _ids = await ActiveIdsAsync(_store);
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_fails_on_the_first_attempt_with_the_single_code()
+        {
+            _planting.Outcome.Should().Be(JobExecutionOutcome.Completed);
+            _result
+                .Should()
+                .Be(
+                    new JobExecutionResult(
+                        JobExecutionOutcome.Failed,
+                        ErrorCode: ProjectionCodes.TargetSchemaIncompatible
+                    )
+                );
+        }
+
+        [Test]
+        public void It_reports_the_registered_text_of_that_code()
+        {
+            _status.Status.Should().Be(JobStatuses.Error);
+            _status.ErrorMessage.Should().Be(MessageOf(ProjectionCodes.TargetSchemaIncompatible));
+        }
+
+        [Test]
+        public void It_keeps_the_published_snapshot_and_releases_the_target()
+        {
+            _ids.Should().Equal(_store * 100 + 1);
+            _target.Should().Be(new TargetState(2, 1, null));
+        }
+    }
+
     /// <summary>A prune that fails after activation (§6.2): the job completes with the new snapshot published.</summary>
     [TestFixture]
     public class Given_a_prune_that_fails_after_activation : RefreshJobTestBase
