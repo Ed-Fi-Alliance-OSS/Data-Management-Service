@@ -3,8 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using System.Text.Json.Nodes;
 using System.Threading.RateLimiting;
+using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
@@ -187,6 +189,154 @@ public class GlobalRateLimitingMiddlewareTests
             run.Limiter.AcquireCalls.Should().Be(2);
             run.Context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
             run.Context.Response.Body.Length.Should().Be(0);
+        }
+    }
+
+    /// <summary>
+    /// Runs the middleware over the production limiter with one permit and a queue of one per
+    /// partition. The sixty-second window never elapses during a test, so a second request from an
+    /// address waits in that address's queue until it is cancelled, and every step below is gated on
+    /// task state rather than on time. Teardown cancels every request still waiting and disposes the
+    /// limiter.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Production_Limiter_With_A_Queue_Per_Partition : GlobalRateLimitingMiddlewareTests
+    {
+        private static readonly IPAddress _addressA = IPAddress.Parse("10.0.0.1");
+        private static readonly IPAddress _addressB = IPAddress.Parse("10.0.0.2");
+
+        private sealed record PendingRequest(
+            DefaultHttpContext Context,
+            CancellationTokenSource RequestAborted,
+            Task Invocation
+        );
+
+        private PartitionedRateLimiter<HttpContext> _limiter = null!;
+        private GlobalRateLimitingMiddleware _middleware = null!;
+        private readonly List<HttpContext> _admitted = [];
+        private readonly List<PendingRequest> _requests = [];
+
+        [SetUp]
+        public void SetUp()
+        {
+            _limiter = WebApplicationBuilderExtensions.CreateGlobalLimiter(
+                new RateLimitOptions
+                {
+                    PermitLimit = 1,
+                    QueueLimit = 1,
+                    Window = 60,
+                }
+            );
+            _admitted.Clear();
+            _requests.Clear();
+            _middleware = new GlobalRateLimitingMiddleware(
+                context =>
+                {
+                    lock (_admitted)
+                    {
+                        _admitted.Add(context);
+                    }
+
+                    return Task.CompletedTask;
+                },
+                _limiter
+            );
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            foreach (PendingRequest request in _requests)
+            {
+                await request.RequestAborted.CancelAsync();
+            }
+
+            try
+            {
+                await Task.WhenAll(_requests.Select(request => request.Invocation))
+                    .WaitAsync(TimeSpan.FromSeconds(30));
+            }
+            finally
+            {
+                await _limiter.DisposeAsync();
+                foreach (PendingRequest request in _requests)
+                {
+                    request.RequestAborted.Dispose();
+                }
+            }
+        }
+
+        private PendingRequest Send(IPAddress address)
+        {
+            DefaultHttpContext context = RateLimitRejectionTestContext.CreateHttpContext();
+            context.Connection.RemoteIpAddress = address;
+            CancellationTokenSource requestAborted = new();
+            context.RequestAborted = requestAborted.Token;
+
+            PendingRequest request = new(context, requestAborted, _middleware.InvokeAsync(context));
+            _requests.Add(request);
+            return request;
+        }
+
+        private bool WasAdmitted(PendingRequest request)
+        {
+            lock (_admitted)
+            {
+                return _admitted.Contains(request.Context);
+            }
+        }
+
+        private async Task<PendingRequest> SendCompletedAsync(IPAddress address)
+        {
+            PendingRequest request = Send(address);
+            request
+                .Invocation.IsCompleted.Should()
+                .BeTrue("a request that is not queued is answered at once");
+            await request.Invocation;
+            return request;
+        }
+
+        private PendingRequest SendQueued(IPAddress address)
+        {
+            PendingRequest request = Send(address);
+            request.Invocation.IsCompleted.Should().BeFalse("the request waits in its partition's queue");
+            return request;
+        }
+
+        [Test]
+        public async Task It_admits_another_address_while_one_address_has_a_full_queue()
+        {
+            PendingRequest a1 = await SendCompletedAsync(_addressA);
+            PendingRequest a2 = SendQueued(_addressA);
+            PendingRequest a3 = await SendCompletedAsync(_addressA);
+
+            PendingRequest b1 = await SendCompletedAsync(_addressB);
+
+            WasAdmitted(a1).Should().BeTrue();
+            a3.Context.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+            WasAdmitted(a3).Should().BeFalse();
+            WasAdmitted(b1).Should().BeTrue();
+            b1.Context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+            a2.Invocation.IsCompleted.Should().BeFalse();
+        }
+
+        [Test]
+        public async Task It_returns_silently_when_a_queued_request_is_aborted_and_frees_its_queue_slot()
+        {
+            await SendCompletedAsync(_addressA);
+            PendingRequest a2 = SendQueued(_addressA);
+
+            await a2.RequestAborted.CancelAsync();
+            await a2.Invocation;
+
+            WasAdmitted(a2).Should().BeFalse();
+            a2.Context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+            a2.Context.Response.Body.Length.Should().Be(0);
+
+            SendQueued(_addressA);
+            PendingRequest a5 = await SendCompletedAsync(_addressA);
+            a5.Context.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
         }
     }
 }
