@@ -120,10 +120,11 @@ public sealed record PerfBenchmarkSideResult(
 }
 
 /// <summary>
-/// Serialization and validation of <see cref="PerfBenchmarkSideResult" />. Reading is
-/// strict: unknown, missing or null-for-non-nullable members are rejected.
+/// JSON for the benchmark artifacts: camelCase, indented with LF-only newlines, nulls
+/// omitted on write, and strict on read (unknown, missing, duplicate or null-for-non-nullable
+/// members are rejected).
 /// </summary>
-public static partial class PerfBenchmarkSideResults
+public static class PerfBenchmarkJson
 {
     private static readonly JsonSerializerOptions _options = new()
     {
@@ -137,27 +138,42 @@ public static partial class PerfBenchmarkSideResults
         AllowDuplicateProperties = false,
     };
 
-    public static string Serialize(PerfBenchmarkSideResult result) =>
-        JsonSerializer.Serialize(result, _options);
+    public static string Serialize<T>(T value) => JsonSerializer.Serialize(value, _options);
 
     /// <summary>
-    /// Reads and validates a side result, throwing with every error at once.
+    /// Reads strictly, reporting a malformed document as an artifact validation error that
+    /// names <paramref name="fileName" />.
     /// </summary>
-    public static PerfBenchmarkSideResult Read(string json)
+    public static T Read<T>(string json, string fileName)
     {
-        PerfBenchmarkSideResult result;
         try
         {
-            result =
-                JsonSerializer.Deserialize<PerfBenchmarkSideResult>(json, _options)
-                ?? throw new JsonException("The side result is null.");
+            return JsonSerializer.Deserialize<T>(json, _options)
+                ?? throw new JsonException($"The document is null.");
         }
         catch (JsonException exception)
         {
-            throw new PerfArtifactValidationException([
-                $"{PerfBenchmarkSideResult.FileName}: {exception.Message}",
-            ]);
+            throw new PerfArtifactValidationException([$"{fileName}: {exception.Message}"]);
         }
+    }
+}
+
+/// <summary>
+/// Serialization and validation of <see cref="PerfBenchmarkSideResult" />.
+/// </summary>
+public static partial class PerfBenchmarkSideResults
+{
+    public static string Serialize(PerfBenchmarkSideResult result) => PerfBenchmarkJson.Serialize(result);
+
+    /// <summary>
+    /// Reads strictly and validates a side result, throwing with every error at once.
+    /// </summary>
+    public static PerfBenchmarkSideResult Read(string json)
+    {
+        PerfBenchmarkSideResult result = PerfBenchmarkJson.Read<PerfBenchmarkSideResult>(
+            json,
+            PerfBenchmarkSideResult.FileName
+        );
 
         IReadOnlyList<string> errors = Validate(result);
         return errors.Count > 0 ? throw new PerfArtifactValidationException(errors) : result;
