@@ -25,7 +25,7 @@ internal sealed class GlobalRateLimitingMiddleware(
         RateLimitLease lease;
         try
         {
-            lease = await globalLimiter.AcquireAsync(context, permitCount: 1, context.RequestAborted);
+            lease = await AcquireAsync(context);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
@@ -46,6 +46,25 @@ internal sealed class GlobalRateLimitingMiddleware(
                 new OnRejectedContext { HttpContext = context, Lease = lease },
                 context.RequestAborted
             );
+        }
+    }
+
+    /// <summary>
+    /// The partitioned limiter hands back a partition's limiter after releasing its lock, and its idle
+    /// cleanup can dispose that partition in between, so acquiring from it throws
+    /// ObjectDisposedException. Acquiring again resolves the key's current partition. Only acquisition
+    /// is retried, and only once: a second failure, including the limiter itself having been disposed
+    /// with the host, propagates.
+    /// </summary>
+    private async ValueTask<RateLimitLease> AcquireAsync(HttpContext context)
+    {
+        try
+        {
+            return await globalLimiter.AcquireAsync(context, permitCount: 1, context.RequestAborted);
+        }
+        catch (ObjectDisposedException)
+        {
+            return await globalLimiter.AcquireAsync(context, permitCount: 1, context.RequestAborted);
         }
     }
 }
