@@ -631,6 +631,7 @@ public static class DmsCoreServiceExtensions
         });
 
         services.AddSingleton<IJwtValidationService, JwtValidationService>();
+        services.AddSingleton<IValidatedClientIdResolver, ValidatedClientIdResolver>();
         services.AddSingleton<
             IDocumentCacheStatusAuthorizationService,
             DocumentCacheStatusAuthorizationService
