@@ -784,9 +784,35 @@ Describe "template caller workflows pass the attestation secret through (<Caller
         $Run["github.event.pull_request.head.repo.fork"] = $(if ($Run["github.event_name"] -eq "pull_request") { $false } else { $null })
         $Run["github.event.pull_request.draft"] = $(if ($Run["github.event_name"] -eq "pull_request") { $false } else { $null })
         $Run["github.repository_owner"] = "Ed-Fi-Alliance-OSS"
+        $Run["github.sha"] = 'a' * 40
+        $Run["vars.MSSQL_TEMPLATE_V2_QUALIFIED_COMMIT"] = $Run["github.sha"]
+        $Run["vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED"] = 'true'
 
         Test-CallerCondition -Expression (Get-CallerCondition $script:buildCall) -Run $Run | Should -Be ($Expected -eq "build")
         Test-CallerCondition -Expression (Get-CallerCondition $script:publishCall) -Run $Run | Should -Be ($Expected -eq "publish")
+    }
+
+    It "holds <EventName> MSSQL publication when <Case>" -ForEach @(
+        @{ EventName = "push"; Case = "qualification is missing"; QualifiedCommit = ""; Signing = "true" }
+        @{ EventName = "workflow_dispatch"; Case = "qualification covers a different commit"; QualifiedCommit = ('b' * 40); Signing = "true" }
+        @{ EventName = "push"; Case = "attestation signing is disabled"; QualifiedCommit = ('a' * 40); Signing = "" }
+        @{ EventName = "release"; Case = "the release tag commit is unqualified"; QualifiedCommit = ""; Signing = "true" }
+    ) -Skip:($CallerFile -notlike "*.MsSql.yml") {
+        $isRelease = $EventName -eq 'release'
+        $run = @{
+            "github.event_name" = $EventName
+            "github.event.pull_request.head.repo.fork" = $null
+            "github.event.pull_request.draft" = $null
+            "github.repository_owner" = "Ed-Fi-Alliance-OSS"
+            "github.ref" = $(if ($isRelease) { "refs/tags/v8.2.0" } else { "refs/heads/main" })
+            "github.ref_type" = $(if ($isRelease) { "tag" } else { "branch" })
+            "github.sha" = 'a' * 40
+            "inputs.publish_package" = $true
+            "vars.MSSQL_TEMPLATE_V2_QUALIFIED_COMMIT" = $QualifiedCommit
+            "vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED" = $Signing
+        }
+        Test-CallerCondition -Expression (Get-CallerCondition $script:buildCall) -Run $run | Should -Be (-not $isRelease)
+        Test-CallerCondition -Expression (Get-CallerCondition $script:publishCall) -Run $run | Should -BeFalse
     }
 
     It "runs neither call for <Case>" -ForEach @(

@@ -220,6 +220,21 @@ GO
                 Should -Throw "*CK_DocumentCache_IsJsonObject*enabled and trusted*"
             Should -Invoke Get-CmsToken -Times 0 -Exactly
         }
+        It 'Rejects a disabled singleton CHECK before packaging or serving a restore' -Skip:($Engine -ne 'mssql') {
+            $healthyFacts = Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $source -MssqlPassword $password
+            Invoke-TestSql $source 'ALTER TABLE dms.MssqlPhysicalSchema NOCHECK CONSTRAINT CK_MssqlPhysicalSchema_Singleton;' | Out-Null
+            try {
+                { Invoke-TestPackageCapture 'disabled-singleton' } | Should -Throw '*physical schema marker*'
+                Test-Path (Join-Path $TestDrive 'disabled-singleton/staging/Focused.Template.bak') | Should -BeFalse
+                $invalidPackage = Invoke-TestPackageCapture 'drifted-singleton' $healthyFacts
+            }
+            finally {
+                Invoke-TestSql $source 'ALTER TABLE dms.MssqlPhysicalSchema WITH CHECK CHECK CONSTRAINT CK_MssqlPhysicalSchema_Singleton;' | Out-Null
+            }
+            { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory $invalidPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } |
+                Should -Throw '*physical schema marker*'
+            Should -Invoke Get-CmsToken -Times 0 -Exactly
+        }
         It 'Rejects a pre-change restored package with the same fingerprint before API setup' {
             { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory $script:oldPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw "Template schema catalog assertions failed for '$script:restored'."
             Should -Invoke Get-CmsToken -Times 0 -Exactly

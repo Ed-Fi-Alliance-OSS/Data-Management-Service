@@ -528,7 +528,7 @@ When applying `mssql.sql` manually, use an abort-on-error client such as
 |---|---|
 | No completed logical metadata and no object at the cache, marker, state, or work inventory names | Allow fresh apply or an early retry that passes the other guards, such as a schema-plus-sequence retry. |
 | No marker object and `DocumentCache.DocumentJson` is built-in `nvarchar(max)` | Reject legacy `v1` with fresh reprovisioning guidance, including when the effective schema hash matches. |
-| `DocumentCache.DocumentJson` is non-null built-in `json`, its object-only check is enabled and trusted for all writes, and the marker contains exactly `(1, 'v2')` | Continue with the existing logical, inventory and lifecycle checks. |
+| `DocumentCache.DocumentJson` is non-null built-in `json` with its object-only check enforced, and the marker contains exactly `(1, 'v2')` with a primary key on `SingletonId` and an enforced `CHECK (SingletonId = 1)` | Continue with the existing logical, inventory and lifecycle checks. |
 | Any other physical shape or evidence that cannot be verified | Reject before DDL. A partial physical boundary requires deliberate reprovisioning. |
 
 A fresh apply or early retry requires an effective `dbo` context to prove absence.

@@ -510,8 +510,8 @@ DMS, SchemaTools and qualified worker for managed validation and operation until
 cutover. The native-baseline tools require `v2` for managed validation, including
 operations against existing bindings. Verify the retained deployment with the original
 toolchain using the [established validation procedure](../reference/cdc-documentation/operations-runbook.md#established-validation)
-before replacing any component. Include that check in release qualification for the
-retained-v1 path.
+and a representative managed lifecycle operation before replacing any component.
+Record the tool, worker and SQL Server versions with that release evidence.
 
 Before a SQL Server template cutover, build and verify Minimal and Populated packages for
 Data Standard `5.2.0` and `6.1.0` from the same reviewed release. Keep package publication
@@ -523,8 +523,19 @@ SchemaTools and CMS restore consumers for every verification. The restore prefli
 selected SQL Server SchemaTools manifest without the physical-v2 discriminator before Docker
 work, and CMS rejects packages that do not satisfy the format-2 contract.
 
-Record the release run, package versions and SHA-256 digests for all four packages before
-cutover. Make the verified packages available and coordinate the restore-job package and
+For the first native-v2 publication, dispatch both MSSQL template workflows from the same
+reviewed commit with `publish_package` off and without a Data Standard filter. Record the
+run URLs, commit, package versions, SHA-256 digests, physical catalog checks and authenticated
+probe results for all four packages in the release record. Include the results from the
+matching restore consumers. Once the four legs have passed, release maintainers set the
+repository variable `MSSQL_TEMPLATE_V2_QUALIFIED_COMMIT` to the full qualified commit SHA.
+Both workflows require that SHA and `TEMPLATE_ATTESTATION_SIGNING_ENABLED=true` to publish
+or promote MSSQL packages. A different main commit or release tag commit requires its own
+qualification while this rollout gate is in place.
+
+The publishing runs build and verify their own package bytes. Record those runs and the
+digests of the exact attested packages that reach the feed, then confirm the four published
+versions before switching consumers. Coordinate the restore-job package and
 allowlist updates with deployment of the matching DMS, SchemaTools and CMS consumers.
 Review scheduled and deployment jobs for legacy-pinned template packages or restore-tool
 images that only support format 1. Existing SQL Server databases require
@@ -532,8 +543,7 @@ fresh provisioning on SQL Server 2025 or later and a deliberate, separately plan
 carry-forward; do not convert `nvarchar(max)` in place or infer physical compatibility from the
 unchanged effective schema hash. Existing CDC bindings have no automatic migration or cutover:
 plan their handling against the CDC deployment and state-continuity guidance before replacing an
-in-use database. Publish and change deployment pins only through the approved release workflow
-after all four non-publishing package gates pass.
+in-use database.
 
 ### Cache-backed read acceleration
 

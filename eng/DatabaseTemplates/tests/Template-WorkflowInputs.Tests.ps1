@@ -350,7 +350,7 @@ Describe "Assert-TemplateWorkflowInputs" {
             $workflowContent | Should -Match '(?ms)^  push:\r?\n    branches:\r?\n      - main\r?\n    tags:\r?\n      - "v\*\.\*\.\*"$'
             $workflowContent | Should -Match '(?ms)^  workflow_dispatch:\r?\n    inputs:\r?\n      publish_package:.*?^        default: true$'
             $workflowContent | Should -Match ([regex]::Escape(
-                "&& github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) }}"
+                "&& github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true)"
             ))
         }
     }

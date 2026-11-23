@@ -442,6 +442,12 @@ Describe "Assert-RestoreManifestShape" {
         $result.databaseEngine | Should -Be "postgresql"
     }
 
+    It "rejects a valid manifest for a different engine" {
+        $json = New-ValidRestoreManifest -DatabaseEngine mssql | ConvertTo-Json -Depth 10
+        { Read-RestoreManifest -DatabaseEngine postgresql -Content $json -Path "restore-manifest.json" } |
+            Should -Throw "*declares databaseEngine 'mssql' but this restore selected 'postgresql'*"
+    }
+
     It "accepts the same manifest after a JSON round trip (PSCustomObject input)" {
         $roundTripped = (New-ValidRestoreManifest -DatabaseEngine mssql | ConvertTo-Json -Depth 10) | ConvertFrom-Json
         { Assert-RestoreManifestShape -Manifest $roundTripped } | Should -Not -Throw

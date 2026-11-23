@@ -144,6 +144,17 @@ public class MssqlDmsTargetEngineFactsTests
             DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
         )]
         [TestCase(
+            "ALTER TABLE dms.MssqlPhysicalSchema NOCHECK CONSTRAINT CK_MssqlPhysicalSchema_Singleton;",
+            DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
+        )]
+        [TestCase(
+            """
+            ALTER TABLE dms.MssqlPhysicalSchema DROP CONSTRAINT CK_MssqlPhysicalSchema_Singleton;
+            ALTER TABLE dms.MssqlPhysicalSchema ADD CONSTRAINT CK_MssqlPhysicalSchema_Singleton CHECK (SingletonId >= 1);
+            """,
+            DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
+        )]
+        [TestCase(
             """
             ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
             ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;

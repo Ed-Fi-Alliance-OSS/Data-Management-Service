@@ -51,6 +51,7 @@ on:
       - "src/dms/Directory.Build.targets"
       - "src/dms/Dockerfile"
       - "src/dms/backend/EdFi.DataManagementService.Backend.Ddl/**"
+      - "src/dms/backend/EdFi.DataManagementService.Backend.External/MssqlDocumentCachePhysicalSchema.cs"
       - "src/dms/backend/EdFi.DataManagementService.Backend.Mssql/**"
       - "src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/**"
       - "src/dms/clis/EdFi.DataManagementService.SchemaTools/**"
@@ -88,10 +89,9 @@ jobs:
     name: Build Minimal Template ${{ matrix.standard_version }}
     # Push and release runs only in Ed-Fi-Alliance-OSS: a fork syncing main would otherwise
     # try to build, attest and publish packages it cannot. workflow_dispatch still runs anywhere.
-    # Every run that does not publish: pull requests, manual runs with publish_package off or
-    # outside main and v* tags. It passes no Azure Artifacts secret, so nothing it runs can read
-    # the publishing token; publish-minimal-template is skipped on these runs.
-    if: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false)) && ((github.event_name != 'push' && github.event_name != 'release') || github.repository_owner == 'Ed-Fi-Alliance-OSS') && !(github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true)) }}
+    # Pull requests and unpublished revisions still build and verify templates without the
+    # Azure Artifacts publishing credentials.
+    if: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false)) && ((github.event_name != 'push' && github.event_name != 'release') || github.repository_owner == 'Ed-Fi-Alliance-OSS') && github.event_name != 'release' && !(github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) && vars.MSSQL_TEMPLATE_V2_QUALIFIED_COMMIT == github.sha && vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED == 'true') }}
     # One leg per supported Ed-Fi Data Standard version. Each leg invokes the whole reusable
     # build/SBOM/provenance pipeline, so per-version outputs stay correlated. To add or drop a
     # version, add or remove an `include` entry below (and its matching schema artifacts /
@@ -127,7 +127,9 @@ jobs:
     # The only call that passes the Azure Artifacts publishing secrets: main and v* tag pushes,
     # release promotion, and manual runs on main or a v* tag with publish_package on. The
     # reusable workflow reads them only in its 'publishing' environment jobs.
-    if: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false)) && ((github.event_name != 'push' && github.event_name != 'release') || github.repository_owner == 'Ed-Fi-Alliance-OSS') && github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) }}
+    # Set the qualified commit only after all four native-v2 package checks are recorded
+    # as described in docs/RELATIONAL-BACKEND.md.
+    if: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false)) && ((github.event_name != 'push' && github.event_name != 'release') || github.repository_owner == 'Ed-Fi-Alliance-OSS') && github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) && vars.MSSQL_TEMPLATE_V2_QUALIFIED_COMMIT == github.sha && vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED == 'true' }}
     # The same Data Standard legs as build-minimal-template.
     strategy: *template-legs
     uses: ./.github/workflows/build-minimal-template.yml

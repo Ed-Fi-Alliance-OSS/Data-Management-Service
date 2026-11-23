@@ -14,6 +14,7 @@ public static class MssqlDocumentCachePhysicalSchema
     public const string SchemaName = "dms";
     public const string TableName = "MssqlPhysicalSchema";
     public const string SingletonIdColumn = "SingletonId";
+    public const string SingletonCheckName = "CK_MssqlPhysicalSchema_Singleton";
     public const string VersionColumn = "MssqlPhysicalSchemaVersion";
     public const string Version = "v2";
     public const string NativeJsonType = "json";
@@ -98,6 +99,29 @@ public static class MssqlDocumentCachePhysicalSchema
                 AND c.[is_nullable] = 0
                 AND ((c.[name] COLLATE Latin1_General_100_BIN2 = N'{{SingletonIdColumn}}' AND ty.[name] = N'smallint')
                     OR (c.[name] COLLATE Latin1_General_100_BIN2 = N'{{VersionColumn}}' AND ty.[name] = N'varchar' AND c.[max_length] = 2))
+                AND EXISTS (
+                    SELECT 1
+                    FROM sys.check_constraints ck
+                    WHERE ck.[parent_object_id] = t.[object_id]
+                        AND ck.[name] COLLATE Latin1_General_100_BIN2 = N'{{SingletonCheckName}}'
+                        AND ck.[is_disabled] = 0 AND ck.[is_not_trusted] = 0 AND ck.[is_not_for_replication] = 0
+                        AND REPLACE(
+                            TRANSLATE(REPLACE(ck.[definition] COLLATE Latin1_General_100_BIN2,
+                                N'[{{SingletonIdColumn}}]', N'{{SingletonIdColumn}}'),
+                                N'()' + NCHAR(9) + NCHAR(10) + NCHAR(13), N'     '), N' ', N'')
+                            = N'{{SingletonIdColumn}}=1'
+                )
+                AND EXISTS (
+                    SELECT 1
+                    FROM sys.indexes pk
+                    INNER JOIN sys.index_columns ic ON ic.[object_id] = pk.[object_id] AND ic.[index_id] = pk.[index_id]
+                    INNER JOIN sys.columns id ON id.[object_id] = ic.[object_id] AND id.[column_id] = ic.[column_id]
+                    WHERE pk.[object_id] = t.[object_id] AND pk.[is_primary_key] = 1 AND pk.[is_disabled] = 0
+                        AND ic.[key_ordinal] > 0
+                    GROUP BY pk.[index_id]
+                    HAVING COUNT(*) = 1 AND MAX(CASE WHEN id.[name] COLLATE Latin1_General_100_BIN2
+                        = N'{{SingletonIdColumn}}' THEN 1 ELSE 0 END) = 1
+                )
             GROUP BY t.[object_id]
             HAVING COUNT(*) = 2
         )

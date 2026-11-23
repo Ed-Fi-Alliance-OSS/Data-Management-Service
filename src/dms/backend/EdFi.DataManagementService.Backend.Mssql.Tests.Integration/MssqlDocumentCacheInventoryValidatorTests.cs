@@ -65,6 +65,8 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
     [TestCase("DELETE FROM dms.MssqlPhysicalSchema")]
     [TestCase("UPDATE dms.MssqlPhysicalSchema SET MssqlPhysicalSchemaVersion = 'V2'")]
     [TestCase("DROP TABLE dms.MssqlPhysicalSchema")]
+    [TestCase("ALTER TABLE dms.MssqlPhysicalSchema NOCHECK CONSTRAINT CK_MssqlPhysicalSchema_Singleton")]
+    [TestCase("ALTER TABLE dms.MssqlPhysicalSchema DROP CONSTRAINT PK_MssqlPhysicalSchema")]
     [TestCase(
         """
         ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;

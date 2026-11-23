@@ -685,6 +685,10 @@ public class Given_Mssql_DocumentCache_Physical_Preflight
     [TestCase("wrong version")]
     [TestCase("wrong singleton")]
     [TestCase("multiple marker rows")]
+    [TestCase("disabled singleton check")]
+    [TestCase("untrusted singleton check")]
+    [TestCase("weaker singleton check")]
+    [TestCase("missing marker primary key")]
     [TestCase("column type alias")]
     [TestCase("marker view")]
     [TestCase("missing column")]
@@ -965,6 +969,34 @@ public class Given_Mssql_DocumentCache_Physical_Preflight
         {
             command.CommandText = sql;
             command.ExecuteNonQuery();
+        }
+
+        switch (shape)
+        {
+            case "disabled singleton check":
+                Execute(
+                    "ALTER TABLE dms.MssqlPhysicalSchema NOCHECK CONSTRAINT CK_MssqlPhysicalSchema_Singleton;"
+                );
+                return;
+            case "untrusted singleton check":
+                Execute(
+                    """
+                    ALTER TABLE dms.MssqlPhysicalSchema NOCHECK CONSTRAINT CK_MssqlPhysicalSchema_Singleton;
+                    ALTER TABLE dms.MssqlPhysicalSchema CHECK CONSTRAINT CK_MssqlPhysicalSchema_Singleton;
+                    """
+                );
+                return;
+            case "weaker singleton check":
+                Execute(
+                    """
+                    ALTER TABLE dms.MssqlPhysicalSchema DROP CONSTRAINT CK_MssqlPhysicalSchema_Singleton;
+                    ALTER TABLE dms.MssqlPhysicalSchema ADD CONSTRAINT CK_MssqlPhysicalSchema_Singleton CHECK (SingletonId >= 1);
+                    """
+                );
+                return;
+            case "missing marker primary key":
+                Execute("ALTER TABLE dms.MssqlPhysicalSchema DROP CONSTRAINT PK_MssqlPhysicalSchema;");
+                return;
         }
 
         // Prepare the chosen shape explicitly so this fixture also runs against the legacy emitter.

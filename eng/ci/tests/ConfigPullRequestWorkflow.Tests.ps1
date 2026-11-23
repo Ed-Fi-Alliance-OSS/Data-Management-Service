@@ -174,25 +174,32 @@ bash "$CLASSIFIER"
 
     It 'runs the DmsProvisioning category only in its own lane' {
         (Get-JobBlock 'run-integration-tests') | Should -Match "build-config\.ps1 IntegrationTest .*-IntegrationTestFilter 'Category!=DmsProvisioning'"
-        $job = Get-JobBlock 'run-dms-provisioning-integration-tests'
-        $job | Should -Match '--filter "Category=DmsProvisioning"'
-        foreach ($variable in @(
-            'ConnectionStrings__PostgresqlDmsAdmin', 'ConnectionStrings__MssqlDmsAdmin', 'ConnectionStrings__MssqlAdmin', 'DMS_PROVISIONING_PSQL_PATH',
-            'DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH', 'DMS_EXPECTED_EFFECTIVE_SCHEMA_HASH'
-        )) {
-            $job | Should -Match "(?m)^      ${variable}: "
+        $postgres = Get-JobBlock 'run-dms-provisioning-integration-tests'
+        $mssql = Get-JobBlock 'run-dms-provisioning-integration-tests-mssql'
+        $postgres | Should -Match '--filter "Category=DmsProvisioning"'
+        $postgres | Should -Match 'DMS_PROVISIONING_TEST_PROJECT: .*Backend\.Postgresql\.Tests\.Integration\.csproj'
+        $mssql | Should -Match 'DMS_PROVISIONING_TEST_PROJECT: .*Backend\.Mssql\.Tests\.Integration\.csproj'
+        $mssql | Should -Match '(?m)^      - \*run-dms-provisioning-tests$'
+        foreach ($lane in @('run-dms-provisioning-integration-tests', 'run-dms-provisioning-integration-tests-mssql')) {
+            (Get-JobBlock 'event_file') | Should -Match "needs: \[.*\b$lane(?:,|\])"
+            (Get-JobBlock 'config-ci-gate') | Should -Match "(?m)^      - $lane$"
         }
-        $cmsAdmin = [regex]::Match($job, '(?m)^      ConnectionStrings__MssqlAdmin: (.+)$').Groups[1].Value
-        $targetAdmin = [regex]::Match($job, '(?m)^      ConnectionStrings__MssqlDmsAdmin: (.+)$').Groups[1].Value
+        $postgres | Should -Match '(?m)^    needs: detect-fresh-build-changes$'
+        $postgres | Should -Match 'ConnectionStrings__PostgresqlDmsAdmin:'
+        $postgres | Should -Match 'DMS_PROVISIONING_PSQL_PATH:'
+        $postgres | Should -Not -Match 'build-cms-mssql-templates|ConnectionStrings__MssqlDmsAdmin'
+        $mssql | Should -Match 'ConnectionStrings__MssqlDmsAdmin:'
+        $mssql | Should -Match 'ConnectionStrings__MssqlAdmin:'
+        $cmsAdmin = [regex]::Match($mssql, '(?m)^      ConnectionStrings__MssqlAdmin: (.+)$').Groups[1].Value
+        $targetAdmin = [regex]::Match($mssql, '(?m)^      ConnectionStrings__MssqlDmsAdmin: (.+)$').Groups[1].Value
         ($cmsAdmin -ceq $targetAdmin) | Should -BeTrue -Because 'CMS fixtures must use the same isolated SQL test server'
         ($targetAdmin -match '^"Server=tcp:127\.0\.0\.1,1433;') | Should -BeTrue -Because 'managed physical admission requires an explicit TCP endpoint'
-        $job | Should -Match 'DMS_PROVISIONING_MSSQL_STAGING_PATH=\$staging" >> "\$GITHUB_ENV"'
-        $job | Should -Match '"DMS_TEMPLATE_PACKAGE_DIRECTORY=\$directory" \| Out-File -FilePath \$env:GITHUB_ENV'
-        (Get-JobBlock 'event_file') | Should -Match 'needs: \[.*run-dms-provisioning-integration-tests'
+        $mssql | Should -Match 'DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH:'
+        $mssql | Should -Match 'DMS_PROVISIONING_MSSQL_STAGING_PATH=\$staging" >> "\$GITHUB_ENV"'
     }
 
     It 'gives SQL Server read access to the staging directory through the runner group only' {
-        $job = Get-JobBlock 'run-dms-provisioning-integration-tests'
+        $job = Get-JobBlock 'run-dms-provisioning-integration-tests-mssql'
         $job | Should -Match 'chmod 2750 "\$staging"'
         $job | Should -Match '--group-add "\$\(id -g\)"'
         $job | Should -Match '--volume "\$DMS_PROVISIONING_MSSQL_STAGING_PATH:\$DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH"'
@@ -214,12 +221,12 @@ bash "$CLASSIFIER"
         $producer | Should -Match 'Build-TemplateNuGetPackage'
         $producer | Should -Not -Match 'secrets\.|packages: write|id-token: write|contents: write'
 
-        $consumer = Get-JobBlock 'run-dms-provisioning-integration-tests'
+        $consumer = Get-JobBlock 'run-dms-provisioning-integration-tests-mssql'
         $consumer | Should -Match 'needs: \[detect-fresh-build-changes, build-cms-mssql-templates\]'
         $consumer | Should -Match "github.event_name != 'pull_request' \|\|\s+needs.detect-fresh-build-changes.outputs.config_relevant == 'true'"
         $consumer | Should -Match 'pattern: cms-mssql-\*-template'
         $consumer | Should -Match 'Get-FileHash -Algorithm SHA256 .+\.Hash -cne \$expected'
-        (Get-JobBlock 'config-ci-gate') | Should -Match '(?m)^      - run-dms-provisioning-integration-tests$'
+        $consumer | Should -Match 'foreach \(\$kind in "Minimal", "Populated"\)'
     }
 
     It 'runs versioning and workflow tests plus the reusable local package smoke without publication' {

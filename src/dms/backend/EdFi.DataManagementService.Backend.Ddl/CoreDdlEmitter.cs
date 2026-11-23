@@ -557,7 +557,7 @@ public sealed class CoreDdlEmitter
                     $"{_dialect.RenderNamedPrimaryKeyClause("PK_MssqlPhysicalSchema", [singletonId])},"
                 );
                 writer.AppendLine(
-                    $"CONSTRAINT {Quote("CK_MssqlPhysicalSchema_Singleton")} CHECK ({singletonColumn} = 1)"
+                    $"CONSTRAINT {Quote(MssqlDocumentCachePhysicalSchema.SingletonCheckName)} CHECK ({singletonColumn} = 1)"
                 );
             }
             writer.AppendLine(");");

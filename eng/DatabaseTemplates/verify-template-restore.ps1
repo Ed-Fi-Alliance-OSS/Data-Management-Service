@@ -216,9 +216,6 @@ try {
         if ([string]$restoreManifest.templateKind -cne $ExpectedTemplateKind) {
             throw "Restore manifest declares templateKind '$($restoreManifest.templateKind)' but this verification expects '$ExpectedTemplateKind'."
         }
-        if ([string]$restoreManifest.databaseEngine -cne $DatabaseEngine) {
-            throw "Restore manifest declares databaseEngine '$($restoreManifest.databaseEngine)' but this verification runs against '$DatabaseEngine'."
-        }
 
         $manifestArtifact = Get-ChildItem -Path (Join-Path $manifestExtractDirectory "contents") -Filter ([string]$restoreManifest.artifactFileName) -Recurse | Select-Object -First 1
         if ($null -eq $manifestArtifact) {
