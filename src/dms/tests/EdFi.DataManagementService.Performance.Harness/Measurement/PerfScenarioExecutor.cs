@@ -32,6 +32,16 @@ public sealed record PerfMeasuredCell(
 );
 
 /// <summary>
+/// The request-loop outcome of one cell, before the recorded page-selection checks.
+/// </summary>
+public sealed record PerfCellMeasurement(
+    PerfLatencySummary LatencyMs,
+    PerfLatencySummary DriverExecuteMs,
+    string HydrationBatchSql,
+    int ReturnedRows
+);
+
+/// <summary>
 /// Executes the fixed six-cell traditional matrix against the in-process pipeline. The
 /// command-observer window is per request: every iteration, warmup or measured, must observe
 /// exactly one database command and exactly the requested row count, and every request in a
@@ -67,13 +77,16 @@ public static class PerfScenarioExecutor
         PerfProvider provider,
         long deepOffset,
         int warmupIterations,
-        int measuredIterations
+        int measuredIterations,
+        IPerfReadObserver? observer = null
     )
     {
         List<PerfMeasuredCell> cells = [];
         foreach (PerfExecutedCell cell in CellsInExecutionOrder(deepOffset))
         {
-            cells.Add(await RunCellAsync(harness, provider, cell, warmupIterations, measuredIterations));
+            cells.Add(
+                await RunCellAsync(harness, provider, cell, warmupIterations, measuredIterations, observer)
+            );
         }
 
         return cells;
@@ -84,7 +97,8 @@ public static class PerfScenarioExecutor
         PerfProvider provider,
         PerfExecutedCell cell,
         int warmupIterations,
-        int measuredIterations
+        int measuredIterations,
+        IPerfReadObserver? observer
     )
     {
         ApiIntegrationQueryRecorder recorder =
@@ -94,90 +108,21 @@ public static class PerfScenarioExecutor
             );
 
         string at = $"{cell.ScenarioId}/{cell.PageSize}";
-        string url = $"{PerfFixtureDefinition.ResourceEndpoint}?limit={cell.PageSize}&offset={cell.Offset}";
-
-        using DriverCommandObserver observer = DriverCommandObserver.Start(provider);
+        using DriverCommandObserver commandObserver = DriverCommandObserver.Start(provider);
         int recorderBaseline = recorder.HydrationKeysets.Count;
-        List<double> driverExecuteSamplesMs = [];
-        string? hydrationBatchSql = null;
-        int? observedReturnedRows = null;
 
-        int commandBaseline = 0;
-        HttpStatusCode responseStatus = default;
-        string responseBody = string.Empty;
-
-        PerfLatencySummary latency = await PerfLatencyMeasurement.MeasureAsync(
-            async _ =>
-            {
-                using HttpResponseMessage response = await harness.HttpClient.GetAsync(url);
-                responseStatus = response.StatusCode;
-                responseBody = await response.Content.ReadAsStringAsync();
-            },
+        PerfCellMeasurement measurement = await MeasureCellAsync(
+            cell,
             warmupIterations,
             measuredIterations,
-            beforeIterationAsync: _ =>
+            async url =>
             {
-                commandBaseline = observer.Commands.Count;
-                return Task.CompletedTask;
+                using HttpResponseMessage response = await harness.HttpClient.GetAsync(url);
+                return (response.StatusCode, await response.Content.ReadAsStringAsync());
             },
-            afterIterationAsync: iteration =>
-            {
-                if (responseStatus != HttpStatusCode.OK)
-                {
-                    throw new PerfObservationException(
-                        $"{at} iteration {iteration}: HTTP {(int)responseStatus}: "
-                            + responseBody[..Math.Min(responseBody.Length, 500)]
-                    );
-                }
-
-                int returnedRows = CountReturnedRows(responseBody);
-                if (returnedRows != cell.PageSize)
-                {
-                    throw new PerfObservationException(
-                        $"{at} iteration {iteration}: returned rows {returnedRows} must equal "
-                            + $"page size {cell.PageSize}."
-                    );
-                }
-
-                observedReturnedRows ??= returnedRows;
-
-                IReadOnlyList<ObservedDbCommand> window = [.. observer.Commands.Skip(commandBaseline)];
-                if (window.Count != 1)
-                {
-                    throw new PerfObservationException(
-                        $"{at} iteration {iteration}: expected exactly one database command per request; "
-                            + $"observed {window.Count}."
-                    );
-                }
-
-                hydrationBatchSql ??= window[0].CommandText;
-                if (window[0].CommandText != hydrationBatchSql)
-                {
-                    throw new PerfObservationException(
-                        $"{at} iteration {iteration}: hydration batch SQL text changed within the cell."
-                    );
-                }
-
-                if (iteration >= warmupIterations)
-                {
-                    // The observer's interval ends at the provider's diagnostic "after"
-                    // event, which SqlClient raises when ExecuteReader returns — before the
-                    // rows are consumed. It is a driver execute/dispatch sample, never full
-                    // database command time.
-                    driverExecuteSamplesMs.Add(window[0].ElapsedMs);
-                }
-
-                return Task.CompletedTask;
-            }
+            () => commandObserver.Commands,
+            observer
         );
-
-        if (driverExecuteSamplesMs.Count != measuredIterations)
-        {
-            throw new PerfObservationException(
-                $"{at}: driver execute timing sample count {driverExecuteSamplesMs.Count} must equal "
-                    + $"measured iterations {measuredIterations}."
-            );
-        }
 
         List<PageKeysetSpec> keysets = [.. recorder.HydrationKeysets.Skip(recorderBaseline)];
         int expectedRequests = warmupIterations + measuredIterations;
@@ -205,14 +150,128 @@ public static class PerfScenarioExecutor
             cell.ScenarioId,
             cell.PageSize,
             cell.Offset,
-            observedReturnedRows
-                ?? throw new PerfObservationException($"{at}: no returned row count was observed."),
+            measurement.ReturnedRows,
             CommandCountPerRequest: 1,
+            measurement.LatencyMs,
+            measurement.DriverExecuteMs,
+            capture,
+            measurement.HydrationBatchSql
+        );
+    }
+
+    /// <summary>
+    /// The per-request loop of one cell over an abstract request path: <paramref name="getAsync" />
+    /// sends the GET and reads the body inside the timed window, and <paramref name="commands" />
+    /// snapshots the driver-observed commands. The optional observer runs outside the timer:
+    /// <see cref="IPerfReadObserver.OnAttempt" /> before dispatch,
+    /// <see cref="IPerfReadObserver.VerifyAsync" /> first after the response, and
+    /// <see cref="IPerfReadObserver.OnCompleted" /> last, only once the executor's own checks
+    /// pass. A request that throws therefore stays attempted but never completes.
+    /// </summary>
+    public static async Task<PerfCellMeasurement> MeasureCellAsync(
+        PerfExecutedCell cell,
+        int warmupIterations,
+        int measuredIterations,
+        Func<string, Task<(HttpStatusCode Status, string Body)>> getAsync,
+        Func<IReadOnlyList<ObservedDbCommand>> commands,
+        IPerfReadObserver? observer = null
+    )
+    {
+        string at = $"{cell.ScenarioId}/{cell.PageSize}";
+        string url = $"{PerfFixtureDefinition.ResourceEndpoint}?limit={cell.PageSize}&offset={cell.Offset}";
+
+        List<double> driverExecuteSamplesMs = [];
+        string? hydrationBatchSql = null;
+        int? observedReturnedRows = null;
+
+        int commandBaseline = 0;
+        HttpStatusCode responseStatus = default;
+        string responseBody = string.Empty;
+
+        PerfLatencySummary latency = await PerfLatencyMeasurement.MeasureAsync(
+            async _ =>
+            {
+                (responseStatus, responseBody) = await getAsync(url);
+            },
+            warmupIterations,
+            measuredIterations,
+            beforeIterationAsync: iteration =>
+            {
+                observer?.OnAttempt(cell, iteration, iteration < warmupIterations);
+                commandBaseline = commands().Count;
+                return Task.CompletedTask;
+            },
+            afterIterationAsync: async iteration =>
+            {
+                if (observer is not null)
+                {
+                    await observer.VerifyAsync(cell, iteration, responseStatus, responseBody);
+                }
+
+                if (responseStatus != HttpStatusCode.OK)
+                {
+                    throw new PerfObservationException(
+                        $"{at} iteration {iteration}: HTTP {(int)responseStatus}: "
+                            + responseBody[..Math.Min(responseBody.Length, 500)]
+                    );
+                }
+
+                int returnedRows = CountReturnedRows(responseBody);
+                if (returnedRows != cell.PageSize)
+                {
+                    throw new PerfObservationException(
+                        $"{at} iteration {iteration}: returned rows {returnedRows} must equal "
+                            + $"page size {cell.PageSize}."
+                    );
+                }
+
+                observedReturnedRows ??= returnedRows;
+
+                IReadOnlyList<ObservedDbCommand> window = [.. commands().Skip(commandBaseline)];
+                if (window.Count != 1)
+                {
+                    throw new PerfObservationException(
+                        $"{at} iteration {iteration}: expected exactly one database command per request; "
+                            + $"observed {window.Count}."
+                    );
+                }
+
+                hydrationBatchSql ??= window[0].CommandText;
+                if (window[0].CommandText != hydrationBatchSql)
+                {
+                    throw new PerfObservationException(
+                        $"{at} iteration {iteration}: hydration batch SQL text changed within the cell."
+                    );
+                }
+
+                if (iteration >= warmupIterations)
+                {
+                    // The observer's interval ends at the provider's diagnostic "after"
+                    // event, which SqlClient raises when ExecuteReader returns — before the
+                    // rows are consumed. It is a driver execute/dispatch sample, never full
+                    // database command time.
+                    driverExecuteSamplesMs.Add(window[0].ElapsedMs);
+                }
+
+                observer?.OnCompleted(cell, iteration, iteration < warmupIterations);
+            }
+        );
+
+        if (driverExecuteSamplesMs.Count != measuredIterations)
+        {
+            throw new PerfObservationException(
+                $"{at}: driver execute timing sample count {driverExecuteSamplesMs.Count} must equal "
+                    + $"measured iterations {measuredIterations}."
+            );
+        }
+
+        return new PerfCellMeasurement(
             latency,
             PerfLatencyMeasurement.Summarize(driverExecuteSamplesMs),
-            capture,
             hydrationBatchSql
-                ?? throw new PerfObservationException($"{at}: no hydration batch SQL was observed.")
+                ?? throw new PerfObservationException($"{at}: no hydration batch SQL was observed."),
+            observedReturnedRows
+                ?? throw new PerfObservationException($"{at}: no returned row count was observed.")
         );
     }
 

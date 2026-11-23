@@ -29,4 +29,25 @@ public static class PerfEnvironmentVariables
     public const string FinalPrimaryDirectoryMssql = "PERF_FINAL_PRIMARY_DIR_MSSQL";
     public const string FinalDescriptorsDirectoryPostgresql = "PERF_FINAL_DESCRIPTORS_DIR_POSTGRESQL";
     public const string FinalDescriptorsDirectoryMssql = "PERF_FINAL_DESCRIPTORS_DIR_MSSQL";
+
+    // Benchmark comparison (DMS-1019). The wrapper sets these for each side process.
+    public const string BenchmarkRunId = "PERF_BENCHMARK_RUN_ID";
+    public const string BenchmarkRole = "PERF_BENCHMARK_ROLE";
+    public const string BenchmarkPair = "PERF_BENCHMARK_PAIR";
+    public const string BenchmarkPosition = "PERF_BENCHMARK_POSITION";
+
+    /// <summary>
+    /// "workload" (the evidence workload) or "smokeWorkload" from the benchmark profile.
+    /// </summary>
+    public const string BenchmarkWorkload = "PERF_BENCHMARK_WORKLOAD";
+
+    /// <summary>
+    /// The comparison directory the report reads.
+    /// </summary>
+    public const string BenchmarkDirectory = "PERF_BENCHMARK_DIR";
+
+    /// <summary>
+    /// Test-only slowdown, set on candidate sides only: &lt;scenarioId&gt;=&lt;factor&gt;;…
+    /// </summary>
+    public const string InjectSlowdown = "PERF_INJECT_SLOWDOWN";
 }

@@ -70,18 +70,24 @@ public sealed record PerfWriteScenarioResult(
     int MeasuredCompleted,
     int Failed,
     IReadOnlyList<PerfCommandCountFrequency> MeasuredCommandCounts,
-    DateTimeOffset MeasuredWindowStartUtc,
-    DateTimeOffset MeasuredWindowEndUtc,
-    PerfLatencySummary LatencyMs
+    PerfMeasuredWindow? MeasuredWindow = null,
+    PerfLatencySummary? LatencyMs = null
 );
 
 /// <summary>
 /// Outcome accounting for the write loop. The caller owns it, so its exact counts survive a
 /// failure that stops the loop. A request that throws stays attempted but not completed.
+/// The clock is read only at the measured window's edges.
 /// </summary>
-public sealed class PerfWriteOutcomes(int warmupIterations, int measuredIterations)
+public sealed class PerfWriteOutcomes(
+    int warmupIterations,
+    int measuredIterations,
+    Func<PerfWindowStamp>? clock = null
+)
 {
     private readonly SortedDictionary<int, int> _measuredCommandCounts = [];
+    private readonly Func<PerfWindowStamp> _clock = clock ?? PerfWindowStamp.Now;
+    private PerfWindowStamp? _windowStart;
 
     public int WarmupAttempted { get; private set; }
 
@@ -95,9 +101,10 @@ public sealed class PerfWriteOutcomes(int warmupIterations, int measuredIteratio
 
     public string? FailureReason { get; private set; }
 
-    public DateTimeOffset? MeasuredWindowStartUtc { get; private set; }
-
-    public DateTimeOffset? MeasuredWindowEndUtc { get; private set; }
+    /// <summary>
+    /// Set once the last measured request completes.
+    /// </summary>
+    public PerfMeasuredWindow? MeasuredWindow { get; private set; }
 
     public IReadOnlyList<PerfCommandCountFrequency> MeasuredCommandCounts =>
         [.. _measuredCommandCounts.Select(entry => new PerfCommandCountFrequency(entry.Key, entry.Value))];
@@ -105,7 +112,7 @@ public sealed class PerfWriteOutcomes(int warmupIterations, int measuredIteratio
     /// <summary>
     /// Called before dispatch. The first measured attempt opens the measured window.
     /// </summary>
-    public void OnAttempt(int iteration, DateTimeOffset utcNow)
+    public void OnAttempt(int iteration)
     {
         if (iteration < warmupIterations)
         {
@@ -116,7 +123,7 @@ public sealed class PerfWriteOutcomes(int warmupIterations, int measuredIteratio
         MeasuredAttempted++;
         if (iteration == warmupIterations)
         {
-            MeasuredWindowStartUtc = utcNow;
+            _windowStart = _clock();
         }
     }
 
@@ -125,14 +132,7 @@ public sealed class PerfWriteOutcomes(int warmupIterations, int measuredIteratio
     /// the failure and throws, which stops the loop; otherwise the request completes, and the
     /// last measured completion closes the measured window.
     /// </summary>
-    public void OnResponse(
-        int iteration,
-        HttpStatusCode status,
-        bool hasEtag,
-        int commandCount,
-        string body,
-        DateTimeOffset utcNow
-    )
+    public void OnResponse(int iteration, HttpStatusCode status, bool hasEtag, int commandCount, string body)
     {
         string at = $"{PerfBenchmarkScenarios.StudentPutCollectionUpdate} iteration {iteration}";
         if (status != HttpStatusCode.NoContent)
@@ -155,11 +155,18 @@ public sealed class PerfWriteOutcomes(int warmupIterations, int measuredIteratio
         _measuredCommandCounts[commandCount] = _measuredCommandCounts.GetValueOrDefault(commandCount) + 1;
         if (iteration == warmupIterations + measuredIterations - 1)
         {
-            MeasuredWindowEndUtc = utcNow;
+            MeasuredWindow = PerfMeasuredWindow.Between(
+                _windowStart ?? throw new PerfObservationException("The measured window never opened."),
+                _clock()
+            );
         }
     }
 
-    public PerfWriteScenarioResult ToResult(PerfLatencySummary latencyMs) =>
+    /// <summary>
+    /// The result so far: after a failure there is no latency summary and possibly no
+    /// measured window, but the counts are exact.
+    /// </summary>
+    public PerfWriteScenarioResult ToResult(PerfLatencySummary? latencyMs = null) =>
         new(
             PerfBenchmarkScenarios.StudentPutCollectionUpdate,
             WarmupAttempted,
@@ -168,8 +175,7 @@ public sealed class PerfWriteOutcomes(int warmupIterations, int measuredIteratio
             MeasuredCompleted,
             Failed,
             MeasuredCommandCounts,
-            MeasuredWindowStartUtc ?? throw new PerfObservationException("The measured window never opened."),
-            MeasuredWindowEndUtc ?? throw new PerfObservationException("The measured window never closed."),
+            MeasuredWindow,
             latencyMs
         );
 
@@ -201,10 +207,20 @@ public static class PerfWriteScenarioExecutor
     ];
 
     /// <summary>
-    /// The fixture document of the student at <paramref name="ordinal" /> (the loader's row
-    /// shape, as the fixture smoke's control POST writes it) with the single first-name change.
+    /// The PUT body: the target's fixture document with the single first-name change.
     /// </summary>
-    public static JsonObject PayloadFor(long ordinal) =>
+    public static JsonObject PayloadFor(long ordinal)
+    {
+        JsonObject payload = FixtureDocument(ordinal);
+        payload["otherNames"]![0]!["firstName"] = UpdatedFirstName;
+        return payload;
+    }
+
+    /// <summary>
+    /// The fixture document of the student at <paramref name="ordinal" />: the loader's row
+    /// shape, as the fixture smoke's control POST writes it.
+    /// </summary>
+    public static JsonObject FixtureDocument(long ordinal) =>
         new()
         {
             ["studentUniqueId"] = PerfFixtureDefinition.StudentUniqueIdFor(ordinal),
@@ -220,7 +236,7 @@ public static class PerfWriteScenarioExecutor
                     ["otherNameTypeDescriptor"] = PerfFixtureDefinition.DescriptorUriFor(
                         PerfFixtureDefinition.OtherNameTypeDescriptorResource
                     ),
-                    ["firstName"] = UpdatedFirstName,
+                    ["firstName"] = PerfFixtureDefinition.FirstName,
                     ["lastSurname"] = PerfFixtureDefinition.LastSurname,
                 }
             ),
@@ -275,7 +291,7 @@ public static class PerfWriteScenarioExecutor
                 url =
                     $"{PerfFixtureDefinition.ResourceEndpoint}/{PerfFixtureDefinition.DocumentUuidFor(ordinal)}";
                 payload = PayloadFor(ordinal).ToJsonString();
-                outcomes.OnAttempt(iteration, DateTimeOffset.UtcNow);
+                outcomes.OnAttempt(iteration);
                 commandBaseline = observer.Commands.Count;
                 return Task.CompletedTask;
             },
@@ -286,8 +302,7 @@ public static class PerfWriteScenarioExecutor
                     status,
                     hasEtag,
                     observer.Commands.Count - commandBaseline,
-                    body,
-                    DateTimeOffset.UtcNow
+                    body
                 );
                 return Task.CompletedTask;
             }

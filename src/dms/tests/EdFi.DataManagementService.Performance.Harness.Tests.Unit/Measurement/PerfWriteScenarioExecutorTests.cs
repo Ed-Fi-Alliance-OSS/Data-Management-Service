@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Performance.Harness.Configuration;
 using EdFi.DataManagementService.Performance.Harness.Fixtures;
 using EdFi.DataManagementService.Performance.Harness.Measurement;
+using EdFi.DataManagementService.Performance.Harness.Results;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Performance.Harness.Tests.Unit.Measurement;
@@ -164,11 +165,27 @@ public class Given_Write_Outcomes_That_All_Succeed
 {
     private static readonly DateTimeOffset _start = new(2026, 11, 23, 12, 0, 0, TimeSpan.Zero);
     private PerfWriteOutcomes _outcomes = null!;
+    private int _clockReads;
 
     [SetUp]
     public async Task Setup()
     {
-        _outcomes = new PerfWriteOutcomes(warmupIterations: 2, measuredIterations: 3);
+        // The clock is read only at the window edges: before the first measured dispatch and
+        // after the last measured completion.
+        Queue<PerfWindowStamp> stamps = new([
+            new PerfWindowStamp(_start.AddSeconds(2), TimeSpan.FromMilliseconds(100)),
+            new PerfWindowStamp(_start.AddSeconds(4.5), TimeSpan.FromMilliseconds(350)),
+        ]);
+        _clockReads = 0;
+        _outcomes = new PerfWriteOutcomes(
+            warmupIterations: 2,
+            measuredIterations: 3,
+            () =>
+            {
+                _clockReads++;
+                return stamps.Dequeue();
+            }
+        );
         int[] commandCounts = [9, 9, 7, 9, 9];
 
         await PerfLatencyMeasurement.MeasureAsync(
@@ -177,7 +194,7 @@ public class Given_Write_Outcomes_That_All_Succeed
             3,
             iteration =>
             {
-                _outcomes.OnAttempt(iteration, _start.AddSeconds(iteration));
+                _outcomes.OnAttempt(iteration);
                 return Task.CompletedTask;
             },
             iteration =>
@@ -187,8 +204,7 @@ public class Given_Write_Outcomes_That_All_Succeed
                     HttpStatusCode.NoContent,
                     hasEtag: true,
                     commandCounts[iteration],
-                    string.Empty,
-                    _start.AddSeconds(iteration + 0.5)
+                    string.Empty
                 );
                 return Task.CompletedTask;
             }
@@ -217,8 +233,10 @@ public class Given_Write_Outcomes_That_All_Succeed
     [Test]
     public void It_opens_the_window_at_the_first_measured_attempt_and_closes_it_at_the_last_completion()
     {
-        _outcomes.MeasuredWindowStartUtc.Should().Be(_start.AddSeconds(2));
-        _outcomes.MeasuredWindowEndUtc.Should().Be(_start.AddSeconds(4.5));
+        _clockReads.Should().Be(2);
+        _outcomes
+            .MeasuredWindow.Should()
+            .Be(new PerfMeasuredWindow(_start.AddSeconds(2), _start.AddSeconds(4.5), 250));
     }
 
     [Test]
@@ -230,7 +248,8 @@ public class Given_Write_Outcomes_That_All_Succeed
 
         result.ScenarioId.Should().Be(PerfBenchmarkScenarios.StudentPutCollectionUpdate);
         result.MeasuredCompleted.Should().Be(3);
-        result.MeasuredWindowStartUtc.Should().Be(_start.AddSeconds(2));
+        result.MeasuredWindow!.StartUtc.Should().Be(_start.AddSeconds(2));
+        result.LatencyMs!.SamplesMs.Should().HaveCount(3);
     }
 }
 
@@ -249,7 +268,11 @@ public abstract class WriteOutcomeFailureFixture
     public async Task Setup()
     {
         // 2 warmup + 10 measured; the failure lands on measured iteration 7.
-        Outcomes = new PerfWriteOutcomes(warmupIterations: 2, measuredIterations: 10);
+        Outcomes = new PerfWriteOutcomes(
+            warmupIterations: 2,
+            measuredIterations: 10,
+            () => new PerfWindowStamp(DateTimeOffset.UnixEpoch, TimeSpan.Zero)
+        );
         _operations = 0;
 
         Func<Task> run = () =>
@@ -263,21 +286,14 @@ public abstract class WriteOutcomeFailureFixture
                 10,
                 iteration =>
                 {
-                    Outcomes.OnAttempt(iteration, DateTimeOffset.UnixEpoch);
+                    Outcomes.OnAttempt(iteration);
                     return Task.CompletedTask;
                 },
                 iteration =>
                 {
                     (HttpStatusCode status, bool hasEtag) =
                         iteration == FailingIteration ? FailingResponse : (HttpStatusCode.NoContent, true);
-                    Outcomes.OnResponse(
-                        iteration,
-                        status,
-                        hasEtag,
-                        9,
-                        "{\"detail\":\"boom\"}",
-                        DateTimeOffset.UnixEpoch
-                    );
+                    Outcomes.OnResponse(iteration, status, hasEtag, 9, "{\"detail\":\"boom\"}");
                     return Task.CompletedTask;
                 }
             );
@@ -302,9 +318,15 @@ public abstract class WriteOutcomeFailureFixture
     }
 
     [Test]
-    public void It_never_closes_the_measured_window()
+    public void It_reports_exact_counts_without_a_window_or_latency()
     {
-        Outcomes.MeasuredWindowEndUtc.Should().BeNull();
+        PerfWriteScenarioResult partial = Outcomes.ToResult();
+
+        partial.MeasuredAttempted.Should().Be(8);
+        partial.MeasuredCompleted.Should().Be(7);
+        partial.Failed.Should().Be(1);
+        partial.MeasuredWindow.Should().BeNull();
+        partial.LatencyMs.Should().BeNull();
     }
 
     [Test]
@@ -347,7 +369,11 @@ public class Given_A_Write_Request_That_Throws
     [Test]
     public async Task It_stays_attempted_but_not_completed()
     {
-        PerfWriteOutcomes outcomes = new(warmupIterations: 0, measuredIterations: 3);
+        PerfWriteOutcomes outcomes = new(
+            warmupIterations: 0,
+            measuredIterations: 3,
+            () => new PerfWindowStamp(DateTimeOffset.UnixEpoch, TimeSpan.Zero)
+        );
 
         Func<Task> run = () =>
             PerfLatencyMeasurement.MeasureAsync(
@@ -357,19 +383,12 @@ public class Given_A_Write_Request_That_Throws
                 3,
                 iteration =>
                 {
-                    outcomes.OnAttempt(iteration, DateTimeOffset.UnixEpoch);
+                    outcomes.OnAttempt(iteration);
                     return Task.CompletedTask;
                 },
                 iteration =>
                 {
-                    outcomes.OnResponse(
-                        iteration,
-                        HttpStatusCode.NoContent,
-                        true,
-                        9,
-                        string.Empty,
-                        DateTimeOffset.UnixEpoch
-                    );
+                    outcomes.OnResponse(iteration, HttpStatusCode.NoContent, true, 9, string.Empty);
                     return Task.CompletedTask;
                 }
             );

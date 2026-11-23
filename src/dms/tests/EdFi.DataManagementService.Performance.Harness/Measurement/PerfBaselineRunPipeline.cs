@@ -32,7 +32,8 @@ public static class PerfBaselineRunPipeline
         int measuredIterations,
         string resultsDirectoryBase,
         string runnerCommit,
-        PerfEvidenceRunSettings settings
+        PerfEvidenceRunSettings settings,
+        IPerfReadObserver? observer = null
     )
     {
         GuardCiEnvironment(settings.AllowCi, Environment.GetEnvironmentVariable("GITHUB_ACTIONS"));
@@ -50,7 +51,8 @@ public static class PerfBaselineRunPipeline
             provider,
             deepOffset,
             warmupIterations,
-            measuredIterations
+            measuredIterations,
+            observer
         );
 
         string providerName = PerfProviders.ArtifactName(provider);
