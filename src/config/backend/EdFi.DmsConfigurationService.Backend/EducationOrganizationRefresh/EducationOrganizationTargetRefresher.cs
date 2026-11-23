@@ -49,9 +49,9 @@ public abstract record TargetRefreshOutcome
 }
 
 /// <summary>
-/// Refreshes the education organization snapshot of one ordinary data store under its target lease (DMS-1441 spec
-/// §6.2): acquire, reclaim, admission renewal, read with a renewal loop, pre-stage renewal, stage, activation inside
-/// the job fence, then a best-effort prune.
+/// Refreshes the education organization snapshot of one ordinary data store under its target lease: acquire, reclaim,
+/// admission renewal, read with a renewal loop, pre-stage renewal, stage, activation inside the job fence, then a
+/// best-effort prune.
 /// </summary>
 /// <remarks>
 /// <para>

@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
 
-/// <summary>Registration of the education-organization refresh (DMS-1441 spec §6.3, §6.5, §6.6, §6.10).</summary>
+/// <summary>Registration of the education-organization refresh.</summary>
 public static class EducationOrganizationRefreshServiceCollectionExtensions
 {
     /// <summary>

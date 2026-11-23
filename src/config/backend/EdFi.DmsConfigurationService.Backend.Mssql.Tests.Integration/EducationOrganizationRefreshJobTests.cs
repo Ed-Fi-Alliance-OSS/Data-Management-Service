@@ -31,7 +31,7 @@ using ReadResult = EdFi.DmsConfigurationService.Backend.EducationOrganizationPro
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration;
 
 /// <summary>
-/// The education organization refresh through the real job runtime (DMS-1441 spec step 2.5): the real job lease
+/// The education organization refresh through the real job runtime: the real job lease
 /// repository, executor, fence and snapshot repository, the registered refresh handler and target refresher, and a
 /// signalled reader double. Lease expiry is driven by database column updates and the refresher's renewal ticks by
 /// fake time; nothing sleeps for a fixed time.

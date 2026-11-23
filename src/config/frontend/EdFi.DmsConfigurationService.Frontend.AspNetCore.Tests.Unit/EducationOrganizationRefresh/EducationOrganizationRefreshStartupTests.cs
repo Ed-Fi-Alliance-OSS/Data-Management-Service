@@ -18,9 +18,9 @@ using NUnit.Framework;
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.EducationOrganizationRefresh;
 
 /// <summary>
-/// Verifies that the host validates <c>AppSettings:EdOrgsRefreshIntervalInMins</c> at startup (DMS-1441 spec §6.10,
-/// E2 rule 3): an invalid interval stops the host with a message that names the setting, and the shipped settings
-/// start it with the default interval and the refresh error codes registered.
+/// Verifies that the host validates <c>AppSettings:EdOrgsRefreshIntervalInMins</c> at startup: an invalid interval
+/// stops the host with a message that names the setting, and the shipped settings start it with the default interval
+/// and the refresh error codes registered.
 /// </summary>
 public class EducationOrganizationRefreshStartupTests
 {

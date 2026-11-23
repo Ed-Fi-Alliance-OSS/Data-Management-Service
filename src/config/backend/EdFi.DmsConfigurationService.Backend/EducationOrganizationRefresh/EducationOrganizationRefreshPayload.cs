@@ -7,7 +7,7 @@ using EdFi.DmsConfigurationService.Backend.Jobs;
 
 namespace EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
 
-/// <summary>The education-organization refresh job and schedule types (DMS-1441 spec §6.3).</summary>
+/// <summary>The education-organization refresh job and schedule types.</summary>
 public static class EducationOrganizationRefreshJobTypes
 {
     /// <summary>Refreshes the snapshot of one data store, or of every data store, in the job's tenant.</summary>

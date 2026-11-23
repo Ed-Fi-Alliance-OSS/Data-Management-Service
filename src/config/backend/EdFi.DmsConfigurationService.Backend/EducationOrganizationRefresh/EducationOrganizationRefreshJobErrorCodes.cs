@@ -8,7 +8,7 @@ using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
 namespace EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
 
 /// <summary>
-/// The job error codes of the education-organization refresh (DMS-1441 spec §6.3). Each message is fixed text that
+/// The job error codes of the education-organization refresh. Each message is fixed text that
 /// names no tenant, data store, URL or DMS response value.
 /// </summary>
 public static class EducationOrganizationRefreshJobErrorCodes

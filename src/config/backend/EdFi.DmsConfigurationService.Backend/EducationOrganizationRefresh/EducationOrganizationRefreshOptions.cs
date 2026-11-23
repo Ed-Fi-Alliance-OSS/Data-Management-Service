@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
 
 /// <summary>
-/// The refresh settings (DMS-1441 spec §6.10). They live in the <c>AppSettings</c> section but are bound as their own
+/// The refresh settings. They live in the <c>AppSettings</c> section but are bound as their own
 /// type, with their own validator, so the host's <c>AppSettings</c> type and its validator are unchanged.
 /// </summary>
 public sealed class EducationOrganizationRefreshOptions

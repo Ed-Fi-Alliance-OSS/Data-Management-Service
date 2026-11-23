@@ -490,7 +490,7 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
         (Test-Path Env:INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET) | Should -BeFalse
     }
 
-    It "sets the operational refresh interval, the read-only Configuration Service connection and the database host port, then removes them (DMS-1441)" {
+    It "sets the operational refresh interval, the read-only Configuration Service connection and the database host port, then removes them" {
         $script:observedOperationalInputs = $null
         Invoke-WithInstanceE2ETestProcessContext -InstanceE2ESettings $script:settings -Fixture $script:fixture -Action {
             $script:observedOperationalInputs = @(
@@ -634,7 +634,7 @@ Describe "Instance E2E orchestration and setup ordering (DMS-1284)" {
         $script:instanceE2ETests | Should -Match "Invoke-WithInstanceE2ETestProcessContext"
     }
 
-    It "provisions the reader credentials, recreates the Configuration Service as operational and creates the read-only login between registration and the DMS restart (DMS-1441)" {
+    It "provisions the reader credentials, recreates the Configuration Service as operational and creates the read-only login between registration and the DMS restart" {
         $registerIndex = $script:instanceE2ETests.IndexOf("Register-InstanceE2EFixture -InstanceE2ESettings")
         $readersIndex = $script:instanceE2ETests.IndexOf("Register-InstanceE2EEducationOrganizationReader -InstanceE2ESettings")
         $operationalIndex = $script:instanceE2ETests.IndexOf("Enable-InstanceE2EOperationalConfigService -InstanceE2ESettings")

@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.EducationOrganizationRefresh;
 
 /// <summary>
-/// The refresh payload contract (DMS-1441 spec §6.3), checked through the job runtime's own registration and command
+/// The refresh payload contract, checked through the job runtime's own registration and command
 /// validator, so the persisted form and every rejection are what an enqueue or a schedule upsert would see.
 /// </summary>
 public class EducationOrganizationRefreshPayloadTests

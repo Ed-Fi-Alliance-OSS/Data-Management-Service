@@ -12,7 +12,7 @@ using Codes = EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh.
 namespace EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
 
 /// <summary>
-/// Runs <see cref="EducationOrganizationRefreshJobTypes.Refresh"/> (DMS-1441 spec §6.5): refreshes every selected
+/// Runs <see cref="EducationOrganizationRefreshJobTypes.Refresh"/>: refreshes every selected
 /// ordinary data store of the job's tenant, in identifier order, then decides the job's outcome from all of them.
 /// </summary>
 /// <remarks>
@@ -205,7 +205,7 @@ public sealed class EducationOrganizationRefreshJobHandler(
 }
 
 /// <summary>
-/// Retries a refresh in which a data store failed transiently while attempts remain (DMS-1441 spec §6.5). The
+/// Retries a refresh in which a data store failed transiently while attempts remain. The
 /// message is fixed text; the executor records the attempt as a transient failure.
 /// </summary>
 public sealed class EducationOrganizationRefreshRetryException()
