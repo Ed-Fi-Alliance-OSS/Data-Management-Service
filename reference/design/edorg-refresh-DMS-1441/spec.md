@@ -1068,6 +1068,12 @@ There is no standalone 3.3 or 5.3 checkpoint. Checkpoint 2 is approved before ch
   - excluded GETs → 404.
 - Done when: both lanes green.
 - Risks: the managed-store suppression test (`ManagedDataStoreExternalSuppressionTests`) asserts on every `Error` job, and with the scheduler on the refresh schedule (step 4.1) adds refresh jobs to that host; its assertions must account for them.
+- As implemented:
+  - **Feature.** `EducationOrganizations.feature` has 11 scenarios; its steps are in `StepDefinitions/EducationOrganizationRefreshStepDefinitions.cs`. The queued-response step asserts status 202, exactly `jobId` and `message`, a GUID job ID, and `Location` equal to `/v3/jobs/{jobId}`. The poll step asserts the same job `Pending`, with no `finishedAt` and no `errorMessage`.
+  - **Lanes.** The single-tenant scenarios carry `@SingleTenantOnly`; 01, 02, 06 and 08 also carry `@MssqlRepresentative`. Scenarios 09–11 carry `@MssqlMultitenantRepresentative @MultitenantOnly`, so only the SQL Server multi-tenant lane runs them.
+  - **Single-tenant aggregate.** The suite cleans data stores per feature, not per scenario, so scenario 06 compares the aggregate with the same stack's `GET /v3/dataStores`. It expects every store in identifier order, unmanaged, `status` `Created`, explicit nulls and no organizations, and requires the scenario's own store to be listed. It is read as `DEFAULT`, then as `default` with an unrelated `Tenant` header.
+  - **Multi-tenant rules.** A missing header returns 400 with the middleware body. A mismatched header returns the mismatch 400, an unknown tenant 404 and a case-differing match 200 with the canonical name. A refresh needs the header; its job is visible only in its own tenant. The excluded GET is checked within a tenant.
+  - **Suppression repair.** The fixture's progress wait and error assertions select only the three seeded job IDs and jobs whose `SourceScheduleId` is the unrelated schedule. That predicate is null-safe, so its negation also selects jobs with no source schedule. The exact count of 4, the per-job error message, attempts, fences, cleared leases and the retention prune are kept. Each error is also checked against its job type. The fixture asserts the refresh schedule is enabled, and any other job in `Error` must be `EducationOrganization.Refresh`. Scheduler settings are unchanged.
 
 **5.6 Pre-push validation** (no commit unless fixes are needed)
 - Runs:
