@@ -27,7 +27,7 @@ Path abbreviations:
 | --- | --- | --- | --- |
 | 1 | The reclaim predicate `NOT IN (ActiveGeneration, g)` keeps abandoned rows while `ActiveGeneration` is null | The predicate is now null-safe: `Generation <> @g AND (ActiveGeneration IS NULL OR Generation <> ActiveGeneration)`. Tests assert the exact **retained generation IDs**, both with and without an active generation. | §6.2 step 3; steps 1.2/1.3 |
 | 2 | A strict renewal could judge expiry before waiting for the row lock | **Lock first, then validate.** Every operation that depends on ownership first locks the target row in its own statement. It then validates owner, generation and expiry with a **fresh statement clock** in a separate statement, and only then writes, all in one bounded transaction. This mirrors `PostgresqlJobFenceFactory.cs` L39-41, and applies to both providers (SQL Server evaluates `SYSUTCDATETIME()` once per statement). New tests cover a lease that expires *during the lock wait*. | §6.2; steps 1.2/1.3 |
-| 3 | Changing the compose worker default could silently stop workers for managed deployments | **Compose defaults are unchanged** (`WorkerEnabled` `:-true`). Bootstrap mode is an **explicit setting**: only the fresh-install `.env.example` copies and the CMS-E2E environment set `CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED=false`. An existing `.env` without the variable keeps workers on, and so fails loudly when reader settings are missing. A configuration-matrix test proves it. | §2 E2 rule 7; step 5.1 |
+| 3 | Changing the compose worker default could silently stop workers for managed deployments | **Compose defaults are unchanged** (`WorkerEnabled` `:-true`). Bootstrap mode is an **explicit setting**: only shipped templates and test/demo environment files (the step 5.1 inventory) set `CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED=false`. An existing `.env` without the variable keeps workers on, and so fails loudly when reader settings are missing. A configuration-matrix test proves it. | §2 E2 rule 7; step 5.1 |
 | 4 | The suspension limitation was described too narrowly and its timing too strongly | The limitation is restated: delays in execution or scheduling (a continuation descheduled, process suspension, or late timer or cancellation delivery), with timing bounds that hold only under normal scheduling. The guarantee that can be tested is unchanged: once another owner takes over, the previous owner can never stage or publish. A new test pauses the old owner after admission. | §6.2 guarantees; steps 2.3/2.5 |
 | 5 | The operational test did not prove that recurring scheduled runs happen | Step 5.2 now asserts completed jobs whose `SourceScheduleId` is that tenant's refresh schedule, then changes source data and checks that a **later occurrence** publishes the change, with no manual trigger. | step 5.2 |
 
@@ -129,13 +129,14 @@ Documented differences:
 7. **Shipped configurations are repaired in the same commit that introduces rule 2** (step 5.1). **No compose default changes.**
    - The `JobSettings__WorkerEnabled: ${CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED:-true}` line stays as it is (`local-config.compose.yml` L57, `published-config.compose.yml` L61, and the azure-vm equivalent).
    - New reader variables (`CONFIGURATION_SERVICE_DMS_EDORG_*`) map onto `DmsEducationOrganizationProjectionSettings__*` with empty defaults.
-   - **Explicit bootstrap only where a fresh install is created:**
+   - **Explicit bootstrap only in shipped templates and test/demo environments** (the step 5.1 inventory lists each file and its mode):
      - The fresh-install templates (`eng/docker-compose/.env.example`, `eng/azure-vm/compose/.env.example`) gain an explicit `CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED=false`, with a comment: "bootstrap: no job runs here until you configure the DMS reader and set this to true".
-     - The CMS-E2E environment (no DMS) sets it explicitly too.
+     - The CMS-E2E environment (no DMS) sets it explicitly too, as do the other test, smoke, template-build and getting-started environment files in the inventory.
+     - The Instance E2E environment starts in bootstrap; `build-dms.ps1 InstanceE2ETest` then recreates the Configuration Service as operational (step 5.2).
    - An existing deployment's own `.env` is untouched, and an unset variable still means workers on.
    - So an existing deployment, with or without `CONFIGURATION_SERVICE_DATA_STORE_MANAGEMENT_ENABLED=true`, either starts operationally when reader settings are supplied, or **fails at startup**, naming the missing settings. It never becomes workers-off by accident.
    - Every start script and CI path that composes CMS is inventoried in step 5.1. Each one passes bootstrap explicitly or is wired as operational.
-   - **Instance E2E:** fully operational (step 5.2).
+   - **Instance E2E:** bootstrap at start, then fully operational before the tests run (step 5.2).
    - **CMS E2E:** explicit bootstrap.
 
 ---
@@ -277,11 +278,11 @@ Status: **P** = provided by a dependency (verified and re-tested), **Part** = pa
   1. **Lock.** Lock the target row in its own statement, with no time predicate: PG `SELECT … FOR UPDATE` / `FOR SHARE`; MS `SELECT … WITH (UPDLOCK | HOLDLOCK, ROWLOCK)`.
   2. **Validate.** Once the lock is held, read `clock_timestamp()` / `SYSUTCDATETIME()` together with the locked row's lease columns in a **separate statement**, and decide.
   3. **Write.** Perform the write, using that fresh clock value.
-  
+
   Why a separate statement:
   - PostgreSQL evaluates the `WHERE` clause and select list of a `SELECT … FOR UPDATE` before waiting for a row lock whose holder releases it unchanged (`PostgresqlJobFenceFactory.cs` L39-41).
   - SQL Server evaluates `SYSUTCDATETIME()` once per statement, at the start of that statement.
-  
+
   So a single conditional `UPDATE … WHERE LeaseExpiresAt > clock` can carry an expiry verdict made before the wait. LTV prevents this. The steps that use LTV are acquisition (2), reclaim (3), admission and every renewal (4, 5, 6), stage (7) and activation (8).
 
 **Sequence for one target:**
@@ -529,7 +530,7 @@ Every disable keeps history.
 | --- | --- | --- |
 | `AppSettings:EdOrgsRefreshIntervalInMins` (env `AppSettings__EdOrgsRefreshIntervalInMins`) | `60` | 1–527040, `ValidateOnStart` |
 | `DmsEducationOrganizationProjectionSettings:*` | unchanged | E2 rules 1–2 |
-| Compose: new `CONFIGURATION_SERVICE_DMS_EDORG_*` variables mapped onto the reader settings (empty defaults). The `CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED` default stays `true`. Bootstrap is set explicitly only in the fresh-install `.env.example` files and in the CMS-E2E environment. | — | step 5.1 |
+| Compose: new `CONFIGURATION_SERVICE_DMS_EDORG_*` variables mapped onto the reader settings (empty defaults). The `CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED` default stays `true`. Bootstrap is set explicitly only in the shipped templates and test/demo environment files of the step 5.1 inventory. | — | step 5.1 |
 
 ### 6.11 Observability
 
@@ -583,7 +584,7 @@ Every event uses its event name as the `EventId` name. Values are sanitized. URL
   - one `/v3/tenants/…` route in single-tenant mode;
   - new refresh routes;
   - startup requirements per E2, with migration guidance;
-  - compose worker defaults are unchanged; bootstrap is set explicitly only in the fresh-install templates and CMS E2E.
+  - compose worker defaults are unchanged; bootstrap is set explicitly only in the shipped templates and test/demo environment files of the step 5.1 inventory (Instance E2E then switches to operational).
 - The tenant FK on schedules blocks tenant deletion (there is no API to delete a tenant).
 
 ### 6.14 Operator documentation (step 5.3)
@@ -1097,7 +1098,7 @@ There is no standalone 3.3 or 5.3 checkpoint. Checkpoint 2 is approved before ch
 | Slow sequential refresh-all | Renewals keep both leases; documented (Q4) |
 | Busy target forces a job retry | Documented. Leases cover one target at a time, so waits are short. |
 | Composite extension touches shared jobs code | Additive; existing tests unchanged; startup capacity check |
-| Operational deployment change | One commit with every repair (5.1). Compose worker defaults are unchanged. Bootstrap is explicit only in fresh-install templates and CMS E2E. The preservation matrix is tested. A missing configuration fails loudly. |
+| Operational deployment change | One commit with every repair (5.1). Compose worker defaults are unchanged. Bootstrap is explicit only in the shipped templates and test/demo environment files of the 5.1 inventory; Instance E2E moves from bootstrap to operational (5.2). Existing deployments' own `.env` files are untouched. The preservation matrix is tested. A missing configuration fails loudly. |
 | At-least-once re-reads increase DMS load on retries | Exponential backoff; `MaxAttempts`; documented |
 | Exhaustion hides the summary | Stated limitation, tested |
 
