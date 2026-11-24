@@ -1453,8 +1453,9 @@ the size it reached at that peak for the life of the process.
 Bearer tokens are validated before the limiter admits or rejects a request,
 so a request with a bearer token pays for validation even when it is then
 rejected with `429`, and an admitted request is validated again when it is
-authenticated. A successful validation is reused from the validated-token
-cache (see `JwtAuthentication.ValidatedTokenCacheEntryMaxLifetimeSeconds`).
+authenticated. Successful validations may be reused while caching is enabled
+and the cached entry remains valid (see
+`JwtAuthentication.ValidatedTokenCacheEntryMaxLifetimeSeconds`).
 A failed one is not cached: a well-formed token with a forged signature
 costs a signature check every time, and validation failures are logged at
 the limiter and again during authentication when the request is admitted.

@@ -796,19 +796,22 @@ the services.
 ### Rate Limiting
 
 The application gateway remains the best place to apply rate limiting and DoS
-controls. Only the Ed-Fi API has a built-in rate limiter as a fallback; the
-Configuration Service has none today. The API's limiter gives each validated
-client (by its token's `client_id`) and each client address its own budget,
-per process, so one client exhausting its budget does not reject other
-clients. With `AppSettings:BypassAuthorization` set to `true`, every request
-uses its address budget. The address is taken after forwarded-header
-processing, so behind a proxy that is not configured as trusted, anonymous
-clients all share the proxy's address budget. The limiter does not cap total
-load: admitted load grows with the number of active clients and addresses.
-Nothing caps the number of budgets it keeps, and bearer tokens are validated
-before a request is admitted or rejected, so it does not protect against CPU,
-log or memory exhaustion. It is a backstop only and must not be relied on for
-DoS or brute-force protection. See [RateLimit](./CONFIGURATION.md#ratelimit).
+controls. The Ed-Fi API provides the per-client and per-address fallback
+described below. The Configuration Service separately limits its OAuth
+`/connect/*` endpoints; see
+[ConnectRateLimit](./CONFIGURATION.md#connectratelimit). The API's limiter
+gives each validated client (by its token's `client_id`) and each client
+address its own budget, per process, so one client exhausting its budget does
+not reject other clients. With `AppSettings:BypassAuthorization` set to
+`true`, every request uses its address budget. The address is taken after
+forwarded-header processing, so behind a proxy that is not configured as
+trusted, anonymous clients all share the proxy's address budget. The limiter
+does not cap total load: admitted load grows with the number of active clients
+and addresses. Nothing caps the number of budgets it keeps, and bearer tokens
+are validated before a request is admitted or rejected, so it does not protect
+against CPU, log or memory exhaustion. It is a backstop only and must not be
+relied on for DoS or brute-force protection. See
+[RateLimit](./CONFIGURATION.md#ratelimit).
 
 ### Authentication and Authorization
 
