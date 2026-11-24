@@ -1400,11 +1400,13 @@ Describe "The Instance E2E read-only PostgreSQL login keeps its password out of 
         function Get-InstanceE2EDatabaseHostPort { param($DatabaseEngine) 55432 }
 
         # Leaf boundary: records the arguments and standard input psql would receive, then exits with the
-        # configured code after writing what psql writes to standard error.
+        # configured code after writing what psql writes to standard error. -ErrorAction Continue keeps those
+        # records non-terminating, as a native command's redirected standard error is, when the runner sets
+        # $ErrorActionPreference to Stop.
         function docker {
             $script:dockerArguments = @($args)
             $script:dockerInput = (@($input) -join "`n") -split "\r?\n"
-            $script:dockerStandardError | ForEach-Object { Write-Error $_ }
+            $script:dockerStandardError | ForEach-Object { Write-Error $_ -ErrorAction Continue }
             $global:LASTEXITCODE = $script:dockerExitCode
         }
 
