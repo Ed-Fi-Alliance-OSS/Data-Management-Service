@@ -2499,17 +2499,27 @@ GO
     }
     else {
         $postgresUser = Get-ComposeResolvedEnvValue -EnvironmentValues $InstanceE2ESettings.EnvironmentValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+        # psql's \password command takes the new password as input, not as SQL: it computes the SCRAM verifier in the
+        # client and sends only the verifier, so the password is in no statement text that the server could log. Run
+        # without -t, psql has no terminal and reads the password twice from the next lines of standard input.
         $sql = @"
 DO `$`$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$login') THEN CREATE ROLE $login LOGIN; END IF;
 END `$`$;
-ALTER ROLE $login WITH LOGIN PASSWORD '$password';
+ALTER ROLE $login WITH LOGIN;
+\password $login
+$password
+$password
 ALTER ROLE $login SET default_transaction_read_only = on;
 GRANT CONNECT ON DATABASE "$database" TO $login;
 GRANT USAGE ON SCHEMA dmscs TO $login;
 GRANT SELECT ON dmscs."Tenant", dmscs."JobSchedule", dmscs."Job" TO $login;
 "@
-        $sql | docker exec -i $container psql -U $postgresUser -d $database -v ON_ERROR_STOP=1 -q | Out-Null
+        # \password writes its two prompts to standard error, so psql's output is shown only when it fails.
+        $psqlOutput = $sql | docker exec -i $container psql -U $postgresUser -d $database -v ON_ERROR_STOP=1 -q 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $psqlOutput | ForEach-Object { Write-Host "$_" }
+        }
     }
     if ($LASTEXITCODE -ne 0) {
         throw "Creating the read-only Configuration Service database login failed (exit code $LASTEXITCODE)."

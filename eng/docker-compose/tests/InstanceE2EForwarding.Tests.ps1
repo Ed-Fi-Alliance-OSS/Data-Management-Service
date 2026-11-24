@@ -1380,3 +1380,94 @@ Describe "RunInstanceE2E defaults to excluding the identity plugin slice (DMS-15
         ($script:dotnetArguments | Where-Object { $_ -eq "--filter" }).Count | Should -Be 1
     }
 }
+
+Describe "The Instance E2E read-only PostgreSQL login keeps its password out of SQL text" {
+    BeforeAll {
+        function Get-BuildScriptFunctionText {
+            param([Parameter(Mandatory)] [string] $ScriptPath, [Parameter(Mandatory)] [string] $FunctionName)
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $functionAst = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName }, $true) | Select-Object -First 1
+            if ($null -eq $functionAst) { throw "Function '$FunctionName' was not found in '$ScriptPath'." }
+            return $functionAst.Extent.Text
+        }
+
+        $script:buildScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../build-dms.ps1"))
+        . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "New-InstanceE2ECmsReadOnlyConnectionString")))
+
+        function Get-ComposeResolvedEnvValue { param($EnvironmentValues, $Name, $DefaultValue) $DefaultValue }
+        function Get-InstanceE2EDatabaseHostPort { param($DatabaseEngine) 55432 }
+
+        # Leaf boundary: records the arguments and standard input psql would receive, then exits with the
+        # configured code after writing what psql writes to standard error.
+        function docker {
+            $script:dockerArguments = @($args)
+            $script:dockerInput = (@($input) -join "`n") -split "\r?\n"
+            $script:dockerStandardError | ForEach-Object { Write-Error $_ }
+            $global:LASTEXITCODE = $script:dockerExitCode
+        }
+
+        $script:settings = [pscustomobject]@{ DatabaseEngine = "postgresql"; EnvironmentValues = @{} }
+        $script:configConnection = "Host=dms-postgresql;Port=5432;Database=edfi_configurationservice;Username=postgres;Password=abcdefgh1!;"
+
+        # Returns the two lines after \password, which psql reads as the new password and its confirmation.
+        function Get-PasswordInput {
+            $index = [array]::IndexOf($script:dockerInput, "\password edorg_refresh_e2e_reader")
+            $index | Should -BeGreaterThan -1
+            return @($script:dockerInput[$index + 1], $script:dockerInput[$index + 2])
+        }
+    }
+
+    BeforeEach {
+        $script:dockerArguments = $null
+        $script:dockerInput = $null
+        $script:dockerStandardError = @()
+        $script:dockerExitCode = 0
+        $script:hostOutput = [System.Collections.Generic.List[string]]::new()
+        Mock Write-Host { $script:hostOutput.Add([string]$Object) }
+    }
+
+    It "sends the password only as the two \password input lines, never in SQL text, arguments or host output" {
+        $script:dockerStandardError = @('Enter new password for user "edorg_refresh_e2e_reader": ', 'Enter it again: ')
+        $connectionString = New-InstanceE2ECmsReadOnlyConnectionString -InstanceE2ESettings $script:settings -ConfigServiceConnectionString $script:configConnection
+
+        $password = (Get-PasswordInput)[0]
+        $password | Should -Match '^E2e![0-9a-f]{32}$'
+        (Get-PasswordInput)[1] | Should -BeExactly $password
+        @($script:dockerInput | Where-Object { $_.Contains($password) }).Count | Should -Be 2
+        ($script:dockerInput -join "`n") | Should -Not -Match "(?i)password\s+'"
+        ($script:dockerArguments -join " ") | Should -Not -Match ([regex]::Escape($password))
+        $script:hostOutput | Should -BeNullOrEmpty
+
+        $connectionString | Should -BeExactly "Host=127.0.0.1;Port=55432;Database=edfi_configurationservice;Username=edorg_refresh_e2e_reader;Password=$password;"
+    }
+
+    It "runs psql without a terminal, stopping at the first error, and keeps the login's privileges" {
+        New-InstanceE2ECmsReadOnlyConnectionString -InstanceE2ESettings $script:settings -ConfigServiceConnectionString $script:configConnection | Out-Null
+
+        $script:dockerArguments | Should -Contain "-i"
+        $script:dockerArguments | Should -Not -Contain "-t"
+        $script:dockerArguments | Should -Not -Contain "-it"
+        ($script:dockerArguments -join " ") | Should -Match "exec -i dms-postgresql psql -U postgres -d edfi_configurationservice -v ON_ERROR_STOP=1"
+
+        $script:dockerInput | Should -Contain "ALTER ROLE edorg_refresh_e2e_reader WITH LOGIN;"
+        $script:dockerInput | Should -Contain "ALTER ROLE edorg_refresh_e2e_reader SET default_transaction_read_only = on;"
+        $script:dockerInput | Should -Contain 'GRANT CONNECT ON DATABASE "edfi_configurationservice" TO edorg_refresh_e2e_reader;'
+        $script:dockerInput | Should -Contain "GRANT USAGE ON SCHEMA dmscs TO edorg_refresh_e2e_reader;"
+        $script:dockerInput | Should -Contain 'GRANT SELECT ON dmscs."Tenant", dmscs."JobSchedule", dmscs."Job" TO edorg_refresh_e2e_reader;'
+    }
+
+    It "shows psql's output, which holds no password, and fails when psql fails" {
+        $script:dockerStandardError = @('Enter new password for user "edorg_refresh_e2e_reader": ', 'psql:<stdin>:13: ERROR:  relation "dmscs.Job" does not exist')
+        $script:dockerExitCode = 3
+
+        $thrown = { New-InstanceE2ECmsReadOnlyConnectionString -InstanceE2ESettings $script:settings -ConfigServiceConnectionString $script:configConnection } |
+            Should -Throw "*read-only Configuration Service database login failed (exit code 3)*" -PassThru
+
+        $password = (Get-PasswordInput)[0]
+        $script:hostOutput | Should -Contain 'psql:<stdin>:13: ERROR:  relation "dmscs.Job" does not exist'
+        ($script:hostOutput -join "`n") | Should -Not -Match ([regex]::Escape($password))
+        $thrown.Exception.Message | Should -Not -Match ([regex]::Escape($password))
+    }
+}
