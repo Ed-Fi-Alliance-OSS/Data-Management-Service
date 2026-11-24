@@ -16,6 +16,9 @@ warn_legacy_env_names .env
 
 # shellcheck source=compose-files.sh
 source ./compose-files.sh
+# Before the confirmation and the destructive `down -v`: the restart below would recreate the Configuration
+# Services with the reader override's example values in place of working .env credentials (see compose-files.sh).
+refuse_reader_override_placeholders || exit 1
 
 # Guard the destructive `down -v`: it permanently wipes every app/database volume and the Keycloak
 # realm. Require explicit confirmation so a stray ./reset.sh cannot nuke deployment state --

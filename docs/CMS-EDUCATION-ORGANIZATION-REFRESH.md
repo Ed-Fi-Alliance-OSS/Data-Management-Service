@@ -136,12 +136,22 @@ education organizations over a slow link, against about 0.2 seconds locally. A w
 an HTTP request answers `500` and is rolled back, with no automatic retry, and a managed data store job retries as a
 transient failure. Keep tenant reads away from bulk catalog changes, or retry the write.
 
-**SQL Server aggregate reads can also delay refresh lease renewals.** The snapshot locks that a tenant read holds
-also block the write that renews a refresh's [data store lease](#data-store-leases). A renewal waits for at most half
-of `JobSettings:RenewalInterval`, less one second. If the read holds its locks longer, the refresh can no longer be
-sure it still holds the lease: it logs `EducationOrganizationTargetLeaseLost` (`RenewalUncertain`), cancels its read
-of that data store, and its job retries like any transient failure. This is separate from the catalog writes above
-and their 5-second bound.
+**SQL Server aggregate reads can also delay a refresh's data store writes.** The snapshot locks that a tenant read
+holds also block the writes that a refresh makes to a data store's [lease](#data-store-leases):
+
+- Acquisition's lease update and activation's update, which runs inside the job fence, wait at most 5 seconds for
+  each lock. A wait that times out fails as a database error: the refresh logs
+  `EducationOrganizationTargetRefreshFailed` with its `Operation` (`Acquire` or `Activate`) and provider diagnostics
+  (SQL Server reports a lock timeout as `1222`), and its job retries like any transient failure.
+- A lease renewal waits for at most half of `JobSettings:RenewalInterval`, less one second. If the read holds its
+  locks longer, the refresh can no longer be sure it still holds the lease: it logs
+  `EducationOrganizationTargetLeaseLost` (`RenewalUncertain`), cancels its ongoing read of that data store, and its
+  job retries like any transient failure.
+
+A retry reads its data stores again, and each data store keeps its previously published snapshot until a later
+refresh of it publishes. The job fence has its own bounds: when the fence loses the job's ownership or cannot lock
+the job row in time, the job executor ends the attempt as a transient failure, without
+`EducationOrganizationTargetRefreshFailed`. These waits are separate from the catalog writes above.
 
 **At-least-once reads.** Every attempt of a refresh job reads every data store it covers again, including data stores
 an earlier attempt or another job already published. A later publication of the same data store replaces the earlier

@@ -29,6 +29,8 @@ if grep -qE '=.*CHANGEME' .env; then
   echo "(generates strong secrets on first run) or replace every CHANGEME value, then retry."
   exit 1
 fi
+# The reader override's example values would replace working .env credentials (see compose-files.sh).
+refuse_reader_override_placeholders || exit 1
 
 # External network shared by docker-compose.yml and keycloak.compose.yml.
 docker network inspect dms-sec >/dev/null 2>&1 || docker network create dms-sec

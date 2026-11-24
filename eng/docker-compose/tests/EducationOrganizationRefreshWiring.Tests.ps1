@@ -300,6 +300,7 @@ Describe 'Configuration Service worker and reader wiring' {
             BeforeAll {
                 # Renders the Compose files that compose-files.sh selects, as up.sh, update.sh and reset.sh pass
                 # them, from a copy of the deployment folder, so a test override never lands in the repository.
+                # GuardExitCode is what refuse_reader_override_placeholders returns there, which those scripts run first.
                 function Get-AzureSelectionRender {
                     param([string] $Override, [string[]] $Lines)
                     $root = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
@@ -313,7 +314,9 @@ Describe 'Configuration Service worker and reader wiring' {
                     $selection = @(& bash -c 'cd "$1" && source ./compose-files.sh && printf "%s\n" "${compose_files[@]}"' bash $root)
                     $LASTEXITCODE | Should -Be 0
                     $files = @($selection | Where-Object { $_ -ne '-f' })
-                    return @{ Files = $files; Config = Invoke-Render -Root $root -Files $files -Lines $Lines }
+                    $null = & bash -c 'cd "$1" && source ./compose-files.sh && refuse_reader_override_placeholders 2>/dev/null' bash $root
+                    $guardExitCode = $LASTEXITCODE
+                    return @{ Files = $files; Config = Invoke-Render -Root $root -Files $files -Lines $Lines; GuardExitCode = $guardExitCode }
                 }
 
                 $lines = Get-EnvironmentLines -Root $script:azureRoot -Name '.env.example'
@@ -369,6 +372,7 @@ services:
                 $render = Get-AzureSelectionRender -Lines $lines
 
                 $render.Files | Should -Be @('docker-compose.yml', 'keycloak.compose.yml')
+                $render.GuardExitCode | Should -Be 0
                 $st = $render.Config.services['st-config'].environment
                 $st["$($script:credentials)__ClientId"] | Should -BeExactly 'st-env-reader'
                 $st["$($script:credentials)__ClientSecret"] | Should -BeExactly 'St-env-secret1!'
@@ -376,11 +380,46 @@ services:
                     Should -BeNullOrEmpty
             }
 
+            It 'keeps the .env single-tenant credential under a tenant-only override, which the placeholder guard accepts' {
+                $lines = Set-Declaration -Lines $script:azureLines -Key 'CONFIGURATION_SERVICE_ST_DMS_EDORG_CLIENT_ID' -Value 'st-env-reader'
+                $lines = Set-Declaration -Lines $lines -Key 'CONFIGURATION_SERVICE_ST_DMS_EDORG_CLIENT_SECRET' -Value 'St-env-secret1!'
+                # Synthetic tenant credentials; the example's st-config block (CHANGEME_st_reader_key) was deleted.
+                $override = @'
+# The single-tenant credential stays in .env, so the st-config block with its CHANGEME_ values was deleted.
+services:
+#  st-config:
+#    environment:
+#      DmsEducationOrganizationProjectionSettings__Credentials__ClientId: "CHANGEME_st_reader_key"
+  mt-config:
+    environment:
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant1__ClientId: "tenant1-reader"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant1__ClientSecret: "Tenant1-secret1!"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant2__ClientId: "tenant2-reader"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant2__ClientSecret: "Tenant2-secret1!"
+'@
+                $render = Get-AzureSelectionRender -Override $override -Lines $lines
+
+                $render.GuardExitCode | Should -Be 0
+                $render.Files | Should -Be @('docker-compose.yml', 'keycloak.compose.yml', 'reader.compose.override.yml')
+                $st = $render.Config.services['st-config'].environment
+                $st["$($script:credentials)__ClientId"] | Should -BeExactly 'st-env-reader'
+                $st["$($script:credentials)__ClientSecret"] | Should -BeExactly 'St-env-secret1!'
+                @($st.Keys | Where-Object { $_ -like "$($script:tenantCredentials)__*" }) | Should -BeNullOrEmpty
+                $mt = $render.Config.services['mt-config'].environment
+                $mt["$($script:tenantCredentials)__tenant1__ClientId"] | Should -BeExactly 'tenant1-reader'
+                $mt["$($script:tenantCredentials)__tenant1__ClientSecret"] | Should -BeExactly 'Tenant1-secret1!'
+                $mt["$($script:tenantCredentials)__tenant2__ClientId"] | Should -BeExactly 'tenant2-reader'
+                $mt["$($script:tenantCredentials)__tenant2__ClientSecret"] | Should -BeExactly 'Tenant2-secret1!'
+            }
+
             It 'maps the tracked example onto the single-tenant credential and each .env.example tenant' {
                 $example = Get-Content -Raw -LiteralPath (Join-Path $script:azureRoot 'reader.compose.override.example.yml')
 
                 $render = Get-AzureSelectionRender -Override $example -Lines $script:azureLines
 
+                # The lifecycle scripts refuse the untouched copy before any Compose call; rendering it directly still
+                # shows where each entry lands.
+                $render.GuardExitCode | Should -Be 1
                 $st = $render.Config.services['st-config'].environment
                 $st.Keys | Should -Contain "$($script:credentials)__ClientId"
                 $st.Keys | Should -Contain "$($script:credentials)__ClientSecret"

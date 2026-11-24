@@ -29,6 +29,9 @@ warn_legacy_env_names .env
 
 # shellcheck source=compose-files.sh
 source ./compose-files.sh
+# Before any image is pulled or container recreated: the reader override's example values would replace
+# working .env credentials (see compose-files.sh).
+refuse_reader_override_placeholders || exit 1
 
 # The PostgreSQL 18 image keeps its cluster in a versioned PGDATA directory below a volume mounted at
 # /var/lib/postgresql. A volume created before that layout holds its cluster at the volume root (it

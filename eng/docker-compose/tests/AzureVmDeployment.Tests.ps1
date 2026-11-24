@@ -370,6 +370,27 @@ exit 17
                 "restart gateway swagger-ui",
                 "down -v"
             )
+
+            # Runs up.sh, update.sh, reset.sh --force and an unconfirmed reset.sh in turn, asserting that each refuses
+            # with the placeholder diagnostic before any Docker call and before reset.sh touches its markers. Returns
+            # each script's output.
+            function Invoke-EveryComposeScriptRefusal {
+                $env:SKIP_GIT = "1"
+                $complete = Join-Path $script:composeRoot ".bootstrap/bootstrap-complete"
+                Set-Content -LiteralPath $complete -Value "" -NoNewline
+                $outputs = foreach ($run in @(@("up.sh"), @("update.sh"), @("reset.sh", "--force"), @("reset.sh"))) {
+                    $output = & bash (Join-Path $script:composeRoot $run[0]) @($run | Select-Object -Skip 1) 2>&1 | Out-String
+                    $LASTEXITCODE | Should -Be 1 -Because $output
+                    $output | Should -BeLikeExactly "*ERROR: reader.compose.override.yml still holds example CHANGEME_ values*" -Because ($run -join " ")
+                    $output | Should -BeLikeExactly "*delete the entries*you do not need (see reader.compose.override.example.yml)*" -Because ($run -join " ")
+                    $output | Should -BeLikeExactly "*No services were started, recreated or removed.*" -Because ($run -join " ")
+                    $output
+                }
+                Test-Path -LiteralPath $script:dockerLog | Should -BeFalse
+                Test-Path -LiteralPath $complete | Should -BeTrue
+                Test-Path -LiteralPath (Join-Path $script:composeRoot ".bootstrap/reset-pending") | Should -BeFalse
+                return $outputs
+            }
         }
 
         It "passes only the stack's two Compose files when no reader override exists" {
@@ -385,6 +406,72 @@ exit 17
 
         It "loads the reader override last in every Compose call of up.sh, update.sh and reset.sh when it exists" {
             Set-Content -LiteralPath (Join-Path $script:composeRoot "reader.compose.override.yml") -Value "services: {}" -NoNewline
+
+            $calls = Invoke-EveryComposeScript
+
+            foreach ($subcommand in $script:composeSubcommands) {
+                @($calls | Where-Object { $_.EndsWith(" $subcommand") }) | Should -Not -BeNullOrEmpty -Because $subcommand
+            }
+            foreach ($call in $calls) {
+                $call | Should -BeLikeExactly "compose -f docker-compose.yml -f keycloak.compose.yml -f reader.compose.override.yml --env-file .env *"
+            }
+        }
+
+        It "refuses an untouched copy of the example in up.sh, update.sh and reset.sh before any Docker call" {
+            $example = Join-Path $script:azureVmRoot "compose/reader.compose.override.example.yml"
+            Copy-Item -LiteralPath $example -Destination (Join-Path $script:composeRoot "reader.compose.override.yml")
+            # Only the assignments; the example's comments that mention CHANGEME_ are not reported.
+            $placeholderLines = @(Select-String -LiteralPath $example -Pattern "CHANGEME_" |
+                    Where-Object { $_.Line -notmatch "^\s*#" } | ForEach-Object LineNumber)
+            $placeholderLines.Count | Should -Be 6
+
+            foreach ($output in Invoke-EveryComposeScriptRefusal) {
+                $output | Should -BeLikeExactly "*(line(s) $($placeholderLines -join ', ')).*"
+                $output | Should -Not -BeLike "*CHANGEME_st*"
+                $output | Should -Not -BeLike "*CHANGEME_tenant*"
+            }
+        }
+
+        It "refuses configured tenant entries beside a leftover single-tenant placeholder, without printing a value" {
+            # Synthetic sentinel credentials: none of them, nor any key or placeholder of the file, may be printed.
+            Set-Content -LiteralPath (Join-Path $script:composeRoot "reader.compose.override.yml") -Value @'
+services:
+  st-config:
+    environment:
+      DmsEducationOrganizationProjectionSettings__Credentials__ClientId: "CHANGEME_st_reader_key"
+      DmsEducationOrganizationProjectionSettings__Credentials__ClientSecret: 'CHANGEME_st_reader_secret'
+  mt-config:
+    environment:
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant1__ClientId: "Sentinel-t1-key"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant1__ClientSecret: "Sentinel-t1-secret1!"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant2__ClientId: "Sentinel-t2-key"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant2__ClientSecret: "Sentinel-t2-secret1!"
+'@
+
+            foreach ($output in Invoke-EveryComposeScriptRefusal) {
+                $output | Should -BeLikeExactly "*(line(s) 4, 5).*"
+                $output | Should -Not -BeLike "*Sentinel*"
+                $output | Should -Not -BeLike "*CHANGEME_st*"
+                $output | Should -Not -BeLike "*DmsEducationOrganizationProjectionSettings*"
+            }
+        }
+
+        It "accepts a tenant-only override whose comments mention CHANGEME_, loading it in every Compose call" {
+            Set-Content -LiteralPath (Join-Path $script:composeRoot "reader.compose.override.yml") -Value @'
+# Copied from reader.compose.override.example.yml; the st-config block (CHANGEME_st_reader_key) was deleted.
+services:
+#  st-config:
+#    environment:
+#      DmsEducationOrganizationProjectionSettings__Credentials__ClientId: "CHANGEME_st_reader_key"
+  mt-config:
+    environment:
+      # Was "CHANGEME_tenant1_reader_key".
+      # DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant2__ClientId: CHANGEME_tenant2_reader_key
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant1__ClientId: "tenant1-reader"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant1__ClientSecret: "Tenant1-secret1!"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant2__ClientId: "tenant2-reader"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant2__ClientSecret: "Tenant2-secret1!"
+'@
 
             $calls = Invoke-EveryComposeScript
 
@@ -1392,6 +1479,65 @@ services:
         $calls.Count | Should -Be 2
         $calls[0] | Should -BeExactly "compose -f docker-compose.yml -f keycloak.compose.yml -f reader.compose.override.yml --env-file .env up -d --no-deps postgres keycloak st-config mt-config pgadmin swagger-ui gateway"
         $calls[1] | Should -BeExactly "compose -f docker-compose.yml -f keycloak.compose.yml -f reader.compose.override.yml --env-file .env up -d st-dms mt-dms"
+    }
+
+    It "refuses an untouched copy of the example before writing .env or starting any service" {
+        $example = Join-Path $script:azureVmRoot "compose/reader.compose.override.example.yml"
+        Copy-Item -LiteralPath $example -Destination (Join-Path $script:deployDir "reader.compose.override.yml")
+        $placeholderLines = @(Select-String -LiteralPath $example -Pattern "CHANGEME_" |
+                Where-Object { $_.Line -notmatch "^\s*#" } | ForEach-Object LineNumber)
+
+        $failure = { Invoke-SetupEnv } | Should -Throw -PassThru
+
+        $failure.Exception.Message | Should -BeLikeExactly "reader.compose.override.yml still holds example CHANGEME_ values (line(s) $($placeholderLines -join ', '))*delete the entries you do not need (see reader.compose.override.example.yml)*"
+        $failure.Exception.Message | Should -Not -BeLike "*CHANGEME_st*"
+        Test-Path -LiteralPath (Join-Path $script:deployDir ".env") | Should -BeFalse
+        # Only the read-only Docker reachability check ran before the refusal.
+        @(Get-Content -LiteralPath $env:AZURE_SETUP_DOCKER_LOG) | Should -BeExactly @("info")
+    }
+
+    It "refuses configured tenant entries beside a leftover single-tenant placeholder, without revealing a value" {
+        Set-Content -LiteralPath (Join-Path $script:deployDir "reader.compose.override.yml") -Value @'
+services:
+  st-config:
+    environment:
+      DmsEducationOrganizationProjectionSettings__Credentials__ClientId: CHANGEME_st_reader_key
+      DmsEducationOrganizationProjectionSettings__Credentials__ClientSecret: "Sentinel-st-secret1!"
+  mt-config:
+    environment:
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant1__ClientId: "Sentinel-t1-key"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant1__ClientSecret: "Sentinel-t1-secret1!"
+'@
+
+        $failure = { Invoke-SetupEnv } | Should -Throw -PassThru
+
+        $failure.Exception.Message | Should -BeLikeExactly "*(line(s) 4).*"
+        $failure.Exception.Message | Should -Not -BeLike "*Sentinel*"
+        $failure.Exception.Message | Should -Not -BeLike "*CHANGEME_st*"
+        $failure.Exception.Message | Should -Not -BeLike "*DmsEducationOrganizationProjectionSettings*"
+        Get-ComposeUpCall | Should -BeNullOrEmpty
+    }
+
+    It "accepts a tenant-only override whose comments mention CHANGEME_" {
+        Set-Content -LiteralPath (Join-Path $script:deployDir "reader.compose.override.yml") -Value @'
+# Copied from reader.compose.override.example.yml; the st-config block (CHANGEME_st_reader_key) was deleted.
+services:
+#  st-config:
+#    environment:
+#      DmsEducationOrganizationProjectionSettings__Credentials__ClientId: "CHANGEME_st_reader_key"
+  mt-config:
+    environment:
+      # Was "CHANGEME_tenant1_reader_key".
+      # DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant2__ClientId: CHANGEME_tenant2_reader_key
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant1__ClientId: "tenant1-reader"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant1__ClientSecret: "Tenant1-secret1!"
+'@
+
+        Invoke-SetupEnv
+
+        $calls = Get-ComposeUpCall
+        $calls.Count | Should -Be 2
+        $calls | ForEach-Object { $_ | Should -BeLikeExactly "compose -f docker-compose.yml -f keycloak.compose.yml -f reader.compose.override.yml --env-file .env up *" }
     }
 
     It "still refuses a single-quoted reader secret containing a dollar in .env before starting any service" {

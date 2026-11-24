@@ -12,6 +12,10 @@
 # Ab$Cd is written "Ab$$Cd" here. A value set here replaces the same setting from .env; delete the entries
 # you do not need. The base URLs stay in .env (CONFIGURATION_SERVICE_ST_/MT_DMS_EDORG_BASE_URL).
 #
+# up.sh, update.sh, reset.sh and setup-env.ps1 refuse to run while any entry still holds a CHANGEME_ value, so
+# fill in every entry you keep and delete the rest: for example, delete the whole st-config block when the
+# single-tenant credential stays in .env.
+#
 # The multi-tenant entries are keyed by tenant name (MT_TENANT_1 and MT_TENANT_2 in .env).
 services:
   st-config:

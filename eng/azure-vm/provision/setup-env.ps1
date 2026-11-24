@@ -130,6 +130,20 @@ try {
     $composeFiles = @('-f', 'docker-compose.yml', '-f', 'keycloak.compose.yml')
     if (Test-Path -LiteralPath 'reader.compose.override.yml' -PathType Leaf) {
         $composeFiles += @('-f', 'reader.compose.override.yml')
+
+        # Before .env is written or any service starts: a value in the override replaces the same setting from .env,
+        # and the .env placeholder checks below do not read the override, so an entry still holding an example value
+        # (CHANGEME_...) would silently replace a working credential. Same pattern as refuse_reader_override_placeholders
+        # in compose/compose-files.sh: a non-comment line assigning a value that starts with CHANGEME_. Only the line
+        # numbers are reported, never their text.
+        $placeholderLines = @(Select-String -LiteralPath 'reader.compose.override.yml' -CaseSensitive `
+                -Pattern '^\s*[^#\s].*[:=]\s*["'']?CHANGEME_' | ForEach-Object LineNumber)
+        if ($placeholderLines.Count -gt 0) {
+            throw ("reader.compose.override.yml still holds example CHANGEME_ values (line(s) $($placeholderLines -join ', ')). " +
+                "A value there replaces the same setting from .env, so the Configuration Services would start with the " +
+                "placeholder credentials. Replace each one you need with the real value and delete the entries you do not " +
+                "need (see reader.compose.override.example.yml), or remove the file to use .env only. No services were started.")
+        }
     }
 
     # --- 2. .env: host (always) + generated secrets (first run / -RotateSecrets only) -------
