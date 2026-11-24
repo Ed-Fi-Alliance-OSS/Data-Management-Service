@@ -13,6 +13,12 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 /// </summary>
 internal enum RateLimitPartitionKind
 {
+    /// <summary>
+    /// The validated <c>client_id</c> of a bearer token that Core's JWT validation accepts, compared
+    /// exactly and ordinally.
+    /// </summary>
+    Client,
+
     /// <summary>A normalized connection address: IPv4, or the /64 prefix of a native IPv6 address.</summary>
     Address,
 
@@ -35,6 +41,13 @@ internal readonly record struct RateLimitPartitionKey(RateLimitPartitionKind Kin
         RateLimitPartitionKind.UnknownAddress,
         string.Empty
     );
+
+    /// <summary>
+    /// Keys a request by the client its bearer token proves. Only a <c>client_id</c> that Core's JWT
+    /// validation returned may be passed here; nothing read from the request itself is a client key.
+    /// </summary>
+    public static RateLimitPartitionKey ForClient(string clientId) =>
+        new(RateLimitPartitionKind.Client, clientId);
 
     /// <summary>
     /// Keys a request by its connection address, read after forwarded headers from trusted proxies
@@ -66,3 +79,9 @@ internal readonly record struct RateLimitPartitionKey(RateLimitPartitionKind Kin
         return new(RateLimitPartitionKind.Address, new IPAddress(bytes).ToString());
     }
 }
+
+/// <summary>
+/// Carries the partition key that <see cref="GlobalRateLimitingMiddleware"/> resolved for a request to
+/// the global limiter's partitioner, which is synchronous and so cannot validate a token itself.
+/// </summary>
+internal sealed record RateLimitPartitionFeature(RateLimitPartitionKey Key);

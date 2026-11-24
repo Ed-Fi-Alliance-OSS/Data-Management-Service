@@ -6,10 +6,12 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using System.Threading.RateLimiting;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Primitives;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
@@ -56,6 +58,38 @@ public class GlobalRateLimitingMiddlewareTests
         }
     }
 
+    /// <summary>
+    /// A client-id resolver that answers from a delegate and records every header it is handed.
+    /// </summary>
+    private sealed class StubClientIdResolver(Func<string?, CancellationToken, Task<string?>> resolve)
+        : IValidatedClientIdResolver
+    {
+        private readonly List<string?> _headers = [];
+
+        public IReadOnlyList<string?> Headers
+        {
+            get
+            {
+                lock (_headers)
+                {
+                    return [.. _headers];
+                }
+            }
+        }
+
+        public Task<string?> ResolveAsync(string? authorizationHeader, CancellationToken cancellationToken)
+        {
+            lock (_headers)
+            {
+                _headers.Add(authorizationHeader);
+            }
+
+            return resolve(authorizationHeader, cancellationToken);
+        }
+    }
+
+    private static StubClientIdResolver ResolvesNoClient() => new((_, _) => Task.FromResult<string?>(null));
+
     private static Func<CancellationToken, ValueTask<RateLimitLease>> Grants() =>
         _ => ValueTask.FromResult<RateLimitLease>(new TestLease(isAcquired: true));
 
@@ -71,11 +105,20 @@ public class GlobalRateLimitingMiddlewareTests
     private static async Task<Run> InvokeAsync(
         ScriptedLimiter limiter,
         RequestDelegate? next = null,
-        CancellationToken requestAborted = default
+        CancellationToken requestAborted = default,
+        IValidatedClientIdResolver? clientIdResolver = null,
+        StringValues? authorization = null,
+        IPAddress? remoteIpAddress = null
     )
     {
         DefaultHttpContext context = RateLimitRejectionTestContext.CreateHttpContext();
         context.RequestAborted = requestAborted;
+        context.Connection.RemoteIpAddress = remoteIpAddress;
+        if (authorization is { } value)
+        {
+            context.Request.Headers.Authorization = value;
+        }
+
         int nextCalls = 0;
 
         GlobalRateLimitingMiddleware middleware = new(
@@ -84,7 +127,8 @@ public class GlobalRateLimitingMiddlewareTests
                 nextCalls++;
                 return next?.Invoke(httpContext) ?? Task.CompletedTask;
             },
-            limiter
+            limiter,
+            clientIdResolver ?? ResolvesNoClient()
         );
 
         await middleware.InvokeAsync(context);
@@ -136,7 +180,8 @@ public class GlobalRateLimitingMiddlewareTests
                     nextCalls++;
                     return Task.CompletedTask;
                 },
-                limiter
+                limiter,
+                ResolvesNoClient()
             );
 
             Func<Task> invoke = () =>
@@ -240,7 +285,8 @@ public class GlobalRateLimitingMiddlewareTests
 
                     return Task.CompletedTask;
                 },
-                _limiter
+                _limiter,
+                ResolvesNoClient()
             );
         }
 
@@ -337,6 +383,154 @@ public class GlobalRateLimitingMiddlewareTests
             SendQueued(_addressA);
             PendingRequest a5 = await SendCompletedAsync(_addressA);
             a5.Context.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Request_To_Partition : GlobalRateLimitingMiddlewareTests
+    {
+        private static readonly IPAddress _address = IPAddress.Parse("10.0.0.7");
+
+        private static RateLimitPartitionKey? PartitionKeyOf(Run run) =>
+            run.Context.Features.Get<RateLimitPartitionFeature>()?.Key;
+
+        [Test]
+        public async Task It_keys_a_request_without_an_authorization_header_by_address_without_resolving()
+        {
+            StubClientIdResolver resolver = new((_, _) => Task.FromResult<string?>("client-a"));
+
+            Run run = await InvokeAsync(
+                new ScriptedLimiter(Grants()),
+                clientIdResolver: resolver,
+                remoteIpAddress: _address
+            );
+
+            resolver.Headers.Should().BeEmpty();
+            PartitionKeyOf(run).Should().Be(RateLimitPartitionKey.ForAddress(_address));
+            run.NextCalls.Should().Be(1);
+        }
+
+        [Test]
+        public async Task It_keys_a_request_by_the_client_id_the_resolver_validates()
+        {
+            StubClientIdResolver resolver = new((_, _) => Task.FromResult<string?>("Client-A"));
+
+            Run run = await InvokeAsync(
+                new ScriptedLimiter(Grants()),
+                clientIdResolver: resolver,
+                authorization: new StringValues("Bearer the-token"),
+                remoteIpAddress: _address
+            );
+
+            resolver.Headers.Should().Equal("Bearer the-token");
+            PartitionKeyOf(run).Should().Be(RateLimitPartitionKey.ForClient("Client-A"));
+            run.NextCalls.Should().Be(1);
+        }
+
+        [Test]
+        public async Task It_keys_a_request_by_address_when_the_resolver_validates_no_client()
+        {
+            Run run = await InvokeAsync(
+                new ScriptedLimiter(Grants()),
+                authorization: new StringValues("Bearer rejected-token"),
+                remoteIpAddress: _address
+            );
+
+            PartitionKeyOf(run).Should().Be(RateLimitPartitionKey.ForAddress(_address));
+        }
+
+        /// <summary>
+        /// The resolver must see the header as Core does, so a value Core rejects as malformed never
+        /// selects a client budget. StringValues.ToString() would drop the blank value in the second
+        /// case and hand over a header that parses.
+        /// </summary>
+        [TestCase(new[] { "" }, "")]
+        [TestCase(new[] { "Bearer the-token", "" }, "Bearer the-token,")]
+        [TestCase(new[] { "", "Bearer the-token" }, ",Bearer the-token")]
+        [TestCase(new[] { "Bearer first", "Bearer second" }, "Bearer first,Bearer second")]
+        public async Task It_hands_the_resolver_every_header_value_comma_joined(
+            string[] values,
+            string expectedHeader
+        )
+        {
+            StubClientIdResolver resolver = ResolvesNoClient();
+
+            await InvokeAsync(
+                new ScriptedLimiter(Grants()),
+                clientIdResolver: resolver,
+                authorization: new StringValues(values)
+            );
+
+            resolver.Headers.Should().Equal(expectedHeader);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Request_Aborted_While_Its_Client_Is_Resolved : GlobalRateLimitingMiddlewareTests
+    {
+        [Test]
+        public async Task It_returns_without_acquiring_admitting_or_writing_a_response()
+        {
+            using CancellationTokenSource requestAborted = new();
+            TaskCompletionSource resolving = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            StubClientIdResolver resolver = new(
+                async (_, cancellationToken) =>
+                {
+                    resolving.SetResult();
+
+                    // Waits for the abort alone, as a validation in flight would.
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                    return "client-a";
+                }
+            );
+            ScriptedLimiter limiter = new(Grants());
+
+            Task<Run> invocation = InvokeAsync(
+                limiter,
+                requestAborted: requestAborted.Token,
+                clientIdResolver: resolver,
+                authorization: new StringValues("Bearer the-token")
+            );
+            await resolving.Task;
+            invocation.IsCompleted.Should().BeFalse("the resolver is still waiting");
+
+            await requestAborted.CancelAsync();
+            Run run = await invocation;
+
+            limiter.AcquireCalls.Should().Be(0);
+            run.NextCalls.Should().Be(0);
+            run.Context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+            run.Context.Response.Body.Length.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Client_Id_Resolver_That_Fails : GlobalRateLimitingMiddlewareTests
+    {
+        /// <summary>
+        /// An ObjectDisposedException from resolution pins that resolution is outside the acquisition
+        /// retry: inside it, the failure would be swallowed and the request acquired and admitted.
+        /// </summary>
+        [TestCase(typeof(InvalidOperationException))]
+        [TestCase(typeof(ObjectDisposedException))]
+        public async Task It_propagates_the_failure_without_acquiring(Type exceptionType)
+        {
+            Exception failure = (Exception)Activator.CreateInstance(exceptionType, "resolver failure")!;
+            StubClientIdResolver resolver = new((_, _) => Task.FromException<string?>(failure));
+            ScriptedLimiter limiter = new(Grants(), Grants());
+
+            Func<Task> invoke = () =>
+                InvokeAsync(
+                    limiter,
+                    clientIdResolver: resolver,
+                    authorization: new StringValues("Bearer the-token")
+                );
+
+            (await invoke.Should().ThrowAsync<Exception>()).Which.Should().BeSameAs(failure);
+            limiter.AcquireCalls.Should().Be(0);
         }
     }
 }

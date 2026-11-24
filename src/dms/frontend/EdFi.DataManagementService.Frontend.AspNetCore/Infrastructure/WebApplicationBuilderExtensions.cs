@@ -231,15 +231,18 @@ public static class WebApplicationBuilderExtensions
 
     /// <summary>
     /// Builds the global limiter: one fixed window per partition, each with the configured permit,
-    /// window and queue limits. A request is partitioned by its connection address, so neither the
-    /// Host header nor a forwarded header from an untrusted peer can split or reset a budget.
+    /// window and queue limits. A request is partitioned by the key
+    /// <see cref="GlobalRateLimitingMiddleware"/> resolved for it, a validated client or a connection
+    /// address, and otherwise by its connection address. Neither the Host header nor a forwarded
+    /// header from an untrusted peer can split or reset a budget.
     /// </summary>
     internal static PartitionedRateLimiter<HttpContext> CreateGlobalLimiter(
         RateLimitOptions rateLimitOptions
     ) =>
         PartitionedRateLimiter.Create<HttpContext, RateLimitPartitionKey>(httpContext =>
             RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: RateLimitPartitionKey.ForAddress(httpContext.Connection.RemoteIpAddress),
+                partitionKey: httpContext.Features.Get<RateLimitPartitionFeature>()?.Key
+                    ?? RateLimitPartitionKey.ForAddress(httpContext.Connection.RemoteIpAddress),
                 factory: _ => new FixedWindowRateLimiterOptions
                 {
                     PermitLimit = rateLimitOptions.PermitLimit,
