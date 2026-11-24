@@ -178,12 +178,15 @@ function Get-BenchmarkHostFact {
 function Start-BenchmarkCollector {
     <#
     .SYNOPSIS
-        Starts the host sampler (Get-Counter every HostIntervalSeconds) and the Docker sampler
+        Starts the host samplers (Get-Counter every HostIntervalSeconds) and the Docker samplers
         (docker stats --no-stream) as thread jobs appending to SideDirectory/samples.csv. Each
         row carries the phase current when it was taken; a Docker row is stamped when its poll
-        completes. One poll itself takes about 2 s, so two pollers run offset by half the
-        interval: samples arrive about every DockerIntervalSeconds / 2, which keeps every
-        measured window bracketed within one nominal interval.
+        completes. Neither source keeps its nominal interval exactly: Get-Counter fires about
+        every 1.01 s, and one docker poll takes 1-2 s, so a window starting in that slack would
+        have no bracketing sample within one interval. Two host samplers therefore run offset by
+        half an interval, and three Docker pollers start their polls on a fixed schedule offset
+        by a third of an interval (a fixed schedule, so varying poll durations cannot make them
+        drift together). Every measured window is then bracketed well within one nominal interval.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal helper invoked non-interactively; it only starts the side''s own sampler jobs, so -WhatIf/-Confirm semantics add no value.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive: ContainerName and HostIntervalSeconds are consumed inside the thread-job scriptblocks through $using:.')]
@@ -204,7 +207,9 @@ function Start-BenchmarkCollector {
         finally { [Threading.Monitor]::Exit($shared.SyncRoot) }
     }
 
-    $hostJob = Start-ThreadJob -ScriptBlock {
+    $hostSampler = {
+        param([double] $OffsetSeconds)
+        Start-Sleep -Milliseconds ([int]($OffsetSeconds * 1000))
         $shared = $using:shared
         $append = [scriptblock]::Create($using:append)
         $path = $using:samplesPath
@@ -225,10 +230,14 @@ function Start-BenchmarkCollector {
         }
         catch { [void]$shared.Errors.Add("host sampler: $_") }
     }
+    $hostJobs = @(
+        Start-ThreadJob -ScriptBlock $hostSampler -ArgumentList 0
+        Start-ThreadJob -ScriptBlock $hostSampler -ArgumentList ($HostIntervalSeconds / 2)
+    )
 
+    $origin = [DateTime]::UtcNow
     $dockerPoller = {
         param([double] $OffsetSeconds)
-        Start-Sleep -Milliseconds ([int]($OffsetSeconds * 1000))
         $shared = $using:shared
         $append = [scriptblock]::Create($using:append)
         $path = $using:samplesPath
@@ -240,8 +249,10 @@ function Start-BenchmarkCollector {
             if ($text.Trim() -match '^([\d.]+)\s*([A-Za-z]+)$') { return [double]::Parse($Matches[1], $invariant) * $units[$Matches[2]] }
             return 0
         }
+        $next = ([DateTime]$using:origin).AddSeconds($OffsetSeconds)
         while ($true) {
-            $started = [DateTime]::UtcNow
+            $wait = $next - [DateTime]::UtcNow
+            if ($wait -gt [TimeSpan]::Zero) { Start-Sleep -Milliseconds ([int]$wait.TotalMilliseconds) }
             try {
                 $json = (docker stats --no-stream --format '{{json .}}' $container 2>$null) -join ''
                 $stamp = [DateTime]::UtcNow.ToString('o')
@@ -255,16 +266,13 @@ function Start-BenchmarkCollector {
                 )
             }
             catch { [void]$shared.Errors.Add("docker sampler: $_") }
-            $remaining = $interval - ([DateTime]::UtcNow - $started)
-            if ($remaining -gt [TimeSpan]::Zero) { Start-Sleep -Milliseconds ([int]$remaining.TotalMilliseconds) }
+            # The next slot on this poller's schedule; a poll that overran skips missed slots.
+            do { $next = $next.Add($interval) } while ($next -le [DateTime]::UtcNow)
         }
     }
-    $dockerJobs = @(
-        Start-ThreadJob -ScriptBlock $dockerPoller -ArgumentList 0
-        Start-ThreadJob -ScriptBlock $dockerPoller -ArgumentList ($DockerIntervalSeconds / 2)
-    )
+    $dockerJobs = @(0..2 | ForEach-Object { Start-ThreadJob -ScriptBlock $dockerPoller -ArgumentList ($DockerIntervalSeconds * $_ / 3) })
 
-    return [pscustomobject]@{ SamplesPath = $samplesPath; Shared = $shared; Jobs = @($hostJob) + $dockerJobs }
+    return [pscustomobject]@{ SamplesPath = $samplesPath; Shared = $shared; Jobs = $hostJobs + $dockerJobs }
 }
 
 function Set-BenchmarkCollectorPhase {
