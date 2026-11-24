@@ -105,7 +105,7 @@
     }
   },
   "environment": {
-    "settleSeconds": 30,
+    "settleSeconds": 60,
     "idleSeconds": 10,
     "hostSampleIntervalSeconds": 1,
     "dockerSampleIntervalSeconds": 2,
