@@ -151,11 +151,26 @@ internal class JwtValidationService(
 
             string token = authorizationHeader[tokenStartIndex..];
 
-            ClaimsPrincipal principal = _tokenHandler.ValidateToken(
-                token,
-                validationParameters,
-                out SecurityToken validatedToken
-            );
+            ClaimsPrincipal principal;
+            SecurityToken validatedToken;
+            try
+            {
+                principal = _tokenHandler.ValidateToken(token, validationParameters, out validatedToken);
+            }
+            catch (Exception ex) when (IsMalformedTokenException(ex))
+            {
+                // IdentityModel reports a token it cannot parse as ArgumentException or FormatException,
+                // not as SecurityTokenException. That is client input, not a fault, so it is a failed
+                // validation. S6667 asks for the caught exception to be passed to the logger; it is not,
+                // because its message and stack describe only input that the caller sent.
+#pragma warning disable S6667
+                logger.LogWarning(
+                    "Token validation failed: malformed token ({ExceptionType})",
+                    ex.GetType().Name
+                );
+#pragma warning restore S6667
+                return (null, null);
+            }
 
             string fallbackTokenId = CreateFallbackTokenId(authorizationHeader, tokenStartIndex);
             ClientAuthorizations clientAuthorizations = ExtractClientAuthorizations(
@@ -192,6 +207,14 @@ internal class JwtValidationService(
             return (null, null);
         }
     }
+
+    /// <summary>
+    /// Whether an exception from token parsing describes the token itself. ArgumentNullException is
+    /// excluded: the header parser never hands over an empty token, so a null argument is a defect.
+    /// </summary>
+    private static bool IsMalformedTokenException(Exception exception) =>
+        exception is FormatException
+        || (exception is ArgumentException && exception is not ArgumentNullException);
 
     /// <summary>
     /// Sanitizes an issuer value for logging and bounds its length. The discovered issuer comes
