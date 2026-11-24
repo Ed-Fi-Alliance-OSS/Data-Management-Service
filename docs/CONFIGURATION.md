@@ -1400,19 +1400,75 @@ outright with a storm of `429` responses rather than merely slowing it
 down. Operators running a load larger than the `Populated` seed template
 should raise `DMS_RATE_LIMIT_PERMIT_LIMIT` for the duration of the load.
 
-The limiter partitions on the raw value of the request's `Host` header, so
-every client sending the same hostname shares one bucket. It caps load per
-distinct `Host` value, not per client, and because the default
-`AllowedHosts` is `*`, a client that varies the `Host` header obtains
-additional buckets, so it is not a strict cap on total backend load either.
-Treat it as a coarse backstop; per-client isolation and DoS protection
-belong at the application gateway.
+The limiter gives each client its own budget, so one client exhausting its
+allowance does not reject other clients, and a bulk load driven by one
+client no longer shares its budget with them. Each budget is a partition
+with its own `PermitLimit`, `Window` and `QueueLimit`, and one partition's
+queue never delays another. Partitions are chosen as follows:
+
+- A request whose `Authorization` header carries a bearer token that the
+  Ed-Fi API's own token validation accepts, with a non-empty `client_id`
+  claim, uses that `client_id`'s budget. Different tokens for the same
+  client share one budget, so obtaining a new token does not reset it.
+  `client_id` values are compared exactly, so values that differ only in
+  case have separate budgets.
+- Every other request uses the budget of its client address. This covers
+  anonymous requests, invalid, expired or malformed tokens, other schemes
+  such as `Basic` on `/oauth/token`, and valid tokens without a `client_id`.
+  The `client_id` field of a token-request form is never used.
+- With `AppSettings:BypassAuthorization` set to `true`, every request uses
+  its address budget, and the limiter validates no tokens.
+
+A client budget and an address budget never share a bucket, even when their
+values are the same text. A budget spans every tenant, instance, route
+qualifier and route, and every `Host` value, so changing the path, `Host`
+or `X-Forwarded-Host` neither resets nor splits it.
+
+The client address is the connection's remote address after
+[forwarded-header processing](#reverse-proxy-and-forwarded-headers), so
+`X-Forwarded-For` counts only when it comes from a trusted proxy. IPv4-mapped
+IPv6 addresses count as their IPv4 address, native IPv6 addresses share one
+budget per /64 prefix, and requests without a known address share one
+budget. Hosts in the same /64 therefore share an anonymous budget. Behind a
+proxy the Ed-Fi API does not trust, every anonymous request shares the
+proxy's address budget. Authenticated requests are still budgeted per
+client there, unless `BypassAuthorization` is `true`.
+
+Budgets are kept per process: each Ed-Fi API instance budgets independently.
+Admitted load grows with the number of active clients and addresses, so the
+limiter is not a cap on total load.
+
+The limiter creates a partition the first time it sees a client or address.
+It removes the partition once its permits have been refilled, nothing is
+queued, and it has stayed that way for more than 10 seconds. That is roughly
+one `Window` plus 10 seconds after its last admitted request, provided the
+limiter's periodic cleanup runs on time; with `QueueLimit` above 0, a queue
+can take several windows to drain first. Partitions hold only a validated
+`client_id` or an address, never token or header content. Nothing caps the
+number of partitions. A source that controls many addresses or /64
+prefixes, including one sending invalid tokens, grows the limiter's state
+for as long as it keeps sending, and the limiter's internal storage keeps
+the size it reached at that peak for the life of the process.
+
+Bearer tokens are validated before the limiter admits or rejects a request,
+so a request with a bearer token pays for validation even when it is then
+rejected with `429`, and an admitted request is validated again when it is
+authenticated. A successful validation is reused from the validated-token
+cache (see `JwtAuthentication.ValidatedTokenCacheEntryMaxLifetimeSeconds`).
+A failed one is not cached: a well-formed token with a forged signature
+costs a signature check every time, and validation failures are logged at
+the limiter and again during authentication when the request is admitted.
+
+Separate budgets do not protect against CPU, log or memory exhaustion.
+Total-load caps, connection limits, and DoS and brute-force protection
+belong at the application gateway; treat this limiter as a per-client
+backstop.
 
 The `RateLimit` object should have the following parameters.
 
 | Parameter   | Description                                                                                                                                                                                                                                                                |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PermitLimit | The number of requests permitted within the window time span. This will be the number of requests, per hostname permitted per timeframe (`Window`). Must be > 0.                                                                                                           |
+| PermitLimit | The number of requests permitted within the window time span. This will be the number of requests permitted per partition (one client or one address) per timeframe (`Window`). Must be > 0.                                                                               |
 | Window      | The number of seconds before the `PermitLimit` is reset. Must be > 0.                                                                                                                                                                                                      |
 | QueueLimit  | The maximum number of requests that can be Queued once `PermitLimit`s are exhausted. These requests will wait until the `Window` expires and will be processed FIFO. When the queue is exhausted, clients will receive a `429` `Too Many Requests` response. Must be >= 0. |
 
