@@ -19,7 +19,15 @@ A tenant's data stores are refreshed on a [schedule](#scheduled-refresh), and on
   must have the same value on every instance with the scheduler on. Each instance writes its own value to the
   schedules, so different values make the schedules follow whichever instance reconciled last.
 - **Every worker on this release.** A worker of an earlier release cannot run the `EducationOrganization.Refresh` job
-  type and fails such a job as `UnsupportedJobType`. Upgrade every worker before any instance enqueues refreshes.
+  type and fails such a job as `UnsupportedJobType`. An upgraded instance with the scheduler on creates every
+  tenant's schedule at startup, with its first refresh due immediately, and the refresh routes queue a refresh as
+  soon as they are called. While instances of the earlier release still run workers:
+
+  1. Start each upgraded instance with `JobSettings:SchedulerEnabled=false`.
+  2. Do not call the [refresh routes](#refresh-routes).
+  3. Once every worker runs this release with its reader configured (see the first requirement), set
+     `JobSettings:SchedulerEnabled` back to its intended value on the instances that should run the scheduler, and
+     restart them. Their startup [reconciliation](#scheduled-refresh) creates the schedules.
 
 ## Refresh routes
 
@@ -171,6 +179,10 @@ startup, and again 5 minutes after each run completes. Each run does two things:
 A disabled schedule keeps its identifier and its past jobs, so a schedule that becomes active again keeps the same
 identifier.
 
+The Configuration Service has no API to delete a tenant. A tenant's schedules and jobs reference its `dmscs.Tenant`
+row through foreign keys that restrict deletion, so once a tenant has a schedule or a job, deleting its row directly
+in the database fails as well.
+
 **Timing.** A new tenant is scheduled by a later reconciliation run, not within a fixed time. Each run starts 5 minutes
 after the previous one completed. Reading the tenants and writing their schedules add to that delay, and a run that
 fails leaves the tenant to the next run. A new schedule's first refresh is due immediately, so the tenant's data stores
@@ -252,7 +264,7 @@ messages and connection data are never logged.
 | `EducationOrganizationTargetBusy` | Information | Another refresh held the data store's lease. |
 | `EducationOrganizationTargetLeaseLost` | Warning | The refresh lost the data store's lease: `Expired`, `Taken` or `RenewalUncertain`. |
 | `EducationOrganizationTargetRemoved` | Information | The data store was deleted during its refresh. |
-| `EducationOrganizationTargetRefreshFailed` | Warning | The reader failed: category, code, stage, HTTP status, problem type, correlation ID, pages read. |
+| `EducationOrganizationTargetRefreshFailed` | Warning | A data store's refresh failed in the reader or in the Configuration Service database. A reader failure has category, code, stage, HTTP status, problem type, correlation ID and pages read. A database failure has the `Transient` category, the refresh step, the exception type chain, the provider error code and the failed database operation. |
 | `EducationOrganizationRefreshFinished` | Information or Warning | A job attempt ended: counts and the decision (`Completed`, `Retry`, `Failed`). |
 | `EducationOrganizationSnapshotPruneFailed` | Warning | Removing a replaced generation failed; the next refresh of the data store removes it. |
 | `EducationOrganizationLeaseReleaseFailed` | Warning | Releasing a lease failed; it expires on its own. |

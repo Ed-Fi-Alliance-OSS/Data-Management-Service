@@ -2198,8 +2198,10 @@ function Get-InstanceE2EOperationalConfigServicePlan {
           - OverrideYaml: the settings that have no shipped variable (per-tenant credentials, whose names contain the
             tenant, and the refresh interval). It holds only ${VARIABLE:?} references, never a value, so no secret is
             written to disk.
-          - ExpectedEnvironment: every container setting the recreation is meant to change, with its value. Any other
-            difference from the bootstrap container is a defect Assert-ConfigServiceEnvironmentChange reports.
+          - ExpectedEnvironment: every container environment variable the recreation is meant to change, with its
+            value. Any other environment difference from the bootstrap container is a defect
+            Assert-ConfigServiceEnvironmentChange reports; it compares environment variables only, not the image,
+            mounts or other container properties.
     #>
     param(
         [Parameter(Mandatory)]

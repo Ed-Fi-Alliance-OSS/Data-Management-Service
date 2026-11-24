@@ -54,6 +54,15 @@ public class Given_the_shipped_development_example
         _configuration.GetSection("DmsDataStoreProvisioning").Exists().Should().BeFalse();
     }
 
+    [Test]
+    public void It_starts_in_bootstrap_with_job_workers_disabled()
+    {
+        // The example configures no DMS education organization reader, which job workers require at
+        // startup. The fallback is the shipped default, so an example without the key fails here.
+        _configuration.GetValue("JobSettings:WorkerEnabled", defaultValue: true).Should().BeFalse();
+        _configuration.GetSection("DmsEducationOrganizationProjectionSettings").Exists().Should().BeFalse();
+    }
+
     private static string FindExampleFile()
     {
         string directory = AppContext.BaseDirectory;

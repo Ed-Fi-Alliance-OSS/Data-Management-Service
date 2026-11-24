@@ -161,8 +161,10 @@ service. After registering the fixture, `build-dms.ps1` makes it operational, as
    container, the resolved environment file, and a generated override. The worker, scheduler and base URL go through
    the shipped `CONFIGURATION_SERVICE_JOBS_*` and `CONFIGURATION_SERVICE_DMS_EDORG_BASE_URL` variables. The override
    carries the per-tenant credentials and the interval as `${VARIABLE}` references, so no secret is written to disk.
-   The container's settings before and after must differ in exactly those settings; any other difference fails the
-   target, naming the settings and never their values. The target then waits for the service's token endpoint.
+   The container's environment variables before and after must differ in exactly those settings; any other
+   environment difference fails the target, naming the variables and never their values. The check compares
+   environment variables only, not the image, mounts or other container properties. The target then waits for the
+   service's token endpoint.
 3. **Read-only login.** It creates `edorg_refresh_e2e_reader`, a database login that can only read `dmscs.Tenant`,
    `dmscs.JobSchedule` and `dmscs.Job` in the Configuration Service database. The scheduled-refresh test uses it to
    find the tenant's schedule and its jobs, which no API lists.

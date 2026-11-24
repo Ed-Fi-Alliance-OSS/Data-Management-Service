@@ -438,6 +438,10 @@ Only places that create a fresh installation set bootstrap explicitly:
   with empty reader variables, so a copied `.env` starts in bootstrap.
 - The repository's test and CI environment files (DMS, Instance Management and Configuration Service end-to-end
   tests, smoke tests and template builds) set it to `false` because they configure no reader.
+  The Instance Management end-to-end environment starts in bootstrap only until setup has created the reader
+  credentials: `./build-dms.ps1 InstanceE2ETest` then recreates the Configuration Service with workers and the
+  reader on, which makes it operational. See the
+  [Instance Management E2E README](../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md#operational-configuration-service).
 - The Azure VM review stack (`eng/azure-vm/compose`) maps the same worker variable onto both Configuration
   Services and gives each stack its own reader variables, `CONFIGURATION_SERVICE_ST_DMS_EDORG_*` and
   `CONFIGURATION_SERVICE_MT_DMS_EDORG_*`; its `.env.example` sets bootstrap.

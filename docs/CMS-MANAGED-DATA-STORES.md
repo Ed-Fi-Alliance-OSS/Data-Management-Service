@@ -212,8 +212,9 @@ managed aggregate, pin or tombstone, and pending managed work is not finished-jo
 No managed tombstone purge API is provided.
 
 Successful delete atomically unlinks the aggregate, removes the ordinary row and its existing
-API-client assignments, contexts and derivative registrations, then records Deleted history. Clients
-and applications survive; derivative physical databases are not dropped by this cascade. Under the
+API-client assignments, contexts, derivative registrations and
+[education organization snapshot](CMS-EDUCATION-ORGANIZATION-REFRESH.md), then records Deleted history.
+Clients and applications survive; derivative physical databases are not dropped by this cascade. Under the
 [explicit AC9 clarification](../reference/design/managed-data-stores-DMS-1439/contract-provenance.md#q4--authorized-ac9-clarification),
 **DMS-1441 owns snapshot persistence and cleanup**. DMS-1439 adds no snapshot schema, cleanup or
 education-organization refresh. Original Jira AC9 wording has not been edited; this clarification

@@ -74,6 +74,16 @@ it instead of copying over it. Replacing the file changes the derived encryption
 key, which orphans any connection strings already stored in your local
 Configuration Service database.
 
+The starter file runs the service in bootstrap: it sets `JobSettings:WorkerEnabled`
+to `false`, so the service serves its API and queues jobs, including education
+organization refreshes, but runs none of them. The shipped `appsettings.json`
+turns job workers on, and an instance with workers on refuses to start until the
+DMS education organization reader is configured. If you already have an
+`appsettings.Development.json` without reader settings, add `"WorkerEnabled": false`
+under `JobSettings`. To run jobs locally, configure the reader and turn workers on
+as described in
+[Bootstrap and operational modes](./CONFIGURATION.md#bootstrap-and-operational-modes).
+
 The shipped `appsettings.json` sets `IdentitySettings:RequireHttpsMetadata` to
 `true`, and the starter file sets it to `false` because a local identity
 provider is reached over http. If you already have an
