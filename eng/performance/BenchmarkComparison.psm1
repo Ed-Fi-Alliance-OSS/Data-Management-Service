@@ -115,13 +115,19 @@ function Wait-BenchmarkDelay {
 function Open-BenchmarkHostLock {
     <#
     .SYNOPSIS
-        Takes the exclusive host lock; throws when another comparison holds it.
+        Takes the exclusive host lock; throws when another comparison holds it. Exclusivity
+        comes from FileShare.None, so the file is opened for reading only: a lock file created
+        by an elevated session is read-only to ordinary users (ProgramData's inherited ACL),
+        and a read-write open would deny every other account.
     #>
     $directory = Join-Path $env:ProgramData 'EdFi'
     New-Item -ItemType Directory -Force -Path $directory | Out-Null
     $path = Join-Path $directory 'dms-benchmark.lock'
     try {
-        return [IO.File]::Open($path, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        return [IO.File]::Open($path, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::Read, [IO.FileShare]::None)
+    }
+    catch [UnauthorizedAccessException] {
+        throw "Cannot open the host lock '$path' for reading: $($_.Exception.Message)"
     }
     catch [IO.IOException] {
         throw "Another benchmark comparison holds the host lock '$path'."
