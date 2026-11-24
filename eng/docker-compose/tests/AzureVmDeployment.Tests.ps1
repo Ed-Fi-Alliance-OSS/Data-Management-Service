@@ -1454,6 +1454,10 @@ Describe "Azure VM setup-env.ps1 reader credential override and dollar guards" {
 
     AfterEach {
         Remove-Item Env:AZURE_SETUP_DOCKER_LOG -ErrorAction SilentlyContinue
+        # setup-env.ps1 and bootstrap.ps1 import the copied env-utility and database-safety modules. Remove those copies,
+        # or later test files that address a module by name (Get-Module env-utility) find several.
+        Get-Module | Where-Object { $_.Path -and $_.Path.StartsWith($TestDrive, [StringComparison]::OrdinalIgnoreCase) } |
+            Remove-Module -Force
     }
 
     It "starts the services with only the stack's two Compose files when no reader override exists" {
