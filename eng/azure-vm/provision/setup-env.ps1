@@ -123,6 +123,15 @@ if ($LASTEXITCODE -ne 0) { throw "Cannot talk to Docker. Log out and back in (so
 
 Push-Location $composeDir
 try {
+    # The Compose files for the commands below that create or recreate the stack's services, as
+    # compose/compose-files.sh selects them for up.sh, update.sh and reset.sh: an explicit -f stops Compose
+    # from reading docker-compose.override.yml, so the optional, gitignored reader credential override
+    # (compose/reader.compose.override.example.yml) is added last whenever it exists.
+    $composeFiles = @('-f', 'docker-compose.yml', '-f', 'keycloak.compose.yml')
+    if (Test-Path -LiteralPath 'reader.compose.override.yml' -PathType Leaf) {
+        $composeFiles += @('-f', 'reader.compose.override.yml')
+    }
+
     # --- 2. .env: host (always) + generated secrets (first run / -RotateSecrets only) -------
     $freshEnv = -not (Test-Path ".env")
     if ($freshEnv) { Copy-Item ".env.example" ".env" }
@@ -269,7 +278,7 @@ try {
     Write-Output "Starting infrastructure (postgres, keycloak, Configuration Service instances, gateway)..."
     # --no-deps so the gateway (which depends_on the DMS services) does not pull them up early;
     # the gateway resolves upstreams at request time, so it starts fine without the DMS backends.
-    docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d --no-deps `
+    docker compose @composeFiles --env-file .env up -d --no-deps `
         postgres keycloak st-config mt-config pgadmin swagger-ui gateway
     if ($LASTEXITCODE -ne 0) { throw "docker compose up (infrastructure) failed ($LASTEXITCODE)." }
 
@@ -343,7 +352,7 @@ try {
                 "copy that folder here), then re-run with -StartDms. See ../docs/infrastructure.md 'Provisioning method'.")
         }
         Write-Output "Starting DMS services..."
-        docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d st-dms mt-dms
+        docker compose @composeFiles --env-file .env up -d st-dms mt-dms
         if ($LASTEXITCODE -ne 0) { throw "docker compose up st-dms/mt-dms failed ($LASTEXITCODE)." }
         Write-Output "Waiting for DMS services to report healthy (requires provisioned schema)..."
         $deadline = (Get-Date).AddMinutes(8)

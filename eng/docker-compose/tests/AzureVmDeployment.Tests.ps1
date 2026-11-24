@@ -14,6 +14,7 @@ Describe "Azure VM lifecycle safety" {
         $script:updateSource = Join-Path $script:azureVmRoot "compose/update.sh"
         $script:recordKeycloakImageSource = Join-Path $script:azureVmRoot "compose/record-keycloak-image.sh"
         $script:legacyEnvWarningSource = Join-Path $script:azureVmRoot "compose/legacy-env-warning.sh"
+        $script:composeFilesSource = Join-Path $script:azureVmRoot "compose/compose-files.sh"
         # Matches the pin in compose/keycloak.compose.yml, as `docker compose config --images` and
         # `docker inspect --format {{.Config.Image}}` both report a tag@digest reference.
         $script:keycloakImage = "quay.io/keycloak/keycloak:26.8.1@sha256:3f3c5f8e03c614774b4bd9173b88391fefa4153bfc010d8012d59ad825377332"
@@ -33,6 +34,7 @@ Describe "Azure VM lifecycle safety" {
         Copy-Item -LiteralPath $script:updateSource -Destination (Join-Path $script:composeRoot "update.sh")
         Copy-Item -LiteralPath $script:recordKeycloakImageSource -Destination (Join-Path $script:composeRoot "record-keycloak-image.sh")
         Copy-Item -LiteralPath $script:legacyEnvWarningSource -Destination (Join-Path $script:composeRoot "legacy-env-warning.sh")
+        Copy-Item -LiteralPath $script:composeFilesSource -Destination (Join-Path $script:composeRoot "compose-files.sh")
         Set-Content -LiteralPath (Join-Path $script:composeRoot ".env") -Value "PUBLIC_HOST=test.example" -NoNewline
         Set-Content -LiteralPath (Join-Path $script:composeRoot ".bootstrap/ApiSchema/core.json") -Value "{}" -NoNewline
         Set-Content -LiteralPath (Join-Path $script:composeRoot "ssl/server.crt") -Value "test" -NoNewline
@@ -344,6 +346,55 @@ exit 17
         $restart = Select-String -LiteralPath $script:dockerLog -Pattern "compose .* restart gateway swagger-ui"
         $restart | Should -Not -BeNullOrEmpty
         $dms.LineNumber | Should -BeLessThan $restart.LineNumber
+    }
+
+    Context "reader credential override" {
+        BeforeAll {
+            # Runs up.sh, update.sh and reset.sh in turn and returns every Compose call they made.
+            function Invoke-EveryComposeScript {
+                $env:SKIP_GIT = "1"
+                foreach ($run in @(@("up.sh"), @("update.sh"), @("reset.sh", "--force"))) {
+                    $output = & bash (Join-Path $script:composeRoot $run[0]) @($run | Select-Object -Skip 1) 2>&1
+                    $LASTEXITCODE | Should -Be 0 -Because ($output | Out-String)
+                }
+                return @(Get-Content -LiteralPath $script:dockerLog | Where-Object { $_ -like "compose *" })
+            }
+
+            # Every call that renders the configuration or creates, recreates, restarts or removes services.
+            $script:composeSubcommands = @(
+                "config --images",
+                "pull",
+                "stop st-dms mt-dms",
+                "up -d --no-deps postgres keycloak st-config mt-config pgadmin swagger-ui gateway",
+                "up -d st-dms mt-dms",
+                "restart gateway swagger-ui",
+                "down -v"
+            )
+        }
+
+        It "passes only the stack's two Compose files when no reader override exists" {
+            $calls = Invoke-EveryComposeScript
+
+            foreach ($subcommand in $script:composeSubcommands) {
+                @($calls | Where-Object { $_.EndsWith(" $subcommand") }) | Should -Not -BeNullOrEmpty -Because $subcommand
+            }
+            foreach ($call in $calls) {
+                $call | Should -BeLikeExactly "compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env *"
+            }
+        }
+
+        It "loads the reader override last in every Compose call of up.sh, update.sh and reset.sh when it exists" {
+            Set-Content -LiteralPath (Join-Path $script:composeRoot "reader.compose.override.yml") -Value "services: {}" -NoNewline
+
+            $calls = Invoke-EveryComposeScript
+
+            foreach ($subcommand in $script:composeSubcommands) {
+                @($calls | Where-Object { $_.EndsWith(" $subcommand") }) | Should -Not -BeNullOrEmpty -Because $subcommand
+            }
+            foreach ($call in $calls) {
+                $call | Should -BeLikeExactly "compose -f docker-compose.yml -f keycloak.compose.yml -f reader.compose.override.yml --env-file .env *"
+            }
+        }
     }
 
     It "rejects a changed Keycloak pin after a plain down before pulling images" {
@@ -1259,5 +1310,111 @@ printf 'school|2\nstudent|%s\nschoolyeartype|1\n__descriptors__|1\n' "${DMS_STUD
 
         $LASTEXITCODE | Should -Be 1
         $output | Out-String | Should -Match "student .*3.*2"
+    }
+}
+
+# setup-env.ps1 and bootstrap.ps1 run against a copied deployment folder, with Docker, curl and bash replaced by
+# functions and Start-Sleep mocked, so no container starts. Docker calls are logged without values; no secret is printed.
+Describe "Azure VM setup-env.ps1 reader credential override and dollar guards" {
+    BeforeAll {
+        $script:azureVmRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm"))
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $script:setupEnv = Join-Path $script:azureVmRoot "provision/setup-env.ps1"
+        $script:bootstrap = Join-Path $script:azureVmRoot "compose/bootstrap/bootstrap.ps1"
+
+        function docker { Add-Content -LiteralPath $env:AZURE_SETUP_DOCKER_LOG -Value ($args -join " ") }
+        function curl { "200" }
+        function bash { }
+        Mock Start-Sleep { }
+
+        function Invoke-SetupEnv {
+            $global:LASTEXITCODE = 0
+            $null = & $script:setupEnv -PublicHost "test.example" -RepoDir $script:repoDir -SkipBootstrap -StartDms
+        }
+
+        function Get-ComposeUpCall {
+            if (-not (Test-Path -LiteralPath $env:AZURE_SETUP_DOCKER_LOG)) { return @() }
+            return @(Get-Content -LiteralPath $env:AZURE_SETUP_DOCKER_LOG | Where-Object { $_ -like "compose * up *" })
+        }
+
+        function Write-EnvironmentFileValue {
+            param([string] $Path, [string] $Key, [string] $Value)
+            $lines = @(Get-Content -LiteralPath $Path | Where-Object { $_ -notmatch "^$([regex]::Escape($Key))=" }) + "$Key=$Value"
+            Set-Content -LiteralPath $Path -Value $lines
+        }
+
+        # A synthetic secret in the CMS generator's alphabet: single quotes do not lift the deployment scripts' rule.
+        $script:dollarSecret = "'Synthetic1!`$NAME-`${NAME}@#'"
+    }
+
+    BeforeEach {
+        $work = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+        $script:repoDir = Join-Path $work "azure-vm"
+        $script:deployDir = Join-Path $script:repoDir "compose"
+        New-Item -ItemType Directory -Force -Path @(
+            (Join-Path $script:deployDir "ssl"),
+            (Join-Path $script:deployDir ".bootstrap/ApiSchema"),
+            (Join-Path $work "docker-compose")
+        ) | Out-Null
+        Copy-Item -LiteralPath (Join-Path $script:azureVmRoot "compose/.env.example") -Destination $script:deployDir
+        foreach ($module in "env-utility.psm1", "database-safety.psm1") {
+            Copy-Item -LiteralPath (Join-Path $script:dockerComposeRoot $module) -Destination (Join-Path $work "docker-compose")
+        }
+        Set-Content -LiteralPath (Join-Path $script:deployDir "ssl/server.crt") -Value "test" -NoNewline
+        Set-Content -LiteralPath (Join-Path $script:deployDir ".bootstrap/ApiSchema/core.json") -Value "{}" -NoNewline
+        $env:AZURE_SETUP_DOCKER_LOG = Join-Path $work "docker.log"
+    }
+
+    AfterEach {
+        Remove-Item Env:AZURE_SETUP_DOCKER_LOG -ErrorAction SilentlyContinue
+    }
+
+    It "starts the services with only the stack's two Compose files when no reader override exists" {
+        Invoke-SetupEnv
+
+        $calls = Get-ComposeUpCall
+        $calls.Count | Should -Be 2
+        $calls[0] | Should -BeExactly "compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d --no-deps postgres keycloak st-config mt-config pgadmin swagger-ui gateway"
+        $calls[1] | Should -BeExactly "compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d st-dms mt-dms"
+    }
+
+    It "adds the reader override last to every service start when it exists, holding escaped dollars outside .env" {
+        Set-Content -LiteralPath (Join-Path $script:deployDir "reader.compose.override.yml") -Value @'
+services:
+  st-config:
+    environment:
+      DmsEducationOrganizationProjectionSettings__Credentials__ClientSecret: "Synthetic1!$$NAME"
+'@
+
+        Invoke-SetupEnv
+
+        $calls = Get-ComposeUpCall
+        $calls.Count | Should -Be 2
+        $calls[0] | Should -BeExactly "compose -f docker-compose.yml -f keycloak.compose.yml -f reader.compose.override.yml --env-file .env up -d --no-deps postgres keycloak st-config mt-config pgadmin swagger-ui gateway"
+        $calls[1] | Should -BeExactly "compose -f docker-compose.yml -f keycloak.compose.yml -f reader.compose.override.yml --env-file .env up -d st-dms mt-dms"
+    }
+
+    It "still refuses a single-quoted reader secret containing a dollar in .env before starting any service" {
+        $envFile = Join-Path $script:deployDir ".env"
+        Copy-Item -LiteralPath (Join-Path $script:deployDir ".env.example") -Destination $envFile
+        Write-EnvironmentFileValue -Path $envFile -Key "CONFIGURATION_SERVICE_ST_DMS_EDORG_CLIENT_SECRET" -Value $script:dollarSecret
+
+        $failure = { Invoke-SetupEnv } | Should -Throw -PassThru
+
+        $failure.Exception.Message | Should -BeLikeExactly "*contain '`$'*CONFIGURATION_SERVICE_ST_DMS_EDORG_CLIENT_SECRET*"
+        $failure.Exception.Message | Should -Not -BeLike "*Synthetic1*"
+        Get-ComposeUpCall | Should -BeNullOrEmpty
+    }
+
+    It "bootstrap.ps1 still refuses a single-quoted reader secret containing a dollar in .env" {
+        $envFile = Join-Path $script:deployDir ".env"
+        Copy-Item -LiteralPath (Join-Path $script:deployDir ".env.example") -Destination $envFile
+        Write-EnvironmentFileValue -Path $envFile -Key "CONFIGURATION_SERVICE_MT_DMS_EDORG_CLIENT_SECRET" -Value $script:dollarSecret
+
+        $failure = { & $script:bootstrap -EnvFile $envFile -BaseUrl "https://localhost" -SkipLegacyEnvironmentVariableWarning } |
+            Should -Throw -PassThru
+
+        $failure.Exception.Message | Should -BeLikeExactly "*contain '`$'*CONFIGURATION_SERVICE_MT_DMS_EDORG_CLIENT_SECRET*"
+        $failure.Exception.Message | Should -Not -BeLike "*Synthetic1*"
     }
 }

@@ -136,6 +136,13 @@ education organizations over a slow link, against about 0.2 seconds locally. A w
 an HTTP request answers `500` and is rolled back, with no automatic retry, and a managed data store job retries as a
 transient failure. Keep tenant reads away from bulk catalog changes, or retry the write.
 
+**SQL Server aggregate reads can also delay refresh lease renewals.** The snapshot locks that a tenant read holds
+also block the write that renews a refresh's [data store lease](#data-store-leases). A renewal waits for at most half
+of `JobSettings:RenewalInterval`, less one second. If the read holds its locks longer, the refresh can no longer be
+sure it still holds the lease: it logs `EducationOrganizationTargetLeaseLost` (`RenewalUncertain`), cancels its read
+of that data store, and its job retries like any transient failure. This is separate from the catalog writes above
+and their 5-second bound.
+
 **At-least-once reads.** Every attempt of a refresh job reads every data store it covers again, including data stores
 an earlier attempt or another job already published. A later publication of the same data store replaces the earlier
 one.

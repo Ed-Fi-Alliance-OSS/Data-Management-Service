@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Optional DMS education organization reader credentials for the Configuration Services. Copy this file to
+# reader.compose.override.yml (gitignored), replace every value, and keep that file out of Git. up.sh, update.sh,
+# reset.sh and ../provision/setup-env.ps1 load it last whenever it exists. A manual `docker compose` command
+# selects the same files with `source ./compose-files.sh` and "${compose_files[@]}" (../provision/UPDATE.md,
+# "Reader credentials").
+#
+# Use it for the multi-tenant stack's per-tenant credentials, and for any reader secret that contains '$':
+# setup-env.ps1 and bootstrap.ps1 refuse '$' anywhere in .env, quoted or not. Compose interpolates this file
+# too, and YAML quoting does not prevent that: write every literal '$' as '$$'. For example, the secret
+# Ab$Cd is written "Ab$$Cd" here. A value set here replaces the same setting from .env; delete the entries
+# you do not need. The base URLs stay in .env (CONFIGURATION_SERVICE_ST_/MT_DMS_EDORG_BASE_URL).
+#
+# The multi-tenant entries are keyed by tenant name (MT_TENANT_1 and MT_TENANT_2 in .env).
+services:
+  st-config:
+    environment:
+      DmsEducationOrganizationProjectionSettings__Credentials__ClientId: "CHANGEME_st_reader_key"
+      DmsEducationOrganizationProjectionSettings__Credentials__ClientSecret: "CHANGEME_st_reader_secret"
+  mt-config:
+    environment:
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant1__ClientId: "CHANGEME_tenant1_reader_key"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant1__ClientSecret: "CHANGEME_tenant1_reader_secret"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant2__ClientId: "CHANGEME_tenant2_reader_key"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant2__ClientSecret: "CHANGEME_tenant2_reader_secret"

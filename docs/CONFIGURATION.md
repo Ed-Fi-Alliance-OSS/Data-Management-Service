@@ -431,6 +431,11 @@ leaves its queued jobs to the others.
 | `CONFIGURATION_SERVICE_DMS_EDORG_CLIENT_ID` | `DmsEducationOrganizationProjectionSettings__Credentials__ClientId` | empty (absent) |
 | `CONFIGURATION_SERVICE_DMS_EDORG_CLIENT_SECRET` | `DmsEducationOrganizationProjectionSettings__Credentials__ClientSecret` | empty (absent) |
 
+Single-quote the client secret in `.env`, for example
+`CONFIGURATION_SERVICE_DMS_EDORG_CLIENT_SECRET='Ab$Cd...'`. Configuration Service generated secrets can contain
+`$`, and Compose interpolates `$NAME` and `${NAME}` in an unquoted or double-quoted `.env` value, which changes the
+secret or makes Compose reject the file. A single-quoted value is used literally.
+
 The Compose files keep the worker default `true`, so an existing `.env` without the variable keeps workers on.
 Only places that create a fresh installation set bootstrap explicitly:
 
@@ -444,11 +449,16 @@ Only places that create a fresh installation set bootstrap explicitly:
   [Instance Management E2E README](../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md#operational-configuration-service).
 - The Azure VM review stack (`eng/azure-vm/compose`) maps the same worker variable onto both Configuration
   Services and gives each stack its own reader variables, `CONFIGURATION_SERVICE_ST_DMS_EDORG_*` and
-  `CONFIGURATION_SERVICE_MT_DMS_EDORG_*`; its `.env.example` sets bootstrap.
+  `CONFIGURATION_SERVICE_MT_DMS_EDORG_*`; its `.env.example` sets bootstrap. Its setup scripts refuse `$` in any
+  `.env` value, quoted or not, so per-tenant credentials and any reader secret containing `$` go in its gitignored
+  `reader.compose.override.yml`, which the stack scripts load last
+  (see [UPDATE.md](../eng/azure-vm/provision/UPDATE.md)).
 
 Per-tenant credentials have no fixed variable, because the tenant name is part of the setting name. Add them to
 the Configuration Service environment in a Compose override, for example
-`DmsEducationOrganizationProjectionSettings__TenantCredentials__Tenant1__ClientId`.
+`DmsEducationOrganizationProjectionSettings__TenantCredentials__Tenant1__ClientId`. Compose interpolates the
+Compose files as well, and YAML quoting does not prevent it: write each literal `$` in a value there as `$$`
+(the secret `Ab$Cd` becomes `"Ab$$Cd"`).
 
 #### Upgrading a deployment that runs workers
 

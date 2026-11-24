@@ -19,6 +19,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./legacy-env-warning.sh
 warn_legacy_env_names .env
 
+# shellcheck source=compose-files.sh
+source ./compose-files.sh
+
 # Refuse to deploy the .env.example placeholder secrets: they satisfy the complexity checks,
 # so nothing downstream would reject them, and 443 is Internet-open on the VM.
 if grep -qE '=.*CHANGEME' .env; then
@@ -115,7 +118,7 @@ if [ "$starts_dms" = true ] && ! find .bootstrap/ApiSchema -type f -name '*.json
   exit 1
 fi
 
-compose=(docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env)
+compose=(docker compose "${compose_files[@]}" --env-file .env)
 if [ "$#" -eq 0 ]; then
   echo "Stopping DMS services before dependency restart/update..."
   "${compose[@]}" stop st-dms mt-dms

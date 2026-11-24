@@ -284,8 +284,9 @@ services:
       AppSettings__PathBase: "mt-config"
       AppSettings__MultiTenancy: "true"
       DatabaseSettings__DatabaseConnection: "host=postgres;port=5432;username=${POSTGRES_USER:-postgres};password=${POSTGRES_PASSWORD};database=edfi_mt_config;"
-      # A multi-tenant DMS issues tokens per tenant, so per-tenant credentials go in a compose override as
-      # DmsEducationOrganizationProjectionSettings__TenantCredentials__<tenant>__ClientId / __ClientSecret.
+      # A multi-tenant DMS issues tokens per tenant, so per-tenant credentials go in reader.compose.override.yml as
+      # DmsEducationOrganizationProjectionSettings__TenantCredentials__<tenant>__ClientId / __ClientSecret
+      # (see reader.compose.override.example.yml; the stack scripts load it last when it exists).
       DmsEducationOrganizationProjectionSettings__DmsBaseUrl: "${CONFIGURATION_SERVICE_MT_DMS_EDORG_BASE_URL:-}"
       DmsEducationOrganizationProjectionSettings__Credentials__ClientId: "${CONFIGURATION_SERVICE_MT_DMS_EDORG_CLIENT_ID:-}"
       DmsEducationOrganizationProjectionSettings__Credentials__ClientSecret: "${CONFIGURATION_SERVICE_MT_DMS_EDORG_CLIENT_SECRET:-}"

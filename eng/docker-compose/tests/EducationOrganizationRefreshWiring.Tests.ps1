@@ -110,6 +110,19 @@ Describe 'Configuration Service worker and reader wiring' {
             return $config.services.config.environment
         }
 
+        # `docker compose config` writes each literal '$' of a resolved value as '$$', so its output can be read
+        # back as a Compose file; the container receives the single '$'. Test literals never contain '$$', so this
+        # also holds for a Compose release that prints the resolved value unescaped.
+        function ConvertFrom-ComposeConfigValue {
+            param([string] $Value)
+            return $Value.Replace('$$', '$')
+        }
+
+        # A synthetic secret drawn from the Configuration Service generator's alphabet, with the dollar patterns
+        # Compose would interpolate: references to a variable the same .env defines, a positional '$1' and a
+        # trailing '$'.
+        $script:generatedSecret = 'Aa1!@#%^&*()-_=+[]{}:;,.?$CONFIGURATION_SERVICE_DMS_EDORG_CLIENT_ID${CONFIGURATION_SERVICE_DMS_EDORG_CLIENT_ID}$1$'
+
         $script:validReader = @{
             CONFIGURATION_SERVICE_DMS_EDORG_BASE_URL = 'http://dms-local:8080'
             CONFIGURATION_SERVICE_DMS_EDORG_CLIENT_ID = 'projection-client'
@@ -170,6 +183,23 @@ Describe 'Configuration Service worker and reader wiring' {
             $environment['JobSettings__WorkerEnabled'] | Should -BeExactly 'false'
             $environment['AppSettings__EnableDataStoreManagement'] | Should -BeExactly 'false'
             $environment['DmsEducationOrganizationProjectionSettings__DmsBaseUrl'] | Should -BeExactly ''
+        }
+
+        It 'passes a single-quoted generated secret literally, where an unquoted one is interpolated' {
+            $lines = Get-UpgradeLines
+            foreach ($name in $script:validReader.Keys) {
+                $lines = Set-Declaration -Lines $lines -Key $name -Value $script:validReader[$name]
+            }
+            $secretKey = 'DmsEducationOrganizationProjectionSettings__Credentials__ClientSecret'
+
+            $quoted = Set-Declaration -Lines $lines -Key 'CONFIGURATION_SERVICE_DMS_EDORG_CLIENT_SECRET' -Value "'$script:generatedSecret'"
+            $environment = Get-ConfigEnvironment -Files $script:files -Lines $quoted
+            ConvertFrom-ComposeConfigValue $environment[$secretKey] | Should -BeExactly $script:generatedSecret
+            $environment['DmsEducationOrganizationProjectionSettings__Credentials__ClientId'] | Should -BeExactly 'projection-client'
+
+            $unquoted = Set-Declaration -Lines $lines -Key 'CONFIGURATION_SERVICE_DMS_EDORG_CLIENT_SECRET' -Value 'Ab1!$CONFIGURATION_SERVICE_DMS_EDORG_CLIENT_ID-x'
+            $environment = Get-ConfigEnvironment -Files $script:files -Lines $unquoted
+            ConvertFrom-ComposeConfigValue $environment[$secretKey] | Should -BeExactly 'Ab1!projection-client-x'
         }
     }
 
@@ -264,6 +294,103 @@ Describe 'Configuration Service worker and reader wiring' {
             $environment['DmsEducationOrganizationProjectionSettings__DmsBaseUrl'] | Should -BeExactly "http://$Service-dms-root"
             $environment['DmsEducationOrganizationProjectionSettings__Credentials__ClientId'] | Should -BeExactly "$Service-client"
             $environment['DmsEducationOrganizationProjectionSettings__Credentials__ClientSecret'] | Should -BeExactly "$Service-secret"
+        }
+
+        Context 'reader credential override' {
+            BeforeAll {
+                # Renders the Compose files that compose-files.sh selects, as up.sh, update.sh and reset.sh pass
+                # them, from a copy of the deployment folder, so a test override never lands in the repository.
+                function Get-AzureSelectionRender {
+                    param([string] $Override, [string[]] $Lines)
+                    $root = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+                    New-Item -ItemType Directory -Path $root | Out-Null
+                    foreach ($file in 'docker-compose.yml', 'keycloak.compose.yml', 'compose-files.sh') {
+                        Copy-Item -LiteralPath (Join-Path $script:azureRoot $file) -Destination $root
+                    }
+                    if ($Override) {
+                        [IO.File]::WriteAllText((Join-Path $root 'reader.compose.override.yml'), $Override, [Text.UTF8Encoding]::new($false))
+                    }
+                    $selection = @(& bash -c 'cd "$1" && source ./compose-files.sh && printf "%s\n" "${compose_files[@]}"' bash $root)
+                    $LASTEXITCODE | Should -Be 0
+                    $files = @($selection | Where-Object { $_ -ne '-f' })
+                    return @{ Files = $files; Config = Invoke-Render -Root $root -Files $files -Lines $Lines }
+                }
+
+                $lines = Get-EnvironmentLines -Root $script:azureRoot -Name '.env.example'
+                $lines = Set-Declaration -Lines $lines -Key 'CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED' -Value 'true'
+                $lines = Set-Declaration -Lines $lines -Key 'CONFIGURATION_SERVICE_ST_DMS_EDORG_BASE_URL' -Value 'http://st-dms:8080/st-dms'
+                $script:azureLines = Set-Declaration -Lines $lines -Key 'CONFIGURATION_SERVICE_MT_DMS_EDORG_BASE_URL' -Value 'http://mt-dms:8080/mt-dms'
+                $script:credentials = 'DmsEducationOrganizationProjectionSettings__Credentials'
+                $script:tenantCredentials = 'DmsEducationOrganizationProjectionSettings__TenantCredentials'
+            }
+
+            It 'renders the single-tenant credential and two distinct tenant credentials literally from the override' {
+                # Synthetic credentials; every literal '$' is written '$$', as the example file says. The control
+                # value shows that YAML quoting alone does not stop interpolation.
+                $override = @'
+services:
+  st-config:
+    environment:
+      DmsEducationOrganizationProjectionSettings__Credentials__ClientId: "st-reader"
+      DmsEducationOrganizationProjectionSettings__Credentials__ClientSecret: "St1!$$NAME-$${NAME}@#"
+      EscapingControl: "Ab$MT_TENANT_1"
+  mt-config:
+    environment:
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant1__ClientId: "tenant1-reader"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant1__ClientSecret: "Tenant1!$$1$${NAME}"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant2__ClientId: "tenant2-reader"
+      DmsEducationOrganizationProjectionSettings__TenantCredentials__tenant2__ClientSecret: "Tenant2![]{}:;,.?$$"
+'@
+                $render = Get-AzureSelectionRender -Override $override -Lines $script:azureLines
+
+                $render.Files | Should -Be @('docker-compose.yml', 'keycloak.compose.yml', 'reader.compose.override.yml')
+                $st = $render.Config.services['st-config'].environment
+                $st["$($script:credentials)__ClientId"] | Should -BeExactly 'st-reader'
+                ConvertFrom-ComposeConfigValue $st["$($script:credentials)__ClientSecret"] | Should -BeExactly 'St1!$NAME-${NAME}@#'
+                $st['DmsEducationOrganizationProjectionSettings__DmsBaseUrl'] | Should -BeExactly 'http://st-dms:8080/st-dms'
+                $st['JobSettings__WorkerEnabled'] | Should -BeExactly 'true'
+                $st['EscapingControl'] | Should -BeExactly 'Abtenant1'
+                @($st.Keys | Where-Object { $_ -like "$($script:tenantCredentials)__*" }) | Should -BeNullOrEmpty
+
+                $mt = $render.Config.services['mt-config'].environment
+                $mt["$($script:tenantCredentials)__tenant1__ClientId"] | Should -BeExactly 'tenant1-reader'
+                ConvertFrom-ComposeConfigValue $mt["$($script:tenantCredentials)__tenant1__ClientSecret"] | Should -BeExactly 'Tenant1!$1${NAME}'
+                $mt["$($script:tenantCredentials)__tenant2__ClientId"] | Should -BeExactly 'tenant2-reader'
+                ConvertFrom-ComposeConfigValue $mt["$($script:tenantCredentials)__tenant2__ClientSecret"] | Should -BeExactly 'Tenant2![]{}:;,.?$'
+                $mt['DmsEducationOrganizationProjectionSettings__DmsBaseUrl'] | Should -BeExactly 'http://mt-dms:8080/mt-dms'
+                $mt["$($script:credentials)__ClientId"] | Should -BeExactly ''
+                $mt["$($script:credentials)__ClientSecret"] | Should -BeExactly ''
+            }
+
+            It 'selects only the two stack files and keeps the .env credentials when no override exists' {
+                $lines = Set-Declaration -Lines $script:azureLines -Key 'CONFIGURATION_SERVICE_ST_DMS_EDORG_CLIENT_ID' -Value 'st-env-reader'
+                $lines = Set-Declaration -Lines $lines -Key 'CONFIGURATION_SERVICE_ST_DMS_EDORG_CLIENT_SECRET' -Value 'St-env-secret1!'
+
+                $render = Get-AzureSelectionRender -Lines $lines
+
+                $render.Files | Should -Be @('docker-compose.yml', 'keycloak.compose.yml')
+                $st = $render.Config.services['st-config'].environment
+                $st["$($script:credentials)__ClientId"] | Should -BeExactly 'st-env-reader'
+                $st["$($script:credentials)__ClientSecret"] | Should -BeExactly 'St-env-secret1!'
+                @($render.Config.services['mt-config'].environment.Keys | Where-Object { $_ -like "$($script:tenantCredentials)__*" }) |
+                    Should -BeNullOrEmpty
+            }
+
+            It 'maps the tracked example onto the single-tenant credential and each .env.example tenant' {
+                $example = Get-Content -Raw -LiteralPath (Join-Path $script:azureRoot 'reader.compose.override.example.yml')
+
+                $render = Get-AzureSelectionRender -Override $example -Lines $script:azureLines
+
+                $st = $render.Config.services['st-config'].environment
+                $st.Keys | Should -Contain "$($script:credentials)__ClientId"
+                $st.Keys | Should -Contain "$($script:credentials)__ClientSecret"
+                $mt = $render.Config.services['mt-config'].environment
+                foreach ($tenantKey in 'MT_TENANT_1', 'MT_TENANT_2') {
+                    $tenant = (@($script:azureLines | Where-Object { $_ -like "$tenantKey=*" })[-1] -split '=', 2)[1]
+                    $mt.Keys | Should -Contain "$($script:tenantCredentials)__$($tenant)__ClientId"
+                    $mt.Keys | Should -Contain "$($script:tenantCredentials)__$($tenant)__ClientSecret"
+                }
+            }
         }
     }
 }
