@@ -1,22 +1,26 @@
-# DMS Performance Harness — Traditional Baseline and Final Gate
+# DMS Performance Harness — Traditional Baseline, Final Gate and Benchmark Comparison
 
 Reproducible cross-provider measurement of traditional `limit`/`offset` GET-many paging,
 capturing the pre-change baseline that the performance final gate compares against. The
 harness drives the real DMS pipeline in-process (the API integration harness boot), measures
 the epic's fixed six-cell matrix, replays plans on a dedicated connection, and writes
 machine-readable artifacts that fail loudly whenever the run did not do the expected work.
-Timing values are never judged; only completeness and internal consistency are.
+The paging artifacts never judge timing values; only completeness and internal consistency.
+The [benchmark comparison](#benchmark-comparison) builds on the same pipeline to compare an
+approved reference build with a candidate and reports advisory timing warnings.
 
 ## Layout
 
 | Area | Contents |
 | --- | --- |
-| `Configuration/` | `PERF_*` environment binding and validation, provider/fixture/scenario catalogs, evidence-run settings and guardrail configuration |
+| `Configuration/` | `PERF_*` environment binding and validation, provider/fixture/scenario catalogs, evidence-run settings and guardrail configuration; `benchmark-profile.json` and its strict loader (`PerfBenchmarkProfile.cs`) |
 | `Fixtures/` | The deterministic 500,000-row fixture definition (with its 10,000-row smoke variant): every student carries one row in each of the four child collection tables plus descriptor-backed values from a fixed descriptor catalog; per-dialect set-based loader SQL, the loader executor, and verification queries |
-| `Measurement/` | Latency measurement, driver command observer, page-selection capture, plan replay per provider, environment capture, the scenario executor, and the full run pipeline |
-| `Results/` | Versioned artifact records, JSON/CSV writers, the artifact validator, and the run-directory writer |
-| `Smoke/` | Explicit live proofs: loader-vs-POST proof gate, instrumentation probes, six-cell executor smoke, and the full-pipeline smoke at 10k scale |
-| `Runs/` | The evidence-run entry points, configured entirely through `PERF_*` variables |
+| `Measurement/` | Latency measurement, driver command observer, page-selection capture, plan replay per provider, environment capture, the scenario executor, and the full run pipeline; for the benchmark, the serial write executor, the page-identity read observer, the test-only slowdown injection, and the side pipeline |
+| `Results/` | Versioned artifact records, JSON/CSV writers, the artifact validator, and the run-directory writer; for the benchmark, the side result, the comparison engine and its JSON/CSV/Markdown writer |
+| `Smoke/` | Explicit live proofs: loader-vs-POST proof gate, instrumentation probes, six-cell executor smoke, the full-pipeline smoke at 10k scale, and the benchmark side smokes |
+| `Runs/` | The evidence-run entry points, configured entirely through `PERF_*` variables, including the benchmark side runs and the comparison report step |
+| `HarnessAssemblyTeardown.cs` | Drops the cached per-fixture baseline databases when the harness's tests finish, so repeated runs do not accumulate databases on the server |
+| `eng/performance/BenchmarkComparison.psm1`, `invoke-benchmark-comparison.ps1`, `tests/BenchmarkComparison.Tests.ps1` | The benchmark comparison wrapper module, its thin entry script, and the CI Pester test of its orchestration |
 
 The project name deliberately does not match the CI test-discovery globs: CI compiles it via
 the solution but never executes it. All executable fixtures here are `[Explicit]`. The
@@ -92,6 +96,32 @@ worktree of that commit — only new files, never edits:
    set to the harness-source commit. The run manifest records both commits and the dirty
    overlay paths.
 
+**Legacy paging compatibility.** The current harness no longer compiles against the
+subject `5656477`: since #1212 (DMS-1367) it uses the `NpgsqlDataSourceLease`/`AcquireLease`
+API that commit lacks, and the benchmark comparison adds references to
+`DataStoreOwnershipSnapshot` and `IDataStoreOwnershipReconciler`, which it also lacks. To
+recapture the DMS-1391 baseline, use the triple recorded in the retained DMS-1391 run
+manifests (`dms-1392-traditional-baseline-raw.zip`, attached to DMS-1392), together:
+
+| Part | Value |
+| --- | --- |
+| Runner (harness and wrapper) | `0d3241bf92f34a8807e2e444c9b920a2e1afb8b5`, a commit of DMS-1391's PR #1191 that is not on `main`: fetch it with `git fetch origin pull/1191/head` |
+| Subject | `5656477957eb2f18e827b7969e5079b424596ae0` |
+| PostgreSQL image | `postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0` |
+| SQL Server image | SQL Server 2025 `@sha256:86cc6144ef39bb0fbed2329e1ad79b13ee82e7b2e4739213a0db0800e668a74a` |
+
+Run `eng/performance/invoke-traditional-baseline.ps1` from a worktree checked out at that
+runner commit, so its overlay, digest pins and harness are the ones that produced the
+baseline. Start the historical `postgres:16.8-alpine` container first: it differs from the
+current `postgres:18.6-alpine` prerequisite, and the wrapper's digest guard refuses any other
+image. The pair is verified to build: a `git archive` export of `5656477` on a short `subst`
+drive (the paths exceed `MAX_PATH` otherwise), overlaid with the runner commit's harness
+directory, builds with `dotnet build <harness csproj> -c Release -p:NuGetAudit=false`
+(`NuGetAudit` only silences advisories published after that commit). Its runtime behavior is
+attested by the original DMS-1391 run. If the retained manifests are unavailable, the fallback
+runner is `d45b508d2`, the last harness/wrapper commit on `main` before #1212, whose wrapper
+pins the same two digests.
+
 ## Artifact layout (schema 1.3.0)
 
 | File | Content |
@@ -116,14 +146,30 @@ still executes and is replayed every run; every collection-hydration and descrip
 statement does real, uniform work at every offset.
 
 The replay is an out-of-band, one-shot execution on a dedicated connection: on PostgreSQL
-each statement runs under a fresh `EXPLAIN`, which the server plans as a custom plan, while
-the measured requests run through the application's pooled Npgsql connections with
-auto-prepare enabled — the effective `npgsql_auto_prepare_min_usages` /
-`npgsql_max_auto_prepare` values, read from a data source built by the production
-`NpgsqlDataSourceCache` code path, are recorded in the run manifest's settings. Warm
-measured requests may therefore execute server-prepared (possibly generic) plans the replay
-does not reproduce: the replay evidences plan shape and work volume, not the measured
-requests' exact plan-caching regime.
+each statement runs under a fresh `EXPLAIN`, which the server plans as a custom plan. What the
+measured requests ran under depends on which of three connection regimes produced the run, so
+read retained timing and plan evidence against the right one:
+
+1. **The historical pinned baseline (`5656477`, the DMS-1391 runs).** PostgreSQL data sources
+   were cached per connection string for the process lifetime, with auto-prepare after 3 uses
+   (`AutoPrepareMinUsages = 3`, `MaxAutoPrepare = 256`); SQL Server used SqlClient's default
+   pooling. Warm measured requests may therefore execute server-prepared (possibly generic)
+   plans the replay does not reproduce: the replay evidences plan shape and work volume, not
+   the measured requests' exact plan-caching regime. The effective
+   `npgsql_auto_prepare_min_usages` / `npgsql_max_auto_prepare` values, read from a data source
+   built by the production `NpgsqlDataSourceCache` code path, are recorded in the run
+   manifest's settings.
+2. **The current paging host (the traditional-baseline and final-gate entry points).** The
+   in-process host never publishes data-store ownership, so when a request's lease on the
+   connection string ends, the backend retires that string and clears its pool: every request
+   opens a new physical connection and nothing stays prepared. Measured requests run custom
+   plans, like the replay, and their latency includes connection setup.
+3. **The benchmark comparison host.** Each benchmark side publishes data-store ownership for
+   its leased primary right after host start and before any warmup, so connections stay
+   pooled and PostgreSQL auto-prepares, as in production. The side records its effective
+   connection settings, and the comparison requires them to equal the profile's
+   `workload.connection.<provider>` (the drivers' defaults: pooling on, minimum 0, maximum 100,
+   plus `NoResetOnClose` and auto-prepare 3/256 on PostgreSQL).
 
 ## Final gate (partitioned cursor paging)
 
@@ -208,3 +254,307 @@ Server comparison inputs are app-level latency for end-to-end behavior, `db_logi
 and the per-statement plan/IO evidence under `plans/`. And the epic's ratio gates assume
 the final-gate runs reuse the same machine and pinned configuration recorded in the
 manifest.
+
+## Benchmark comparison
+
+One unattended command compares an **approved reference** build with a **candidate** build on
+one provider. It runs the six traditional paging cells plus one serial Student update that
+changes a nested collection, in alternating-order pairs, each side in a fresh process, and
+writes a comparison with advisory timing warnings. Timing regressions never fail the command;
+an invalid comparison (wrong workload, failed work, unsuitable environment) does.
+
+### Platform and prerequisites
+
+One execution platform is supported, and every comparison checks it:
+
+- Windows 11 x64 on AC power, with English (en-US) performance counter names; Docker Desktop
+  with the WSL2 backend; PowerShell 7; the repository's .NET SDK.
+- The provider's database container running the pinned image, with its data on a Docker
+  **volume** (never tmpfs or a bind mount). The defaults are `dms-postgresql`
+  (`postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873`)
+  and `dms-mssql-integration-2025` (SQL Server 2025
+  `@sha256:86cc6144ef39bb0fbed2329e1ad79b13ee82e7b2e4739213a0db0800e668a74a`); pass
+  `-PostgresContainerName` / `-MssqlContainerName` and the digest parameters for others.
+- A memory limit on the SQL Server container (for example
+  `docker update --memory 6g --memory-swap 6g <container>`). Without one, SQL Server sizes
+  itself to the whole Docker VM, the VM takes that memory from Windows, and the host-memory
+  rule invalidates every side.
+- **Only one provider's container running**: stop the other one. No other benchmark or
+  harness process, and a quiet host: close heavy applications, because idle host CPU above
+  15% on any side invalidates the comparison.
+- `ConnectionStrings__DatabaseConnection` (always) and `ConnectionStrings__MssqlAdmin` (for
+  `mssql`) set as credential templates. The wrapper replaces their endpoint with the pinned
+  container's published port. Do not add pool options: the effective connection settings must
+  equal the profile's, which are the drivers' defaults.
+- The harness directory, `benchmark-profile.json`, the wrapper module and its entry script
+  committed clean: the wrapper records the source `HEAD` as the harness commit.
+- Every invocation run from the same kind of session, either always elevated or always not.
+  Git refuses a worktree created by an elevated session when a normal session uses it
+  ("dubious ownership"), so mixing them breaks setup until `-WorktreeRoot` changes.
+
+### The command and the profile
+
+```powershell
+./eng/performance/invoke-benchmark-comparison.ps1 -Provider postgresql `
+    -BaselineCommit df7e23425beef2de46fa98b3b5b48578cb2d3692 `
+    -CandidateCommit <commit> -ResultsDirectory C:\perf\bench -WorktreeRoot C:\dmsb
+```
+
+| Parameter | Meaning |
+| --- | --- |
+| `-Provider` | `postgresql` or `mssql`; one provider per invocation |
+| `-BaselineCommit` | Mandatory; must be the profile's `approvedReferenceCommit` |
+| `-CandidateCommit` | The build under test; defaults to the baseline |
+| `-Pairs` | Comparison pairs; defaults to the profile's `comparison.pairs` (5) |
+| `-Purpose` | `Candidate` (default), `Calibration`, `Sizing`, `Repeatability`, `Detection` or `BoundaryProbe`; see [calibration, sizing and qualification](#calibration-sizing-and-qualification) |
+| `-InjectSlowdown` | `<scenarioId>=<factor>;...`, the test-only slowdown on candidate sides; only for `Sizing` or `Candidate` |
+| `-Smoke` | Run the profile's `smokeWorkload` instead of its `workload`; a smoke comparison is never evidence |
+| `-WorktreeRoot` | Where one worktree per commit is created and reused; keep it short (`MAX_PATH`). Defaults to `dms-bench` beside the repository |
+| `-ResultsDirectory` | Each invocation writes a fresh `<provider>-<purpose>-<yyyyMMddTHHmmssZ>-<candidate8>` directory here |
+
+`Configuration/benchmark-profile.json` is the versioned definition of everything a comparison
+depends on:
+
+- the supported range and the approved reference commit;
+- the `workload`: fixture `primary-500k`, deep offset 450,000, reads 10 warmups / 60 measured
+  per cell, writes 20 / 200, one request in flight, authorization bypassed, Serilog `Warning`,
+  published ownership, and the pinned connection settings;
+- the `smokeWorkload` for rehearsals: `smoke-10k`, reads 5 / 30, writes 5 / 20, and fixed
+  injection factors;
+- the required environment, the comparison rule and thresholds, the detection rule, and the
+  environment rules.
+
+Its SHA-256 is recorded in the run plan and in every side, and the report refuses a profile
+whose hash differs from the one the run used. A profile at version 1.0.0 or later is frozen: it
+must carry each provider's thresholds, qualified environment fingerprint, and detection
+factors.
+
+### What one invocation does
+
+1. **Setup.** Any failure returns 1 before any side runs. The wrapper:
+   - takes the exclusive host lock `%ProgramData%\EdFi\dms-benchmark.lock`;
+   - requires the harness, profile, module and script to be committed clean;
+   - resolves both commits and applies the supported-range and purpose rules;
+   - creates the invocation directory;
+   - creates or reuses one worktree per commit, overlays the harness exactly, and builds it in
+     Release;
+   - checks the container's image digest and rewrites the connection-string endpoint;
+   - writes `run-plan.json` with a new `runId`.
+2. **Each side**, in the recorded order (odd pairs run the baseline first):
+   - start the collector and wait until it has both host and Docker samples (30 s at most,
+     otherwise the side fails);
+   - write `environment.json`;
+   - mark the `settle` phase for 60 s and the `idle` phase for 10 s;
+   - mark `side` and run the side in a fresh `dotnet test` process
+     (`Given_<Provider>_BenchmarkSideRun`), teeing its output to `side.log`;
+   - wait at most 10 s until every metric has a sample stamped after the process exited, then
+     stop the collector and rewrite `environment.json` with the phase windows.
+
+   The first failed side stops the loop.
+3. **The report step** (`Given_BenchmarkComparisonRun`, no database) always runs over the
+   invocation directory and writes `comparison.json`, `.csv` and `.md`.
+
+Inside a side, the harness:
+
+- leases a freshly provisioned database built from that commit's own generated DDL and loads
+  the deterministic fixture;
+- refreshes statistics over every fixture table (`VACUUM (ANALYZE)` on PostgreSQL,
+  `UPDATE STATISTICS` on SQL Server);
+- publishes data-store ownership;
+- runs the six read cells and then the write scenario, each with its warmups before its
+  measured iterations. Nothing is cleared between warmup and measurement: the warmups are the
+  warm-cache procedure.
+
+The reads mutate nothing. Each write is a `PUT` of a target student's full fixture document
+with only `otherNames[0].firstName` changed (`Perf` to `PerfUpdated`). Targets are selected
+by a fixed stride with no randomness, and warmup and measured targets are disjoint. A
+set-based check before and after the writes proves that exactly the targeted rows changed and
+that each child table kept its row count. Every request's status, returned page identities,
+hydrated collections, and command count are checked outside the timed window. Provisioning,
+loading, warmup and verification are never timed, and every side starts from a fresh
+database, so no state carries over between sides; the side drops its databases when it
+finishes.
+
+### Environment contract
+
+Two different fingerprints are compared:
+
+- **Within one comparison**, every side must agree on the profile SHA-256, the harness commit,
+  the fixture, the log level, the ownership flag, the effective connection settings, the
+  instrumentation, and every environment-fingerprint field. Permitted to differ, and listed in
+  the report: the subject commit, `EffectiveSchemaHash`, the OS build, the .NET patch version,
+  and the Docker version.
+- **Against qualification**, when the profile sets `qualifiedEnvironments.<provider>`, every
+  side's fingerprint must equal it: OS family and architecture, machine fingerprint, CPU model
+  and cores, host memory, power plan and AC state, Docker VM CPUs and memory, the database
+  container's CPU and memory limits, image digest, server version, database settings, storage
+  mount type, and effective connection settings. It never includes the profile hash or the
+  harness commit, so editing the profile does not invalidate it. When it is null, the result
+  is labelled `uncalibrated`.
+
+Required values are asserted on every side directly, not only compared between sides: Serilog
+`Warning`, ownership published, connection settings equal to `workload.connection.<provider>`,
+Windows, x64, AC power online, and a volume mount. Two sides that agree on a disallowed value
+are still invalid.
+
+The collector writes `samples.csv` (`timestampUtc,phase,metric,value`):
+
+- the host through `Get-Counter` (CPU %, available MB), at a nominal 1 s interval;
+- the database container through `docker stats --no-stream` (CPU %, memory % of its limit,
+  cumulative block I/O bytes), at a nominal 2 s interval. A Docker sample is stamped when its
+  poll completes.
+
+`Get-Counter` fires about every 1.01 s and one Docker poll takes 1 to 2 s, so two host
+samplers run offset by half an interval and three Docker pollers run on a fixed schedule
+offset by a third. Samples therefore arrive about every half interval.
+
+These rules make a comparison invalid, with the reason:
+
+| Rule | Threshold |
+| --- | --- |
+| Idle host CPU, mean over the `idle` phase | at most 15% |
+| Idle database CPU, mean over the `idle` phase | at most 5% |
+| Host available memory, any sample | at least 2048 MB |
+| Database memory, any sample | at most 90% of its limit |
+| Completeness, for each metric and each phase | at least 90% of the phase duration divided by the metric's nominal interval |
+| Measured-window coverage, for each scenario's measured window and each metric (`i` = its nominal interval) | a sample in `[start − i, start]`, one in `[end, end + i]`, and no gap over `2 × i` across `[start − i, end + i]` |
+| Competing harness process, the other provider's container running, tmpfs storage | none |
+
+Workload CPU and I/O during measurement never invalidate a run. The limits of these checks:
+
+- the host counter sees the whole WSL2 VM as host load;
+- nothing attributes background activity to its source;
+- the competing-process check matches only harness command lines;
+- the other-container check knows only the other provider's container name.
+
+They catch a noisy or misconfigured host. They do not prove a quiet one.
+
+### Supported range and baseline approval
+
+`supportedRange.floorCommit` (`df7e2342`) is the oldest commit the pinned harness and fixture
+definition are known to measure without adaptation. Setup rejects each of these with exit
+code 1 and the reason:
+
+- a commit that does not resolve to a full commit id;
+- a commit that does not descend from the floor;
+- a baseline that is not `approvedReferenceCommit`.
+
+Broader historical comparison is out of scope. A new reference is approved by a pull request
+that changes `approvedReferenceCommit` in the profile; candidates are never promoted
+automatically. The reference is re-run beside every candidate, so historical timing artifacts
+are supporting evidence only.
+
+### Environment changes and recalibration
+
+A comparison whose sides differ from the frozen `qualifiedEnvironments.<provider>` fingerprint
+is invalid. After a host, Docker, image, database-setting or connection change, recalibrate
+that provider (see [calibration, sizing and qualification](#calibration-sizing-and-qualification)),
+then update its thresholds, fingerprint, and factors in the profile through a pull request.
+
+### Results and exit codes
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | A valid comparison: `acceptable`, or `suspected-regression` (warnings are advisory) |
+| `1` | Setup failed or the pair was rejected (no side ran), or the report could not be produced or read |
+| `2` | `invalid`: a failed or missing side, the wrong workload, failed operations, a violated rule, or an incompatible environment |
+
+A scenario is a **suspected regression** when the median of its per-pair
+`candidate p50 / baseline p50` ratios exceeds `1 + threshold`. The provisional threshold is
+10% for every provider and scenario until calibration freezes per-scenario values. Each
+provider is compared only with its own baseline.
+
+### Artifacts and interpretation
+
+The invocation directory holds:
+
+- `run-plan.json`: run id, purpose, commits, profile hash, injection, and order;
+- `wrapper.log`;
+- `comparison.json`, `.csv`, `.md`, and `.log`;
+- `pairs/NN/<role>/` for each side: `benchmark-side.json`, `environment.json`, `samples.csv`,
+  `side.log`, and the side's paging run directory with its unchanged schema 1.3.0 artifacts,
+  including the plan evidence under `plans/`.
+
+Build logs (`build-<commit12>.log`) stay in the results directory.
+
+- `comparison.json` (`benchmark-comparison 1.0.0`) carries:
+  - the result, exit code, and purpose;
+  - `evidence` (false for smoke) and `qualificationEligible`;
+  - labels: `demonstration` when injected, `uncalibrated`, `smoke`;
+  - the run-plan profile hash, the invalid and not-eligible reasons, and the permitted
+    differences;
+  - every scenario's statistics, and the calibration, detection, or sizing block.
+
+  The wrapper returns its `exitCode`.
+- `comparison.csv` has one row per scenario and pair plus a `combined` row per scenario. The
+  `diagnostic_` columns are read diagnostics, blank for the write.
+- `comparison.md` is the human-readable report.
+- **Latency.** p50 drives the verdict. p95 is always reported, but its warnings are off unless
+  the profile enables them, so a regression that only affects the tail can be missed. p99 is
+  descriptive and limited by the sample size: nearest-rank p99 over 60 samples is the maximum.
+  No throughput is reported: this is serial latency with one request in flight, not capacity.
+- **Command counts** are driver command executions per request, counted from Npgsql's
+  `ActivitySource` (activities carrying a statement) and SqlClient's `DiagnosticListener`
+  command events. Connection opens, pool resets and transaction begin/commit are not counted,
+  although they add network round trips, so a command count is not a round-trip count. Each read executes exactly one command (the executor rejects anything
+  else); the write records its distribution, currently two commands per `PUT` on both
+  providers.
+- The driver-observed execute time is diagnostic only (see the final-gate notes above).
+
+### Reproducing a reported regression
+
+1. Read `comparison.md`: which scenarios are flagged, their per-pair ratios and spread, and
+   whether the profile was `uncalibrated` for that provider.
+2. Rerun the same command with the same commits on the same host, ideally with more pairs
+   (`-Pairs 10`). A real regression flags again with a similar median ratio; noise does not.
+3. Compare the flagged scenario's sides: the command counts in `comparison.csv`, the plan
+   evidence under each side's `plans/`, and the environment facts in `environment.json`.
+4. Narrow the change down with `-Purpose Candidate` runs on commits between the reference and
+   the candidate. Every candidate must descend from the floor commit.
+
+### Calibration, sizing and qualification
+
+Detection is declared before any evidence run: a **+20%** client p50 increase on
+`student-put-collection-update` and `traditional-offset-zero/25`. A test-only
+`IStartupFilter` injects it on candidate sides only, busy-waiting `factor × the request's own
+pipeline time` and counting the requests it affected. An injected run detects the declared
+slowdown only when all of these hold:
+
+- both demonstration scenarios are flagged;
+- each one's observed increase lies in
+  `[max(target − 2 pp, threshold + 5 pp), target + 5 pp]`, which is 18–25% while the
+  threshold is at most 13%;
+- no other scenario is flagged.
+
+A demonstration scenario whose threshold exceeds 13% cannot qualify. Recalibrate it with more
+samples or pairs, never by raising the target or widening the band.
+
+Every purpose except `Candidate` requires baseline = candidate = the approved reference, so
+the injection is the only controlled difference:
+
+| Purpose | Injection | Pairs | Output |
+| --- | --- | --- | --- |
+| `Calibration` | none | 5 or more | `calibration`: each scenario's derived threshold `max(5%, 2 × max \|pair ratio − 1\|)`, rounded up to a whole percent, and the observed fingerprint |
+| `Sizing` | `-InjectSlowdown`, required | 2 | `sizing`: for each demonstration scenario, `in-band` (20% ± 2 pp), `adjust` with `suggestedFactor = factor × 0.20 / observed`, or `inconclusive`; `nextFactor` is always defined |
+| `Repeatability` | none | 5 or more | must show no warnings; qualification evidence |
+| `Detection` | the frozen `detection.injectionFactors` | 5 or more | `detection`: the frozen rule above; qualification evidence |
+| `BoundaryProbe` | the frozen factors × `threshold / 0.20` | the profile's pair count | the outcomes, reported whatever they are |
+
+Only `Repeatability` and `Detection` can be `qualificationEligible`, and only with a frozen
+profile, at least five pairs, the full workload, and exactly the injection the purpose
+requires. Everything else is a diagnostic.
+
+The procedure, for each provider, one provider at a time:
+
+1. Run one `Calibration` with at least 5 pairs.
+2. Size each demonstration scenario with 2-pair `Sizing` runs: start at factor 0.20, then use
+   each scenario's `nextFactor`. Stop when both are in band, after four runs, or after two
+   consecutive inconclusive runs for one scenario.
+3. Once both providers have in-band factors and every derived demonstration threshold is at
+   most 13%, write all thresholds, fingerprints, and factors into the profile in one edit and
+   bump `profileVersion` to 1.0.0.
+4. Qualify: one `Repeatability` run, three `Detection` runs, and one `BoundaryProbe` run. Keep
+   every run, including unsuccessful ones.
+
+`-Smoke` runs any purpose on the small workload to rehearse the mechanics. Smoke runs are
+never evidence.

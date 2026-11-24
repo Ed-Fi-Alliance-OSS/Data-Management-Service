@@ -131,7 +131,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1016` — Sampling-Based Integrity Watchdog (ReferentialIdentity + Journals) — `reference/design/backend-redesign/epics/12-ops-guardrails/01-referentialidentity-watchdog.md`
   - `DMS-1017` — Instrumentation for Cascades, Stamps/Journals, and Retries — `reference/design/backend-redesign/epics/12-ops-guardrails/02-instrumentation.md`
   - `DMS-1018` — Guardrails for Identity-Update Fan-out and Retry Behavior — `reference/design/backend-redesign/epics/12-ops-guardrails/03-guardrails.md`
-  - `DMS-1019` — Benchmark Harness for Read/Write Hot Paths — `reference/design/backend-redesign/epics/12-ops-guardrails/04-performance-benchmarks.md`
+  - `DMS-1019` — Repeatable Read/Write Benchmarks with Baseline Comparison — `reference/design/backend-redesign/epics/12-ops-guardrails/04-performance-benchmarks.md`
 
 - `DMS-1020` — Test Strategy & Migration (Runtime + E2E) — `reference/design/backend-redesign/epics/13-test-migration/EPIC.md`
   - `DMS-1021` — Update E2E Workflow for Per-Schema Provisioning (No Hot Reload) — `reference/design/backend-redesign/epics/13-test-migration/00-e2e-environment-updates.md`
