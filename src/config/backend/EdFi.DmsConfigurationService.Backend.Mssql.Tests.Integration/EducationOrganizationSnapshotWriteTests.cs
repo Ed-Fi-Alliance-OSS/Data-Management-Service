@@ -11,7 +11,6 @@ using EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Mssql.Jobs;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
-using EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.Jobs;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using FakeItEasy;
@@ -1057,6 +1056,84 @@ public class EducationOrganizationSnapshotWriteTests
             where T : notnull => await task;
     }
 
+    /// <summary>
+    /// A successful acquisition or renewal waits for another transaction's lock on the target row, then writes the
+    /// lease expiry. The expiry must be one lease duration after a database clock read taken after the wait: no
+    /// earlier than the clock just before the lock is released, and no later than the clock after the operation
+    /// returns. That rules out a lease left unextended, one extended from its previous expiry, a duration in the
+    /// wrong unit, and a clock read before the wait, such as one in the locking statement itself.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_lease_written_after_a_wait_for_the_target_lock
+        : EducationOrganizationSnapshotWriteTestBase
+    {
+        /// <summary><c>DATETIME2</c> has 100-nanosecond precision.</summary>
+        private static readonly TimeSpan _precision = TimeSpan.FromTicks(1);
+
+        [Test]
+        public async Task It_expires_one_lease_duration_after_the_clock_read_after_the_wait(
+            [Values("acquire", "renew")] string operation
+        )
+        {
+            int id = await InsertDataStoreAsync("lease-expiry-" + operation);
+            EducationOrganizationSnapshotRepository repository = Repository();
+            EducationOrganizationSnapshotLease lease = await AcquiredAsync(repository, id);
+            if (operation == "acquire")
+            {
+                (await repository.ReleaseAsync(lease, CancellationToken.None))
+                    .Should()
+                    .BeOfType<SnapshotTargetResult.Success>();
+            }
+
+            TimeSpan leaseDuration = LeaseOptions.Value.LeaseDuration;
+            string applicationName = NewApplicationName();
+            EducationOrganizationSnapshotRepository waiter = Repository(NamedOptions(applicationName));
+            string newOwner = NewOwner();
+
+            await using SqlConnection holder = await OpenConnectionAsync();
+            await using SqlTransaction hold = (SqlTransaction)await holder.BeginTransactionAsync();
+            await HoldTargetAsync(holder, hold, id);
+
+            Task<object> pending =
+                operation == "acquire"
+                    ? Boxed(waiter.AcquireAsync(id, newOwner, CancellationToken.None))
+                    : Boxed(waiter.RenewAsync(lease, CancellationToken.None));
+            await WaitUntilBlockedAsync(applicationName, pending);
+            DateTime beforeRelease = await holder.ExecuteScalarAsync<DateTime>(
+                "SELECT SYSUTCDATETIME();",
+                transaction: hold
+            );
+            await hold.RollbackAsync();
+            object result = await pending;
+            DateTime afterReturn = await Connection!.ExecuteScalarAsync<DateTime>("SELECT SYSUTCDATETIME();");
+
+            result
+                .Should()
+                .Be(
+                    operation == "acquire"
+                        ? (object)
+                            new SnapshotAcquireResult.Acquired(
+                                new EducationOrganizationSnapshotLease(id, newOwner, 2)
+                            )
+                        : new SnapshotTargetResult.Success(1)
+                );
+            DateTime expiresAt = (await TargetAsync(id)).LeaseExpiresAt!.Value;
+            expiresAt
+                .Should()
+                .BeOnOrAfter(
+                    beforeRelease + leaseDuration - _precision,
+                    "the expiry is computed from a clock read after the lock wait"
+                )
+                .And.BeOnOrBefore(
+                    afterReturn + leaseDuration + _precision,
+                    "the expiry is one lease duration after a clock read during the operation"
+                );
+        }
+
+        private static async Task<object> Boxed<T>(Task<T> task)
+            where T : notnull => await task;
+    }
+
     [TestFixture]
     public class Given_repeated_abandonment_before_a_successful_refresh
         : EducationOrganizationSnapshotWriteTestBase
@@ -1194,6 +1271,56 @@ public class EducationOrganizationSnapshotWriteTests
 
             (await GenerationsAsync(id)).Should().Equal(2);
             (await ActiveIdsAsync(id)).Should().Equal(2, 4);
+        }
+
+        /// <summary>
+        /// Activation clears the lease, so another execution can acquire, reclaim and stage the next generation
+        /// before the publishing execution's prune runs. The prune deletes only generations older than the active
+        /// one, never the newer staged one, which then publishes intact.
+        /// </summary>
+        [Test]
+        public async Task It_keeps_a_newer_generation_staged_before_the_prune()
+        {
+            int id = await InsertDataStoreAsync("prune-newer");
+            await PublishAsync(id, [Item(1), Item(2), Item(3)], prune: false);
+            await PublishAsync(id, [Item(2), Item(4)], prune: false);
+            EducationOrganizationSnapshotRepository repository = Repository();
+            EducationOrganizationSnapshotLease lease = await AcquiredAsync(repository, id);
+            lease.Generation.Should().Be(3);
+            (await repository.ReclaimAsync(lease, CancellationToken.None))
+                .Should()
+                .BeOfType<SnapshotTargetResult.Success>();
+            (await repository.RenewAsync(lease, CancellationToken.None))
+                .Should()
+                .Be(new SnapshotTargetResult.Success(1));
+            (
+                await repository.StageAsync(
+                    lease,
+                    [Item(4), Item(5), Item(6)],
+                    ContractVersion,
+                    CancellationToken.None
+                )
+            )
+                .Should()
+                .Be(new SnapshotTargetResult.Success(3));
+            // The reclaim removed generation 1.
+            (await GenerationsAsync(id))
+                .Should()
+                .Equal(2, 3);
+            List<string> rowsBeforePrune = (await StateAsync(id)).Rows;
+
+            (await Repository().PruneAsync(id, CancellationToken.None))
+                .Should()
+                .Be(new SnapshotTargetResult.Success(0));
+
+            (await GenerationsAsync(id)).Should().Equal(2, 3);
+            (await StateAsync(id))
+                .Rows.Should()
+                .Equal(rowsBeforePrune, "no row of either generation is deleted");
+            (await ActiveIdsAsync(id)).Should().Equal(2, 4);
+
+            (await ActivateAsync(repository, Fence, lease)).Should().Be(new SnapshotTargetResult.Success(1));
+            (await ActiveIdsAsync(id)).Should().Equal(4, 5, 6);
         }
 
         [Test]
@@ -1763,24 +1890,46 @@ public class EducationOrganizationSnapshotWriteTests
             }
         );
 
+        /// <summary>The repository's fixed bound on a release.</summary>
+        private static readonly TimeSpan _releaseTimeout = TimeSpan.FromSeconds(5);
+
+        /// <summary>How early a deadline timer may fire against the stopwatch.</summary>
+        private static readonly TimeSpan _timerResolution = TimeSpan.FromMilliseconds(50);
+
+        /// <summary>The longest any wait in these tests may take before it fails the test.</summary>
+        private static readonly TimeSpan _bound = TimeSpan.FromSeconds(15);
+
         [Test]
         public async Task It_bounds_a_renewal_whose_commit_stays_pending()
         {
             int id = await InsertDataStoreAsync("renew-deadline");
             EducationOrganizationSnapshotLease lease = await AcquiredAsync(Repository(), id);
             TargetState before = await TargetAsync(id);
-            JobLeaseRepositoryTests.PendingOperation pending = new("Commit", TimeSpan.FromSeconds(3));
+            PendingCommit commit = new();
+            try
+            {
+                long started = Stopwatch.GetTimestamp();
+                Task<SnapshotTargetResult> renewing = Repository(
+                        hooks: commit.Hooks,
+                        jobOptions: _shortRenewal
+                    )
+                    .RenewAsync(lease, CancellationToken.None);
+                await commit.Reached;
+                SnapshotTargetResult result = await renewing.WaitAsync(_bound);
+                TimeSpan elapsed = Stopwatch.GetElapsedTime(started);
 
-            long started = Stopwatch.GetTimestamp();
-            SnapshotTargetResult result = await Repository(hooks: pending.Hooks, jobOptions: _shortRenewal)
-                .RenewAsync(lease, CancellationToken.None);
-            TimeSpan elapsed = Stopwatch.GetElapsedTime(started);
+                commit.CleanupIsPending.Should().BeTrue("the renewal returned while its commit was pending");
+                AssertWithinDeadline(elapsed, _shortRenewal.Value.RenewalTimeout);
+                AssertDeadline(result, "Renew");
+            }
+            finally
+            {
+                commit.Release();
+            }
 
-            elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2.7), "the commit stays pending for 3 s");
-            AssertDeadline(result, "Renew");
-            (await pending.CleanupAsync())
+            (await commit.CleanupAsync())
                 .Should()
-                .NotBeNull("the commit ran with its token already cancelled");
+                .NotBeNull("the released commit ran with its token already cancelled");
             (await TargetAsync(id)).Should().Be(before, "the pending commit never committed");
         }
 
@@ -1790,18 +1939,28 @@ public class EducationOrganizationSnapshotWriteTests
             int id = await InsertDataStoreAsync("release-deadline");
             EducationOrganizationSnapshotLease lease = await AcquiredAsync(Repository(), id);
             TargetState before = await TargetAsync(id);
-            JobLeaseRepositoryTests.PendingOperation pending = new("Commit", TimeSpan.FromSeconds(6));
+            PendingCommit commit = new();
+            try
+            {
+                long started = Stopwatch.GetTimestamp();
+                Task<SnapshotTargetResult> releasing = Repository(hooks: commit.Hooks)
+                    .ReleaseAsync(lease, CancellationToken.None);
+                await commit.Reached;
+                SnapshotTargetResult result = await releasing.WaitAsync(_bound);
+                TimeSpan elapsed = Stopwatch.GetElapsedTime(started);
 
-            long started = Stopwatch.GetTimestamp();
-            SnapshotTargetResult result = await Repository(hooks: pending.Hooks)
-                .ReleaseAsync(lease, CancellationToken.None);
-            TimeSpan elapsed = Stopwatch.GetElapsedTime(started);
+                commit.CleanupIsPending.Should().BeTrue("the release returned while its commit was pending");
+                AssertWithinDeadline(elapsed, _releaseTimeout);
+                AssertDeadline(result, "Release");
+            }
+            finally
+            {
+                commit.Release();
+            }
 
-            elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5.7), "the commit stays pending for 6 s");
-            AssertDeadline(result, "Release");
-            (await pending.CleanupAsync())
+            (await commit.CleanupAsync())
                 .Should()
-                .NotBeNull("the commit ran with its token already cancelled");
+                .NotBeNull("the released commit ran with its token already cancelled");
             (await TargetAsync(id)).Should().Be(before, "the lease is still held");
         }
 
@@ -1896,6 +2055,85 @@ public class EducationOrganizationSnapshotWriteTests
                 .Subject.Diagnostic;
             (diagnostic.Operation, diagnostic.ProviderErrorCode).Should().Be((operation, (string?)null));
             diagnostic.ExceptionTypeChain.Should().StartWith("System.TimeoutException");
+        }
+
+        /// <summary>
+        /// The operation ended at its deadline: not before it, allowing for timer resolution, and within a second
+        /// after it.
+        /// </summary>
+        private static void AssertWithinDeadline(TimeSpan elapsed, TimeSpan deadline) =>
+            elapsed
+                .Should()
+                .BeGreaterThanOrEqualTo(deadline - _timerResolution, "the commit is pending until released")
+                .And.BeLessThan(deadline + TimeSpan.FromSeconds(1), "the deadline ends the wait");
+
+        /// <summary>
+        /// Holds the session's first commit until <see cref="Release"/>, ignoring the commit's own cancellation as a
+        /// provider call that does not return would, and records the pending session's hand-over to cleanup.
+        /// </summary>
+        private sealed class PendingCommit
+        {
+            private readonly TaskCompletionSource _reached = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            private readonly TaskCompletionSource _release = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            private readonly List<Task<JobDatabaseSessionCleanup>> _cleanups = [];
+            private int _held;
+
+            public PendingCommit()
+            {
+                Hooks = new JobDatabaseSessionHooks
+                {
+                    BeforeOperation = async (operation, _) =>
+                    {
+                        if (operation == "Commit" && Interlocked.Exchange(ref _held, 1) == 0)
+                        {
+                            _reached.TrySetResult();
+                            await _release.Task.WaitAsync(_bound, CancellationToken.None);
+                        }
+                    },
+                    HandedOver = cleanup =>
+                    {
+                        lock (_cleanups)
+                        {
+                            _cleanups.Add(cleanup);
+                        }
+                    },
+                };
+            }
+
+            public JobDatabaseSessionHooks Hooks { get; }
+
+            public Task Reached => _reached.Task.WaitAsync(_bound);
+
+            /// <summary>True when the session was handed over exactly once and its cleanup has not finished.</summary>
+            public bool CleanupIsPending
+            {
+                get
+                {
+                    lock (_cleanups)
+                    {
+                        return _cleanups.Count == 1 && !_cleanups[0].IsCompleted;
+                    }
+                }
+            }
+
+            public void Release() => _release.TrySetResult();
+
+            /// <summary>Waits for the single hand-over's cleanup and returns how the pending commit ended.</summary>
+            public async Task<Exception?> CleanupAsync()
+            {
+                Task<JobDatabaseSessionCleanup> cleanup;
+                lock (_cleanups)
+                {
+                    _cleanups.Should().ContainSingle("the operation was handed over exactly once");
+                    cleanup = _cleanups[0];
+                }
+
+                return (await cleanup.WaitAsync(_bound)).Operation;
+            }
         }
     }
 }

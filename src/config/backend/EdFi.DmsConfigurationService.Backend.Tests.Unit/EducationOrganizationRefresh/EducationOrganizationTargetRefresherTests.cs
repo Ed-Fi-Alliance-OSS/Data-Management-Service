@@ -1014,6 +1014,99 @@ public class EducationOrganizationTargetRefresherTests
         }
     }
 
+    public enum PendingRenewal
+    {
+        Admission,
+        PreStage,
+    }
+
+    /// <summary>
+    /// The caller cancels while the refresher awaits a strict renewal whose database call has not returned. The
+    /// cancellation propagates instead of becoming a lease loss, the lease is released once with no caller token,
+    /// and nothing after the renewal runs. The pending renewal is completed afterwards, so no work outlives the test.
+    /// </summary>
+    [TestFixture(PendingRenewal.Admission)]
+    [TestFixture(PendingRenewal.PreStage)]
+    public class Given_the_caller_cancels_while_a_strict_renewal_is_pending(PendingRenewal pendingRenewal)
+    {
+        private RefresherHarness _harness = null!;
+        private string[] _callsWhileRenewalPending = null!;
+        private bool _completedWhileRenewalPending;
+        private Exception? _exception;
+
+        // Admission is renewal 1. A read that returns before the loop's first tick leaves the pre-stage renewal as
+        // renewal 2.
+        private int PendingCall => pendingRenewal == PendingRenewal.Admission ? 1 : 2;
+
+        // The refresher awaits a pending renewal under a timeout timer. Before the pre-stage renewal, the renewal
+        // loop's periodic timer is the only other timer; a completed admission renewal is awaited without one.
+        private int TimersWhileAwaited => pendingRenewal == PendingRenewal.Admission ? 1 : 2;
+
+        private IEnumerable<string> CallsBeforeRelease =>
+            pendingRenewal == PendingRenewal.Admission
+                ? ["Acquire", "Reclaim", "Renew"]
+                : ["Acquire", "Reclaim", "Renew", "Read", "Renew"];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new RefresherHarness();
+            TaskCompletionSource<SnapshotTargetResult> renewal = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            _harness.Renew = call =>
+                call == PendingCall
+                    ? renewal.Task
+                    : RefresherHarness.Result(new SnapshotTargetResult.Success(1));
+            using CancellationTokenSource caller = new();
+
+            try
+            {
+                Task<TargetRefreshOutcome> run = _harness.RunAsync(caller.Token);
+                await _harness.RenewalCalled(PendingCall).WaitAsync(_wait);
+                await _harness.Time.WaitForTimersCreatedAsync(TimersWhileAwaited).WaitAsync(_wait);
+                _callsWhileRenewalPending = [.. _harness.Calls];
+                _completedWhileRenewalPending = run.IsCompleted;
+
+                await caller.CancelAsync();
+                try
+                {
+                    await run.WaitAsync(_wait);
+                }
+                catch (Exception exception)
+                {
+                    _exception = exception;
+                }
+            }
+            finally
+            {
+                renewal.TrySetResult(new SnapshotTargetResult.Success(1));
+            }
+        }
+
+        [Test]
+        public void It_was_awaiting_the_renewal_when_the_caller_cancelled()
+        {
+            _completedWhileRenewalPending.Should().BeFalse();
+            _callsWhileRenewalPending.Should().Equal(CallsBeforeRelease);
+        }
+
+        [Test]
+        public void It_propagates_the_cancellation() =>
+            _exception.Should().BeAssignableTo<OperationCanceledException>();
+
+        [Test]
+        public void It_releases_once_and_runs_nothing_after_the_renewal() =>
+            _harness.Calls.Should().Equal(CallsBeforeRelease.Append("Release"));
+
+        [Test]
+        public void It_releases_with_no_caller_token() =>
+            _harness.ReleaseTokens.Should().Equal(CancellationToken.None);
+
+        [Test]
+        public void It_logs_no_lease_loss_or_other_outcome() => _harness.Logger.Entries.Should().BeEmpty();
+    }
+
     [TestFixture(true)]
     [TestFixture(false)]
     public class Given_a_prune_that_fails(bool throws)
