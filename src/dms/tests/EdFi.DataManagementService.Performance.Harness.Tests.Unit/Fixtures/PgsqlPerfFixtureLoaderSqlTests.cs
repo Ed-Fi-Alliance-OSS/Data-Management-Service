@@ -153,6 +153,22 @@ public class Given_The_Pgsql_Loader_Sql
     }
 
     [Test]
+    public void It_compacts_every_loaded_table_for_benchmark_sides()
+    {
+        PgsqlPerfFixtureLoaderSql
+            .CompactionSqls.Should()
+            .Equal(
+                """VACUUM (FULL, ANALYZE) "dms"."Document";""",
+                """VACUUM (FULL, ANALYZE) "edfi"."Student";""",
+                """VACUUM (FULL, ANALYZE) "edfi"."StudentIdentificationDocument";""",
+                """VACUUM (FULL, ANALYZE) "edfi"."StudentOtherName";""",
+                """VACUUM (FULL, ANALYZE) "edfi"."StudentPersonalIdentificationDocument";""",
+                """VACUUM (FULL, ANALYZE) "edfi"."StudentVisa";""",
+                """VACUUM (FULL, ANALYZE) "dms"."Descriptor";"""
+            );
+    }
+
+    [Test]
     public void It_verifies_the_definition_analytically()
     {
         PerfFixtureDefinition definition = new(PerfFixtureKind.Primary500k);

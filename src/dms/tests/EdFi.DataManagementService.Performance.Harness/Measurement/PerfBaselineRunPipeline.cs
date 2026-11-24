@@ -33,7 +33,8 @@ public static class PerfBaselineRunPipeline
         string resultsDirectoryBase,
         string runnerCommit,
         PerfEvidenceRunSettings settings,
-        IPerfReadObserver? observer = null
+        IPerfReadObserver? observer = null,
+        Func<Task>? afterFixtureLoad = null
     )
     {
         GuardCiEnvironment(settings.AllowCi, Environment.GetEnvironmentVariable("GITHUB_ACTIONS"));
@@ -45,6 +46,10 @@ public static class PerfBaselineRunPipeline
         }
 
         await PerfFixtureLoader.LoadAndVerifyAsync(harness.DbConnection, provider, definition);
+        if (afterFixtureLoad is not null)
+        {
+            await afterFixtureLoad();
+        }
 
         IReadOnlyList<PerfMeasuredCell> cells = await PerfScenarioExecutor.RunAsync(
             harness,

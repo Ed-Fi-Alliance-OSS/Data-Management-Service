@@ -360,7 +360,12 @@ public static class PerfBenchmarkSidePipeline
                     {
                         AllowCi = true,
                     },
-                    observer
+                    observer,
+                    // Every side of a build must run the same plans, so PostgreSQL sides get an
+                    // identical physical layout (see PgsqlPerfFixtureLoaderSql.CompactionSqls).
+                    plan.Provider == PerfProvider.Postgresql
+                        ? () => PerfFixtureLoader.CompactPostgresqlAsync(harness.DbConnection)
+                        : null
                 ),
             async outcomes =>
             {

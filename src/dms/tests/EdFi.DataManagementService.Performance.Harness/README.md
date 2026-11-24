@@ -360,6 +360,12 @@ Inside a side, the harness:
   the deterministic fixture;
 - refreshes statistics over every fixture table (`VACUUM (ANALYZE)` on PostgreSQL,
   `UPDATE STATISTICS` on SQL Server);
+- on PostgreSQL, compacts every fixture table with `VACUUM (FULL, ANALYZE)`. The stamp
+  triggers update each root row during the load, and the dead space a plain `VACUUM` keeps
+  varies from load to load. The size of `dms.Document` decides between two near-equal-cost
+  plans for the hydration join to the page temp table (an index nested loop or a full-scan
+  hash join), so without the rewrite, sides of the same build ran different plans. The
+  paging and final-gate runs do not compact;
 - publishes data-store ownership;
 - runs the six read cells and then the write scenario, each with its warmups before its
   measured iterations. Nothing is cleared between warmup and measurement: the warmups are the

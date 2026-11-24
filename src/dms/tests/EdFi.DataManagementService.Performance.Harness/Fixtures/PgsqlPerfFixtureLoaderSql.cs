@@ -145,6 +145,25 @@ public static class PgsqlPerfFixtureLoaderSql
     ];
 
     /// <summary>
+    /// Benchmark sides only, after the load: rewrites every loaded table and its indexes
+    /// compactly, then refreshes statistics. The stamp triggers update each root row while the
+    /// load runs, and the dead space plain VACUUM leaves behind varies from load to load. The
+    /// size of dms.Document decides between two near-equal-cost plans for the hydration join to
+    /// the page temp table (index nested loop or a full-scan hash join), so without this
+    /// rewrite, sides of the same build ran different plans. Run outside a transaction.
+    /// </summary>
+    public static readonly IReadOnlyList<string> CompactionSqls =
+    [
+        """VACUUM (FULL, ANALYZE) "dms"."Document";""",
+        """VACUUM (FULL, ANALYZE) "edfi"."Student";""",
+        """VACUUM (FULL, ANALYZE) "edfi"."StudentIdentificationDocument";""",
+        """VACUUM (FULL, ANALYZE) "edfi"."StudentOtherName";""",
+        """VACUUM (FULL, ANALYZE) "edfi"."StudentPersonalIdentificationDocument";""",
+        """VACUUM (FULL, ANALYZE) "edfi"."StudentVisa";""",
+        """VACUUM (FULL, ANALYZE) "dms"."Descriptor";""",
+    ];
+
+    /// <summary>
     /// Restricts a document query to student documents, so the analytic id-scheme checks
     /// stay exact with the descriptor block loaded above the student range.
     /// </summary>
