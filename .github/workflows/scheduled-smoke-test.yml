@@ -54,6 +54,7 @@ on:
       - 'eng/docker-compose/env-utility.psm1'
       - 'eng/Dms-Management.psm1'
       - 'eng/DatabaseTemplates/**'
+      - 'src/shared/MssqlDocumentCacheCatalog.sql'
 
 permissions:
   contents: write

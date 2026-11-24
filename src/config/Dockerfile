@@ -42,6 +42,8 @@ WORKDIR /source
 # Named context support https://github.com/hadolint/hadolint/issues/830
 # hadolint ignore=DL3022
 COPY --from=parentdir .editorconfig Directory.Packages.props nuget.config ./
+# hadolint ignore=DL3022
+COPY --from=parentdir shared/MssqlDocumentCacheCatalog.sql ./shared/
 
 # The plugin tree the frontend references. Only the project files and lock files are copied here,
 # so that editing a source file does not invalidate the restore layer below. The sources themselves

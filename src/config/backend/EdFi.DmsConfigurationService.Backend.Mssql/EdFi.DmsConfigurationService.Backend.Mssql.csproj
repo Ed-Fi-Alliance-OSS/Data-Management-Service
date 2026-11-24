@@ -33,6 +33,7 @@
         <ProjectReference Include="..\..\contracts\EdFi.DmsConfigurationService.Secrets\EdFi.DmsConfigurationService.Secrets.csproj" />
     </ItemGroup>
     <ItemGroup>
+        <EmbeddedResource Include="../../../shared/MssqlDocumentCacheCatalog.sql" LogicalName="MssqlDocumentCacheCatalog.sql" />
         <EmbeddedResource Include="Deploy\Scripts\*.sql">
             <CopyToOutputDirectory>Never</CopyToOutputDirectory>
         </EmbeddedResource>

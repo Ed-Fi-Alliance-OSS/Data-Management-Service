@@ -1073,8 +1073,7 @@ function Assert-RestoreManifestMatchesCandidate {
     }
 
     if ($DatabaseEngine -eq "mssql" -and
-        (-not [string]::Equals($CandidateMssqlPhysicalSchemaVersion, "v2", [System.StringComparison]::Ordinal) -or
-            -not [string]::Equals([string]$Manifest.mssqlPhysicalSchemaVersion, $CandidateMssqlPhysicalSchemaVersion, [System.StringComparison]::Ordinal))) {
+        -not [string]::Equals([string]$Manifest.mssqlPhysicalSchemaVersion, $CandidateMssqlPhysicalSchemaVersion, [System.StringComparison]::Ordinal)) {
         throw "The restore manifest mssqlPhysicalSchemaVersion must match the selected SchemaTools v2 baseline."
     }
 

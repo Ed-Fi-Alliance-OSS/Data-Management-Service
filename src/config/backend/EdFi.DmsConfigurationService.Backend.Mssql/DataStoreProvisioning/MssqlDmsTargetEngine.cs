@@ -6,6 +6,7 @@
 using System.Diagnostics.CodeAnalysis;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 
@@ -402,12 +403,13 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
             MssqlInventoryQueries.CompatibilityLevel,
             cancellationToken
         );
-        List<string> physicalVersions = await ReadRowsAsync(
+        var physicalFacts = await ReadRowsAsync(
             connection,
-            MssqlInventoryQueries.MssqlPhysicalSchemaVersion,
-            reader => reader.GetString(0),
+            MssqlInventoryQueries.DocumentCachePhysicalFacts,
+            reader => (MarkerValid: reader.GetBoolean(0), ObjectCheckValid: reader.GetBoolean(1)),
             cancellationToken
         );
+        var (markerValid, objectCheckValid) = physicalFacts.Single();
         List<DmsDocumentJsonColumn> documentJsonColumns = await ReadRowsAsync(
             connection,
             MssqlInventoryQueries.DocumentJsonColumns,
@@ -415,12 +417,6 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
             {
                 IsMssqlDocumentCacheColumn = reader.GetBoolean(2),
             },
-            cancellationToken
-        );
-        List<int> documentCacheObjectChecks = await ReadRowsAsync(
-            connection,
-            MssqlInventoryQueries.DocumentCacheObjectCheck,
-            reader => reader.GetInt32(0),
             cancellationToken
         );
         List<string> schemaNames = await ReadRowsAsync(
@@ -459,8 +455,10 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
             EngineMajorVersion = engineMajorVersion,
             CompatibilityLevel = compatibilityLevel,
             DocumentJsonColumns = documentJsonColumns,
-            MssqlPhysicalSchemaVersion = physicalVersions.SingleOrDefault(),
-            HasMssqlDocumentCacheObjectCheck = documentCacheObjectChecks.Count == 1,
+            MssqlPhysicalSchemaVersion = markerValid
+                ? RestoreManifest.NativeMssqlPhysicalSchemaVersion
+                : null,
+            HasMssqlDocumentCacheObjectCheck = objectCheckValid,
             SchemaNames = schemaNames,
             InventoryObjects = inventoryObjects,
             Principals = principals,

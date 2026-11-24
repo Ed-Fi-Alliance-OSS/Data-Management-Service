@@ -1730,101 +1730,10 @@ function Get-DatabaseCompatibilityLevelQuerySql {
     return "SET NOCOUNT ON; SELECT compatibility_level FROM sys.databases WHERE name = N'$DatabaseName';"
 }
 
-function Get-MssqlPhysicalSchemaVersionQuerySql {
-    <#
-    .SYNOPSIS
-    Returns SQL that reads the physical version from a correctly typed, enforced singleton marker.
-    #>
-    return @'
-SET NOCOUNT ON;
-IF EXISTS (
-    SELECT 1 FROM sys.tables t
-    JOIN sys.schemas s ON s.schema_id = t.schema_id
-    JOIN sys.columns c ON c.object_id = t.object_id
-    JOIN sys.types ty ON ty.user_type_id = c.user_type_id
-    WHERE s.name COLLATE Latin1_General_100_BIN2 = N'dms'
-      AND t.name COLLATE Latin1_General_100_BIN2 = N'MssqlPhysicalSchema'
-      AND c.user_type_id = c.system_type_id AND ty.is_user_defined = 0 AND c.is_nullable = 0
-      AND ((c.name COLLATE Latin1_General_100_BIN2 = N'SingletonId' AND ty.name = N'smallint')
-        OR (c.name COLLATE Latin1_General_100_BIN2 = N'MssqlPhysicalSchemaVersion'
-            AND ty.name = N'varchar' AND c.max_length = 2))
-      AND EXISTS (
-          SELECT 1
-          FROM sys.check_constraints ck
-          WHERE ck.parent_object_id = t.object_id
-              AND ck.name COLLATE Latin1_General_100_BIN2 = N'CK_MssqlPhysicalSchema_Singleton'
-              AND ck.is_disabled = 0 AND ck.is_not_trusted = 0 AND ck.is_not_for_replication = 0
-              AND REPLACE(
-                  TRANSLATE(REPLACE(ck.definition COLLATE Latin1_General_100_BIN2,
-                      N'[SingletonId]', N'SingletonId'),
-                      N'()' + NCHAR(9) + NCHAR(10) + NCHAR(13), N'     '), N' ', N'')
-                  = N'SingletonId=1'
-      )
-      AND EXISTS (
-          SELECT 1
-          FROM sys.indexes pk
-          JOIN sys.index_columns ic ON ic.object_id = pk.object_id AND ic.index_id = pk.index_id
-          JOIN sys.columns id ON id.object_id = ic.object_id AND id.column_id = ic.column_id
-          WHERE pk.object_id = t.object_id AND pk.is_primary_key = 1 AND pk.is_disabled = 0
-              AND ic.key_ordinal > 0
-          GROUP BY pk.index_id
-          HAVING COUNT(*) = 1 AND MAX(CASE WHEN id.name COLLATE Latin1_General_100_BIN2
-              = N'SingletonId' THEN 1 ELSE 0 END) = 1
-      )
-    GROUP BY t.object_id HAVING COUNT(*) = 2
-)
-    EXEC sys.sp_executesql N'SELECT MAX(MssqlPhysicalSchemaVersion) FROM dms.MssqlPhysicalSchema
-        HAVING COUNT_BIG(*) = 1 AND MAX(SingletonId) = 1
-        AND MAX(CASE WHEN CONVERT(varbinary(2), MssqlPhysicalSchemaVersion) = 0x7632 THEN 1 ELSE 0 END) = 1';
-'@
-}
-
-function Get-MssqlDocumentCacheObjectCheckQuerySql {
-    <#
-    .SYNOPSIS
-    Returns SQL that verifies the native DocumentCache object-only constraint.
-    #>
-    # Match the generated check after removing SQL Server's formatting and grouping parentheses.
-    # Preserve identifier spelling and brackets on any identifier other than [DocumentJson].
-    return @'
-SET NOCOUNT ON;
-SELECT 1
-FROM sys.check_constraints AS ck
-JOIN sys.tables AS t ON t.object_id = ck.parent_object_id
-JOIN sys.schemas AS s ON s.schema_id = t.schema_id
-JOIN sys.columns AS c ON c.object_id = t.object_id
-WHERE s.name COLLATE Latin1_General_100_BIN2 = N'dms'
-  AND t.name COLLATE Latin1_General_100_BIN2 = N'DocumentCache'
-  AND c.name COLLATE Latin1_General_100_BIN2 = N'DocumentJson'
-  AND c.is_nullable = 0
-  AND ck.name COLLATE Latin1_General_100_BIN2 = N'CK_DocumentCache_IsJsonObject'
-  AND ck.is_disabled = 0 AND ck.is_not_trusted = 0 AND ck.is_not_for_replication = 0
-  AND REPLACE(REPLACE(REPLACE(
-        TRANSLATE(REPLACE(ck.definition COLLATE Latin1_General_100_BIN2, N'[DocumentJson]', N'DocumentJson')
-            COLLATE Latin1_General_100_CI_AS, N'()' + NCHAR(9) + NCHAR(10) + NCHAR(13), N'     '),
-        N'ISJSON', N'ISJSON'), N'OBJECT', N'OBJECT'), N' ', N'')
-        COLLATE Latin1_General_100_BIN2 = N'ISJSONDocumentJson,OBJECT=1';
-'@
-}
-
-function Assert-MssqlDocumentCacheObjectCheck {
-    <#
-    .SYNOPSIS
-    Requires the catalog query to confirm the native DocumentCache object-only constraint.
-    #>
-    param(
-        [AllowNull()]
-        [AllowEmptyCollection()]
-        [string[]]$Row,
-
-        [Parameter(Mandatory = $true)]
-        [string]$DatabaseName
-    )
-
-    $rows = @($Row | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    if ($rows.Count -ne 1 -or $rows[0].Trim() -cne '1') {
-        throw "Database '$DatabaseName' must have a non-null DocumentJson and an enabled and trusted CK_DocumentCache_IsJsonObject enforcing ISJSON(DocumentJson, OBJECT) = 1. Reprovision the template."
-    }
+function Get-MssqlDocumentCachePhysicalFactsQuerySql {
+    $catalogPath = Join-Path $PSScriptRoot '../../src/shared/MssqlDocumentCacheCatalog.sql'
+    $catalogSql = Get-Content -LiteralPath $catalogPath -Raw -ErrorAction Stop
+    return "SET NOCOUNT ON;`n$catalogSql`nSELECT CONCAT(@physical_marker_valid, '|', @object_check_valid);"
 }
 
 function Get-RestoreDocumentCacheCatalogFact {
@@ -1843,14 +1752,16 @@ function Get-RestoreDocumentCacheCatalogFact {
     $databaseName = $QueryParameters.DatabaseName
     $databaseEngine = $QueryParameters.DatabaseEngine
     $physicalVersion = $null
+    $objectCheckValid = $false
     if ($databaseEngine -eq "mssql") {
-        $markerRows = @(& $InvokeCatalogQuery $QueryParameters (Get-MssqlPhysicalSchemaVersionQuerySql) `
-                "Failed to read the SQL Server DocumentCache physical schema marker from '$databaseName'." |
+        $physicalRows = @(& $InvokeCatalogQuery $QueryParameters (Get-MssqlDocumentCachePhysicalFactsQuerySql) `
+                "Failed to inspect the SQL Server DocumentCache physical schema in '$databaseName'." |
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        if ($markerRows.Count -ne 1 -or $markerRows[0].Trim() -cne "v2") {
+        if ($physicalRows.Count -ne 1 -or $physicalRows[0].Trim() -cnotmatch '^1\|[01]\z') {
             throw "Cannot verify the v2 SQL Server DocumentCache physical schema marker in '$databaseName'. Reprovision the template."
         }
-        $physicalVersion = $markerRows[0].Trim()
+        $physicalVersion = 'v2'
+        $objectCheckValid = $physicalRows[0].Trim() -ceq '1|1'
     }
 
     $documentJsonRows = & $InvokeCatalogQuery $QueryParameters (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine $databaseEngine) `
@@ -1860,9 +1771,9 @@ function Get-RestoreDocumentCacheCatalogFact {
         if ($documentJsonColumnType -cne (Get-RestoreDocumentJsonBaselineType -DatabaseEngine mssql)) {
             throw "Cannot verify native json for dms.DocumentCache.DocumentJson in '$databaseName'. Reprovision the template."
         }
-        $objectCheckRows = & $InvokeCatalogQuery $QueryParameters (Get-MssqlDocumentCacheObjectCheckQuerySql) `
-            "Failed to inspect CK_DocumentCache_IsJsonObject in '$databaseName'."
-        Assert-MssqlDocumentCacheObjectCheck -Row $objectCheckRows -DatabaseName $databaseName
+        if (-not $objectCheckValid) {
+            throw "Database '$databaseName' must have a non-null DocumentJson and an enabled and trusted CK_DocumentCache_IsJsonObject enforcing ISJSON(DocumentJson, OBJECT) = 1. Reprovision the template."
+        }
     }
 
     return @{

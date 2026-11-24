@@ -46,11 +46,13 @@ BeforeAll {
             [hashtable]$Results,
             [string]$EventName = "push",
             [string]$Ref = "refs/heads/main",
-            [string]$RefType = "branch"
+            [string]$RefType = "branch",
+            [string]$Engine = "postgresql"
         )
 
         $run = @{
             "inputs.publish_package" = $PublishPackage
+            "inputs.database_engine" = $Engine
             "github.event_name" = $EventName
             "github.ref" = $Ref
             "github.ref_type" = $RefType
@@ -460,6 +462,21 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
         } | Should -Be $Publishes
     }
 
+    It "requires a signed SQL Server build and companion before publication" {
+        $condition = Get-WorkflowJobCondition $script:publishJob
+        $results = @{
+            "build-template"              = "success"
+            "generate-package-sbom"       = "success"
+            "generate-package-provenance" = "success"
+            "sign-template-package"       = "skipped"
+            "build-attestation-companion" = "skipped"
+        }
+        Test-PublishCondition -Expression $condition -PublishPackage $true -Engine mssql -Results $results | Should -BeFalse
+        $results['sign-template-package'] = 'success'
+        $results['build-attestation-companion'] = 'success'
+        Test-PublishCondition -Expression $condition -PublishPackage $true -Engine mssql -Results $results | Should -BeTrue
+    }
+
     It "gives the Azure publishing token only to the push and promote steps, inside the publishing environment" {
         $script:content | Should -Not -Match '(?m)^  (ARTIFACTS_API_KEY|ARTIFACTS_USERNAME|VSS_NUGET_EXTERNAL_FEED_ENDPOINTS):' -Because "no workflow-wide env may carry a publishing credential"
         $declaration = [regex]::Match($script:content, '(?m)^      AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN:\r?\n        required: (?<required>\w+)$')
@@ -509,7 +526,7 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
         $pushStep.Contains("--skip-duplicate") | Should -BeTrue
     }
 
-    It "couples release promotion: probes the companion, promotes it before the template when present, and tolerates only unattested-era absence" {
+    It "requires the companion on SQL Server promotion and promotes it before the template on either engine" {
         $promoteIndex = $script:content.IndexOf("Template Azure Package")
         $promoteIndex | Should -BeGreaterThan 0
         $promoteStep = $script:content.Substring($promoteIndex)
@@ -519,6 +536,7 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
         $promoteStep.Contains("/nuget/packages/") | Should -BeTrue
         $promoteStep.Contains("Companion attestation package probe failed with HTTP") | Should -BeTrue
         $promoteStep.Contains("Unattested-era release") | Should -BeTrue
+        $promoteStep | Should -Match '(?s)if \(-not \$promoteCompanion\) \{\s+if \(\$env:DATABASE_ENGINE -eq "mssql"\) \{\s+throw "Cannot promote SQL Server template'
 
         # Companion promotion comes before the template promotion.
         $companionPromoteIndex = $promoteStep.IndexOf('$arguments.PackageName = $companionPackageName')
@@ -784,43 +802,33 @@ Describe "template caller workflows pass the attestation secret through (<Caller
         $Run["github.event.pull_request.head.repo.fork"] = $(if ($Run["github.event_name"] -eq "pull_request") { $false } else { $null })
         $Run["github.event.pull_request.draft"] = $(if ($Run["github.event_name"] -eq "pull_request") { $false } else { $null })
         $Run["github.repository_owner"] = "Ed-Fi-Alliance-OSS"
-        $Run["github.sha"] = 'a' * 40
-        $Run["vars.MSSQL_TEMPLATE_V2_QUALIFIED_COMMIT"] = $Run["github.sha"]
+        $Run["vars.MSSQL_TEMPLATE_V2_PUBLICATION_ENABLED"] = 'true'
         $Run["vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED"] = 'true'
 
         Test-CallerCondition -Expression (Get-CallerCondition $script:buildCall) -Run $Run | Should -Be ($Expected -eq "build")
         Test-CallerCondition -Expression (Get-CallerCondition $script:publishCall) -Run $Run | Should -Be ($Expected -eq "publish")
-        if ($CallerFile -like "*.MsSql.yml") {
-            $prerequisites = Get-WorkflowJobBlock -Content $script:callerContent -JobName "check-publication-prerequisites"
-            Test-CallerCondition -Expression (Get-CallerCondition $prerequisites) -Run $Run | Should -BeFalse
-        }
     }
 
-    It "holds <EventName> MSSQL publication when <Case>" -ForEach @(
-        @{ EventName = "push"; Case = "qualification is missing"; QualifiedCommit = ""; Signing = "true" }
-        @{ EventName = "workflow_dispatch"; Case = "qualification covers a different commit"; QualifiedCommit = ('b' * 40); Signing = "true" }
-        @{ EventName = "push"; Case = "attestation signing is disabled"; QualifiedCommit = ('a' * 40); Signing = "" }
-        @{ EventName = "release"; Case = "the release tag commit is unqualified"; QualifiedCommit = ""; Signing = "true" }
+    It "runs the <Expected> call for <Case> during the MSSQL cutover" -ForEach @(
+        @{ Case = "main before cutover"; EventName = "push"; IsTag = $false; Enabled = ""; Signing = "true"; Expected = "build" }
+        @{ Case = "a tag before cutover"; EventName = "push"; IsTag = $true; Enabled = ""; Signing = "true"; Expected = "build" }
+        @{ Case = "a manual publication request before cutover"; EventName = "workflow_dispatch"; IsTag = $false; Enabled = ""; Signing = "true"; Expected = "build" }
+        @{ Case = "main without signing"; EventName = "push"; IsTag = $false; Enabled = "true"; Signing = ""; Expected = "build" }
+        @{ Case = "the later release of a published tag"; EventName = "release"; IsTag = $true; Enabled = ""; Signing = ""; Expected = "publish" }
     ) -Skip:($CallerFile -notlike "*.MsSql.yml") {
-        $isRelease = $EventName -eq 'release'
         $run = @{
             "github.event_name" = $EventName
             "github.event.pull_request.head.repo.fork" = $null
             "github.event.pull_request.draft" = $null
             "github.repository_owner" = "Ed-Fi-Alliance-OSS"
-            "github.ref" = $(if ($isRelease) { "refs/tags/v8.2.0" } else { "refs/heads/main" })
-            "github.ref_type" = $(if ($isRelease) { "tag" } else { "branch" })
-            "github.sha" = 'a' * 40
+            "github.ref" = $(if ($IsTag) { "refs/tags/v8.2.0" } else { "refs/heads/main" })
+            "github.ref_type" = $(if ($IsTag) { "tag" } else { "branch" })
             "inputs.publish_package" = $true
-            "vars.MSSQL_TEMPLATE_V2_QUALIFIED_COMMIT" = $QualifiedCommit
+            "vars.MSSQL_TEMPLATE_V2_PUBLICATION_ENABLED" = $Enabled
             "vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED" = $Signing
         }
-        $prerequisites = Get-WorkflowJobBlock -Content $script:callerContent -JobName "check-publication-prerequisites"
-        Test-CallerCondition -Expression (Get-CallerCondition $prerequisites) -Run $run | Should -BeTrue
-        $prerequisites | Should -Match '::error::.*MSSQL_TEMPLATE_V2_QUALIFIED_COMMIT.*TEMPLATE_ATTESTATION_SIGNING_ENABLED'
-        $prerequisites | Should -Match 'exit 1'
-        Test-CallerCondition -Expression (Get-CallerCondition $script:buildCall) -Run $run | Should -BeFalse
-        Test-CallerCondition -Expression (Get-CallerCondition $script:publishCall) -Run $run | Should -BeFalse
+        Test-CallerCondition -Expression (Get-CallerCondition $script:buildCall) -Run $run | Should -Be ($Expected -eq "build")
+        Test-CallerCondition -Expression (Get-CallerCondition $script:publishCall) -Run $run | Should -Be ($Expected -eq "publish")
     }
 
     It "runs neither call for <Case>" -ForEach @(

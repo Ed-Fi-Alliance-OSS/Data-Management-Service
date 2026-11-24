@@ -6,6 +6,7 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
     <ItemGroup>
+        <EmbeddedResource Include="../../../shared/MssqlDocumentCacheCatalog.sql" LogicalName="MssqlDocumentCacheCatalog.sql" />
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
     </ItemGroup>
     <ItemGroup>

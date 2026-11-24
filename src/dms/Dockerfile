@@ -41,6 +41,8 @@ WORKDIR /source
 # Named context support https://github.com/hadolint/hadolint/issues/830
 # hadolint ignore=DL3022
 COPY --from=parentdir .editorconfig Directory.Packages.props nuget.config ./
+# hadolint ignore=DL3022
+COPY --from=parentdir shared/MssqlDocumentCacheCatalog.sql ./shared/
 
 # The plugin contract tree. Nothing in the image references these assemblies yet: they are staged
 # by the story that creates the tree so that no merge order can leave the frontend pointing at a

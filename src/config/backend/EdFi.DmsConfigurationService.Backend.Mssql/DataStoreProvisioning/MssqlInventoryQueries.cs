@@ -154,72 +154,19 @@ internal static class MssqlInventoryQueries
     private const string SourceIdentityColumns =
         "CONVERT(nvarchar(36), CONVERT(nvarchar(max), [SourceIdentity])), CONVERT(bit, CASE WHEN DATALENGTH(CONVERT(nvarchar(max), [SourceIdentity])) > 72 THEN 1 ELSE 0 END)";
 
-    /// <summary>
-    /// The version of the enforced native singleton. Mirrors Get-MssqlPhysicalSchemaVersionQuerySql.
-    /// </summary>
-    public const string MssqlPhysicalSchemaVersion = """
-        SET NOCOUNT ON;
-        IF EXISTS (
-            SELECT 1 FROM sys.tables t
-            JOIN sys.schemas s ON s.schema_id = t.schema_id
-            JOIN sys.columns c ON c.object_id = t.object_id
-            JOIN sys.types ty ON ty.user_type_id = c.user_type_id
-            WHERE s.name COLLATE Latin1_General_100_BIN2 = N'dms'
-              AND t.name COLLATE Latin1_General_100_BIN2 = N'MssqlPhysicalSchema'
-              AND c.user_type_id = c.system_type_id AND ty.is_user_defined = 0 AND c.is_nullable = 0
-              AND ((c.name COLLATE Latin1_General_100_BIN2 = N'SingletonId' AND ty.name = N'smallint')
-                OR (c.name COLLATE Latin1_General_100_BIN2 = N'MssqlPhysicalSchemaVersion'
-                    AND ty.name = N'varchar' AND c.max_length = 2))
-              AND EXISTS (
-                  SELECT 1
-                  FROM sys.check_constraints ck
-                  WHERE ck.parent_object_id = t.object_id
-                      AND ck.name COLLATE Latin1_General_100_BIN2 = N'CK_MssqlPhysicalSchema_Singleton'
-                      AND ck.is_disabled = 0 AND ck.is_not_trusted = 0 AND ck.is_not_for_replication = 0
-                      AND REPLACE(
-                          TRANSLATE(REPLACE(ck.definition COLLATE Latin1_General_100_BIN2,
-                              N'[SingletonId]', N'SingletonId'),
-                              N'()' + NCHAR(9) + NCHAR(10) + NCHAR(13), N'     '), N' ', N'')
-                          = N'SingletonId=1'
-              )
-              AND EXISTS (
-                  SELECT 1
-                  FROM sys.indexes pk
-                  JOIN sys.index_columns ic ON ic.object_id = pk.object_id AND ic.index_id = pk.index_id
-                  JOIN sys.columns id ON id.object_id = ic.object_id AND id.column_id = ic.column_id
-                  WHERE pk.object_id = t.object_id AND pk.is_primary_key = 1 AND pk.is_disabled = 0
-                      AND ic.key_ordinal > 0
-                  GROUP BY pk.index_id
-                  HAVING COUNT(*) = 1 AND MAX(CASE WHEN id.name COLLATE Latin1_General_100_BIN2
-                      = N'SingletonId' THEN 1 ELSE 0 END) = 1
-              )
-            GROUP BY t.object_id HAVING COUNT(*) = 2
-        )
-            EXEC sys.sp_executesql N'SELECT MAX(MssqlPhysicalSchemaVersion) FROM dms.MssqlPhysicalSchema
-                HAVING COUNT_BIG(*) = 1 AND MAX(SingletonId) = 1
-                AND MAX(CASE WHEN CONVERT(varbinary(2), MssqlPhysicalSchemaVersion) = 0x7632 THEN 1 ELSE 0 END) = 1';
-        """;
+    /// <summary>Reads independent marker and object-check facts using the shared SQL Server catalog rules.</summary>
+    public static string DocumentCachePhysicalFacts { get; } = ReadDocumentCachePhysicalFacts();
 
-    /// <summary>Validates the generated v2 CHECK. Mirrors Get-MssqlDocumentCacheObjectCheckQuerySql.</summary>
-    public const string DocumentCacheObjectCheck = """
-        SET NOCOUNT ON;
-        SELECT 1
-        FROM sys.check_constraints AS ck
-        JOIN sys.tables AS t ON t.object_id = ck.parent_object_id
-        JOIN sys.schemas AS s ON s.schema_id = t.schema_id
-        JOIN sys.columns AS c ON c.object_id = t.object_id
-        WHERE s.name COLLATE Latin1_General_100_BIN2 = N'dms'
-          AND t.name COLLATE Latin1_General_100_BIN2 = N'DocumentCache'
-          AND c.name COLLATE Latin1_General_100_BIN2 = N'DocumentJson'
-          AND c.is_nullable = 0
-          AND ck.name COLLATE Latin1_General_100_BIN2 = N'CK_DocumentCache_IsJsonObject'
-          AND ck.is_disabled = 0 AND ck.is_not_trusted = 0 AND ck.is_not_for_replication = 0
-          AND REPLACE(REPLACE(REPLACE(
-                TRANSLATE(REPLACE(ck.definition COLLATE Latin1_General_100_BIN2, N'[DocumentJson]', N'DocumentJson')
-                    COLLATE Latin1_General_100_CI_AS, N'()' + NCHAR(9) + NCHAR(10) + NCHAR(13), N'     '),
-                N'ISJSON', N'ISJSON'), N'OBJECT', N'OBJECT'), N' ', N'')
-                COLLATE Latin1_General_100_BIN2 = N'ISJSONDocumentJson,OBJECT=1';
-        """;
+    private static string ReadDocumentCachePhysicalFacts()
+    {
+        using var stream = typeof(MssqlInventoryQueries).Assembly.GetManifestResourceStream(
+            "MssqlDocumentCacheCatalog.sql"
+        ) ?? throw new InvalidOperationException("Missing SQL Server DocumentCache catalog resource.");
+        using var reader = new StreamReader(stream);
+        return "SET NOCOUNT ON;\n"
+            + reader.ReadToEnd()
+            + "\nSELECT @physical_marker_valid, @object_check_valid;";
+    }
 
     /// <summary>
     /// Every <c>DocumentJson</c> carrier in the <c>dms</c> schema with its type and a bit identifying

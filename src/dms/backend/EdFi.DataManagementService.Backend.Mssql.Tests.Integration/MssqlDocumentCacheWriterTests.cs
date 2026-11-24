@@ -122,7 +122,9 @@ public class Given_A_Mssql_DocumentCacheWriter
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
         SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
         DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "candidate-current");
-        candidate.DocumentJson["nested"] = JsonNode.Parse("""{"city":"San José","values":[2.75,42]}""");
+        candidate.DocumentJson["nested"] = JsonNode.Parse(
+            """{"city":"San José","values":[2.75,42,0.30000000000000004,9007199254740993]}"""
+        );
 
         DocumentCacheWriterResult result = await WriteAsync(source, candidate);
 

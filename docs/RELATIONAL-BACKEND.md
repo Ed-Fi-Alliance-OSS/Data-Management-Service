@@ -522,21 +522,23 @@ descriptor probe for both template kinds, plus the populated schools probe. Use 
 SchemaTools and CMS restore consumers for every verification. The restore preflight rejects a
 selected SQL Server SchemaTools manifest without the physical-v2 discriminator before Docker
 work, and CMS rejects packages that do not satisfy the format-2 contract. Bootstrap reads
-the expected physical version from the selected SchemaTools relational-model manifest,
-using the staged schema inputs. The [DMS-1271](https://edfi.atlassian.net/browse/DMS-1271)
-prepared schema manifest supplies the logical fingerprint.
+`mssql_physical_schema_version` from the `mssql` entry in `ddl.manifest.json`, emitted by
+the selected SchemaTools with `ddl emit --ddl-manifest` and the staged schema inputs.
+The [DMS-1271](https://edfi.atlassian.net/browse/DMS-1271) prepared schema manifest
+supplies the logical fingerprint.
 
 For the first native-v2 publication, dispatch both MSSQL template workflows from the same
 reviewed commit with `publish_package` off and without a Data Standard filter. Record the
 run URLs, commit, package versions, SHA-256 digests, physical catalog checks and authenticated
 probe results for all four packages in the release record. Include the results from the
-matching restore consumers. Once the four legs have passed, release maintainers set the
-repository variable `MSSQL_TEMPLATE_V2_QUALIFIED_COMMIT` to the full qualified commit SHA.
-Both workflows require that SHA and `TEMPLATE_ATTESTATION_SIGNING_ENABLED=true` to publish
-or promote MSSQL packages. A different main commit or release tag commit requires its own
-qualification while this rollout gate is in place. An eligible publish or promotion run
-fails with a prerequisite diagnostic if either setting is missing or invalid. Use a
-build-only dispatch to qualify a revision before requesting publication.
+matching restore consumers. After all four legs pass and the CDC release decision is
+recorded, release maintainers end the first-publication hold by setting
+`MSSQL_TEMPLATE_V2_PUBLICATION_ENABLED=true` and enabling attestation signing with
+`TEMPLATE_ATTESTATION_SIGNING_ENABLED=true`. Main and version-tag pushes still build and
+verify packages during the hold. Once lifted, they resume normal publishing through
+the protected signing and publishing environments. Stable release events promote the
+already published tag version with its companion attestation independently of main's
+current revision.
 
 The publishing runs build and verify their own package bytes. Record those runs and the
 digests of the exact attested packages that reach the feed, then confirm the four published

@@ -1391,8 +1391,7 @@ Describe "Get-TemplateSourceCatalogFacts" {
                 if ($query -match 'EffectiveSchema') { return "1.0.0|$('ab' * 32)|42|$('cd' * 32)" }
                 if ($query -match 'ProductVersion') { return '17.0.900.7' }
                 if ($query -match 'compatibility_level') { return '170' }
-                if ($query -match 'MssqlPhysicalSchemaVersion') { return 'v2' }
-                if ($query -match 'CK_DocumentCache_IsJsonObject') { return '1' }
+                if ($query -match 'SELECT CONCAT\(@physical_marker_valid,') { return '1|1' }
                 if ($query -match 'sys\.columns') { return 'DocumentCache|json|1' }
                 # The schema query also names sys.objects (built-in schemas show only when
                 # non-empty), so it is told apart by what it selects.

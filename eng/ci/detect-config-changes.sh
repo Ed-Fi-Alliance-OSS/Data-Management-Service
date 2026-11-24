@@ -57,12 +57,12 @@ while IFS= read -r file; do
       ;;
   esac
   case "$file" in
-    .github/workflows/*|build-config.ps1|package-helpers.psm1|eng/*|src/Directory.Packages.props|src/nuget.config|src/config/*|src/plugins/*|src/dms/PluginFixtureStaging.targets)
+    .github/workflows/*|build-config.ps1|package-helpers.psm1|eng/*|src/Directory.Packages.props|src/nuget.config|src/config/*|src/plugins/*|src/shared/*|src/dms/PluginFixtureStaging.targets)
       config_relevant=true
       ;;
   esac
   case "$file" in
-    src/dms/Dockerfile|src/dms/.dockerignore|src/dms/Directory.Build.*|src/dms/run.sh|\
+    src/shared/*|src/dms/Dockerfile|src/dms/.dockerignore|src/dms/Directory.Build.*|src/dms/run.sh|\
     src/dms/backend/EdFi.DataManagementService.Backend.Ddl/*|\
     src/dms/backend/EdFi.DataManagementService.Backend.External/*|\
     src/dms/backend/EdFi.DataManagementService.Backend.Mssql/*|\
