@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
@@ -138,11 +139,7 @@ public class MssqlDmsTargetEngineFactsTests
     [TestFixture]
     public class Given_a_drifted_native_document_cache_baseline
     {
-        [TestCase("DELETE FROM dms.MssqlPhysicalSchema;", DmsTargetValidator.MssqlPhysicalSchemaVersionCheck)]
-        [TestCase(
-            "UPDATE dms.MssqlPhysicalSchema SET MssqlPhysicalSchemaVersion = 'V2';",
-            DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
-        )]
+        [TestCaseSource(nameof(SharedPhysicalSchemaDriftCases))]
         [TestCase(
             "ALTER TABLE dms.MssqlPhysicalSchema NOCHECK CONSTRAINT CK_MssqlPhysicalSchema_Singleton;",
             DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
@@ -171,7 +168,7 @@ public class MssqlDmsTargetEngineFactsTests
             """,
             DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
         )]
-        public Task It_rejects_incompatible_marker_or_type(string mutation, string check) =>
+        public Task It_rejects_incompatible_physical_baselines(string mutation, string check) =>
             AssertIncompatibleAsync(mutation, check);
 
         [TestCase(
@@ -182,27 +179,29 @@ public class MssqlDmsTargetEngineFactsTests
                 CHECK (ISJSON([DocumentJson], OBJECT) = 1);
             """
         )]
-        [TestCase("ALTER TABLE dms.DocumentCache NOCHECK CONSTRAINT CK_DocumentCache_IsJsonObject;")]
-        [TestCase(
-            """
-            ALTER TABLE dms.DocumentCache NOCHECK CONSTRAINT CK_DocumentCache_IsJsonObject;
-            ALTER TABLE dms.DocumentCache WITH NOCHECK CHECK CONSTRAINT CK_DocumentCache_IsJsonObject;
-            """
-        )]
-        [TestCase(
-            """
-            ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
-            ALTER TABLE dms.DocumentCache ADD [Document Json] json NULL;
-            ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject
-                CHECK (ISJSON([Document Json], OBJECT) = 1);
-            """
-        )]
         [TestCase(
             "ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; "
                 + "ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson]) = 1);"
         )]
         public Task It_rejects_invalid_object_validation(string mutation) =>
             AssertIncompatibleAsync(mutation, DmsTargetValidator.MssqlDocumentCacheObjectCheck);
+
+        private static IEnumerable<TestCaseData> SharedPhysicalSchemaDriftCases()
+        {
+            var path = Path.Combine(
+                TestContext.CurrentContext.TestDirectory,
+                "Fixtures",
+                "mssql-physical-schema-drift.json"
+            );
+            using var fixture = JsonDocument.Parse(File.ReadAllText(path));
+            foreach (var drift in fixture.RootElement.EnumerateArray())
+            {
+                yield return new TestCaseData(
+                    drift.GetProperty("sql").GetString(),
+                    drift.GetProperty("check").GetString()
+                ).SetArgDisplayNames(drift.GetProperty("shape").GetString()!);
+            }
+        }
 
         private static async Task AssertIncompatibleAsync(string mutation, string check)
         {

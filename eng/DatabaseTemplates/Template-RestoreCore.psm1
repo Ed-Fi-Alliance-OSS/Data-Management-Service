@@ -693,12 +693,12 @@ function Assert-RestoreManifestShape {
     $null = Assert-RestoreManifestField -Manifest $Manifest -FieldName "packageVersion" -AsNonEmptyString
 
     $databaseEngine = Assert-RestoreManifestField -Manifest $Manifest -FieldName "databaseEngine" -AsNonEmptyString
-    if (-not (Test-RestoreOrdinalStringEqual -Left ([string]$databaseEngine) -Right "postgresql") -and
-        -not (Test-RestoreOrdinalStringEqual -Left ([string]$databaseEngine) -Right "mssql")) {
+    $isMssql = Test-RestoreOrdinalStringEqual -Left $databaseEngine -Right "mssql"
+    if (-not $isMssql -and $databaseEngine -cne "postgresql") {
         throw "Restore manifest field 'databaseEngine' must be exactly 'postgresql' or 'mssql', but found '$databaseEngine'."
     }
 
-    if (Test-RestoreOrdinalStringEqual -Left ([string]$databaseEngine) -Right "mssql") {
+    if ($isMssql) {
         $contractMembers = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
         foreach ($member in @(
                 "version", "packageId", "packageVersion", "databaseEngine", "templateKind",
@@ -723,23 +723,31 @@ function Assert-RestoreManifestShape {
         }
     }
 
-    if ((Test-RestoreOrdinalStringEqual -Left ([string]$databaseEngine) -Right "mssql") -and $manifestVersion -ne $script:MssqlRestoreManifestVersion) {
+    if ($isMssql -and $manifestVersion -ne $script:MssqlRestoreManifestVersion) {
         throw "Restore manifest field 'version' must be 2 for mssql. Reprovision legacy templates using the native DocumentCache baseline."
     }
-    if ((Test-RestoreOrdinalStringEqual -Left ([string]$databaseEngine) -Right "postgresql") -and $manifestVersion -ne $script:PostgresqlRestoreManifestVersion) {
+    if (-not $isMssql -and $manifestVersion -ne $script:PostgresqlRestoreManifestVersion) {
         throw "Restore manifest field 'version' is '$manifestVersion' but only version 1 is supported for postgresql."
     }
 
     $templateKind = Assert-RestoreManifestField -Manifest $Manifest -FieldName "templateKind" -AsNonEmptyString
-    if (-not (Test-RestoreOrdinalStringEqual -Left ([string]$templateKind) -Right "Minimal") -and
-        -not (Test-RestoreOrdinalStringEqual -Left ([string]$templateKind) -Right "Populated")) {
+    $validKind = if ($isMssql) {
+        (Test-RestoreOrdinalStringEqual -Left $templateKind -Right "Minimal") -or
+            (Test-RestoreOrdinalStringEqual -Left $templateKind -Right "Populated")
+    }
+    else { $templateKind -cin @("Minimal", "Populated") }
+    if (-not $validKind) {
         throw "Restore manifest field 'templateKind' must be exactly 'Minimal' or 'Populated', but found '$templateKind'."
     }
 
     $null = Assert-RestoreManifestField -Manifest $Manifest -FieldName "dataStandardVersion" -AsNonEmptyString
 
     $contentProfile = Assert-RestoreManifestField -Manifest $Manifest -FieldName "contentProfile" -AsNonEmptyString
-    if (-not (Test-RestoreOrdinalStringEqual -Left ([string]$contentProfile) -Right $script:RestoreContentProfileDmsDatastoreOnly)) {
+    $validProfile = if ($isMssql) {
+        Test-RestoreOrdinalStringEqual -Left $contentProfile -Right $script:RestoreContentProfileDmsDatastoreOnly
+    }
+    else { $contentProfile -ceq $script:RestoreContentProfileDmsDatastoreOnly }
+    if (-not $validProfile) {
         throw "Restore manifest field 'contentProfile' must be exactly '$($script:RestoreContentProfileDmsDatastoreOnly)', but found '$contentProfile'. Only DMS-datastore-only template packages are eligible for restore."
     }
 

@@ -3356,7 +3356,7 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
                     Add-Content -LiteralPath $log -Value "restore:stage engine=$DatabaseEngine template=$RestoreTemplate"
                     & $realModule {
                         param($stagedManifest, $engine, $template)
-                        Assert-RestoreManifestMatchesRequest -Manifest $stagedManifest -DatabaseEngine $engine -RestoreTemplate $template -DataStandardVersion "5.2.0"
+                        Assert-RestoreManifestMatchesRequest -Manifest $stagedManifest -RestoreTemplate $template -DataStandardVersion "5.2.0"
                     } $manifest $DatabaseEngine $RestoreTemplate
                     [pscustomobject]@{ StageDirectory = (Join-Path $root "stage"); PackagePath = "p"; PackageSha256 = ("aa" * 32); Manifest = $manifest; ManifestPath = "m"; ArtifactPath = "a"; ArtifactSha256 = ("aa" * 32); Producer = "test-producer" }
                 }.GetNewClosure()

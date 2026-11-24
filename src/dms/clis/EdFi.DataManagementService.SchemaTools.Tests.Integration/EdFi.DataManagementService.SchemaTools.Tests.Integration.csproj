@@ -31,6 +31,7 @@
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Tests.Common\EdFi.DataManagementService.Backend.Tests.Common.csproj" />
     </ItemGroup>
     <ItemGroup>
+        <None Include="../../../../eng/DatabaseTemplates/tests/fixtures/mssql-physical-schema-drift.json" Link="Fixtures/mssql-physical-schema-drift.json" CopyToOutputDirectory="PreserveNewest" />
         <None Update="Fixtures\**\*.json">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>

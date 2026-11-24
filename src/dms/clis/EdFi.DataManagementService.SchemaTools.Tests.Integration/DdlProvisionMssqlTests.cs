@@ -679,32 +679,37 @@ public class Given_Mssql_DocumentCache_Physical_Preflight
     [TearDown]
     public void TearDown() => MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
 
-    [TestCase("legacy")]
-    [TestCase("missing marker")]
-    [TestCase("empty marker")]
-    [TestCase("wrong version")]
-    [TestCase("wrong singleton")]
-    [TestCase("multiple marker rows")]
-    [TestCase("disabled singleton check")]
-    [TestCase("untrusted singleton check")]
-    [TestCase("weaker singleton check")]
-    [TestCase("missing marker primary key")]
-    [TestCase("column type alias")]
-    [TestCase("marker view")]
-    [TestCase("missing column")]
-    [TestCase("missing cache table")]
-    [TestCase("disabled object check")]
-    [TestCase("untrusted object check")]
-    [TestCase("weaker object check")]
-    [TestCase("lookalike object check")]
-    [TestCase("nullable document json")]
-    public void It_rejects_invalid_completed_targets_before_cli_or_raw_ddl_mutates_them(string shape)
+    [TestCase("legacy", null)]
+    [TestCase("missing marker", null)]
+    [TestCase("wrong singleton", null)]
+    [TestCase("multiple marker rows", null)]
+    [TestCase("disabled singleton check", null)]
+    [TestCase("weaker singleton check", null)]
+    [TestCase("missing marker primary key", null)]
+    [TestCase("column type alias", null)]
+    [TestCase("marker view", null)]
+    [TestCase("missing column", null)]
+    [TestCase("missing cache table", null)]
+    [TestCase("weaker object check", null)]
+    [TestCase("nullable document json", null)]
+    [TestCaseSource(nameof(SharedPhysicalSchemaDriftCases))]
+    public void It_rejects_invalid_completed_targets_before_cli_or_raw_ddl_mutates_them(
+        string shape,
+        string? mutation
+    )
     {
         var created = ProvisionTestHelper.RunProvision("mssql", _connectionString, createDatabase: true);
         created.ExitCode.Should().Be(0, $"stdout: {created.Output}\nstderr: {created.Error}");
 
         using var connection = MssqlDocumentProjectionTestSupport.OpenConnection(_databaseName);
-        ConfigurePhysicalShape(connection, shape);
+        if (mutation is null)
+        {
+            ConfigurePhysicalShape(connection, shape);
+        }
+        else
+        {
+            MssqlDocumentProjectionTestSupport.ExecuteNonQuery(connection, mutation);
+        }
         MssqlDocumentProjectionTestSupport.InsertWidget(connection, 1, "Preserved document");
         MssqlDocumentProjectionTestSupport.ExecuteNonQuery(
             connection,
@@ -754,6 +759,23 @@ public class Given_Mssql_DocumentCache_Physical_Preflight
                 }
             }
         });
+    }
+
+    private static IEnumerable<TestCaseData> SharedPhysicalSchemaDriftCases()
+    {
+        var path = Path.Combine(
+            TestContext.CurrentContext.TestDirectory,
+            "Fixtures",
+            "mssql-physical-schema-drift.json"
+        );
+        using var fixture = JsonDocument.Parse(File.ReadAllText(path));
+        foreach (var drift in fixture.RootElement.EnumerateArray())
+        {
+            string shape = drift.GetProperty("shape").GetString()!;
+            yield return new TestCaseData(shape, drift.GetProperty("sql").GetString()).SetArgDisplayNames(
+                shape
+            );
+        }
     }
 
     [TestCase("CREATE TABLE [dms].[DocumentCacheState] ([Id] int NOT NULL)")]
@@ -978,14 +1000,6 @@ public class Given_Mssql_DocumentCache_Physical_Preflight
                     "ALTER TABLE dms.MssqlPhysicalSchema NOCHECK CONSTRAINT CK_MssqlPhysicalSchema_Singleton;"
                 );
                 return;
-            case "untrusted singleton check":
-                Execute(
-                    """
-                    ALTER TABLE dms.MssqlPhysicalSchema NOCHECK CONSTRAINT CK_MssqlPhysicalSchema_Singleton;
-                    ALTER TABLE dms.MssqlPhysicalSchema CHECK CONSTRAINT CK_MssqlPhysicalSchema_Singleton;
-                    """
-                );
-                return;
             case "weaker singleton check":
                 Execute(
                     """
@@ -1024,34 +1038,16 @@ public class Given_Mssql_DocumentCache_Physical_Preflight
             {
                 var nullability = shape == "nullable document json" ? "NULL" : "NOT NULL";
                 Execute($"ALTER TABLE [dms].[DocumentCache] ADD [DocumentJson] {columnType} {nullability};");
-                if (shape == "lookalike object check")
-                {
-                    Execute("ALTER TABLE [dms].[DocumentCache] ADD [Document Json] json NULL;");
-                }
-                var predicate = shape switch
-                {
-                    "weaker object check" => "ISJSON([DocumentJson]) = 1",
-                    "lookalike object check" => "ISJSON([Document Json], OBJECT) = 1",
-                    _ => "ISJSON([DocumentJson], OBJECT) = 1",
-                };
+                var predicate =
+                    shape == "weaker object check"
+                        ? "ISJSON([DocumentJson]) = 1"
+                        : "ISJSON([DocumentJson], OBJECT) = 1";
                 Execute(
                     $"""
                     ALTER TABLE [dms].[DocumentCache] WITH CHECK
                     ADD CONSTRAINT [CK_DocumentCache_IsJsonObject] CHECK ({predicate});
                     """
                 );
-                if (shape is "disabled object check" or "untrusted object check")
-                {
-                    Execute(
-                        "ALTER TABLE [dms].[DocumentCache] NOCHECK CONSTRAINT [CK_DocumentCache_IsJsonObject];"
-                    );
-                }
-                if (shape == "untrusted object check")
-                {
-                    Execute(
-                        "ALTER TABLE [dms].[DocumentCache] WITH NOCHECK CHECK CONSTRAINT [CK_DocumentCache_IsJsonObject];"
-                    );
-                }
             }
         }
 
@@ -1072,10 +1068,8 @@ public class Given_Mssql_DocumentCache_Physical_Preflight
 
         var seed = shape switch
         {
-            "empty marker" => "",
             "wrong singleton" => "(2, 'v2')",
             "multiple marker rows" => "(1, 'v2'), (2, 'v2')",
-            "wrong version" => "(1, 'V2')",
             _ => "(1, 'v2')",
         };
         MssqlPhysicalProvisioningTestSupport.CreateMarker(

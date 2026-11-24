@@ -790,6 +790,10 @@ Describe "template caller workflows pass the attestation secret through (<Caller
 
         Test-CallerCondition -Expression (Get-CallerCondition $script:buildCall) -Run $Run | Should -Be ($Expected -eq "build")
         Test-CallerCondition -Expression (Get-CallerCondition $script:publishCall) -Run $Run | Should -Be ($Expected -eq "publish")
+        if ($CallerFile -like "*.MsSql.yml") {
+            $prerequisites = Get-WorkflowJobBlock -Content $script:callerContent -JobName "check-publication-prerequisites"
+            Test-CallerCondition -Expression (Get-CallerCondition $prerequisites) -Run $Run | Should -BeFalse
+        }
     }
 
     It "holds <EventName> MSSQL publication when <Case>" -ForEach @(
@@ -811,7 +815,11 @@ Describe "template caller workflows pass the attestation secret through (<Caller
             "vars.MSSQL_TEMPLATE_V2_QUALIFIED_COMMIT" = $QualifiedCommit
             "vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED" = $Signing
         }
-        Test-CallerCondition -Expression (Get-CallerCondition $script:buildCall) -Run $run | Should -Be (-not $isRelease)
+        $prerequisites = Get-WorkflowJobBlock -Content $script:callerContent -JobName "check-publication-prerequisites"
+        Test-CallerCondition -Expression (Get-CallerCondition $prerequisites) -Run $run | Should -BeTrue
+        $prerequisites | Should -Match '::error::.*MSSQL_TEMPLATE_V2_QUALIFIED_COMMIT.*TEMPLATE_ATTESTATION_SIGNING_ENABLED'
+        $prerequisites | Should -Match 'exit 1'
+        Test-CallerCondition -Expression (Get-CallerCondition $script:buildCall) -Run $run | Should -BeFalse
         Test-CallerCondition -Expression (Get-CallerCondition $script:publishCall) -Run $run | Should -BeFalse
     }
 

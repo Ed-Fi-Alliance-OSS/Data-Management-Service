@@ -383,19 +383,14 @@ function Assert-TrustedRestorePackage {
 function Assert-RestoreManifestMatchesRequest {
     <#
     .SYNOPSIS
-    Fails unless a (shape-valid) restore manifest declares exactly the engine, template
-    kind, and Data Standard version this restore run selected - the Data Standard version
-    being the one the resolved package id encodes in its trailing segment, a distinct
-    concept from the package's own NuGet version. The shape contract already pins the fixed
-    DmsDatastoreOnly content profile and every field type.
+    Fails unless a validated restore manifest declares exactly the template kind and
+    Data Standard version this restore run selected. The resolved package id encodes
+    the Data Standard version in its trailing segment. The package has a separate
+    NuGet version. Manifest validation has already checked the selected engine.
     #>
     param (
         [Parameter(Mandatory = $true)]
         $Manifest,
-
-        [Parameter(Mandatory = $true)]
-        [ValidateSet("postgresql", "mssql")]
-        [string]$DatabaseEngine,
 
         [Parameter(Mandatory = $true)]
         [ValidateSet("Minimal", "Populated")]
@@ -405,9 +400,6 @@ function Assert-RestoreManifestMatchesRequest {
         [string]$DataStandardVersion
     )
 
-    if (-not [string]::Equals([string]$Manifest.databaseEngine, $DatabaseEngine, [System.StringComparison]::Ordinal)) {
-        throw "The restore manifest declares databaseEngine '$($Manifest.databaseEngine)' but this restore selected '$DatabaseEngine'."
-    }
     if ([string]$Manifest.templateKind -cne $RestoreTemplate) {
         throw "The restore manifest declares templateKind '$($Manifest.templateKind)' but this restore requested '$RestoreTemplate'."
     }
@@ -514,7 +506,7 @@ function Initialize-RestorePackageStage {
         $manifestText = Read-RestorePackageArchiveEntryText -Entry $manifestEntries[0] -DatabaseEngine $DatabaseEngine
         $manifest = Read-RestoreManifest -Path "$packageFileName!/$($manifestEntries[0].FullName)" -Content $manifestText -DatabaseEngine $DatabaseEngine
 
-        Assert-RestoreManifestMatchesRequest -Manifest $manifest -DatabaseEngine $DatabaseEngine -RestoreTemplate $RestoreTemplate -DataStandardVersion $Package.DataStandardVersion
+        Assert-RestoreManifestMatchesRequest -Manifest $manifest -RestoreTemplate $RestoreTemplate -DataStandardVersion $Package.DataStandardVersion
 
         # Identity triangle: the request, the manifest, and the nuspec must all agree on the
         # package id and version.

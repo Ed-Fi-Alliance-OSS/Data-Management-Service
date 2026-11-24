@@ -9,6 +9,8 @@
 # DMS-only gate, dump, and restore-manifest steps, so it proves the real restore/catalog/manifest/
 # data path; API registration is intercepted at its first call (full serveability is the release
 # matrix).
+$physicalDriftCases = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/mssql-physical-schema-drift.json') -Raw |
+    ConvertFrom-Json -AsHashtable
 foreach ($case in @(
         @{ Engine = 'postgresql'; Dialect = 'pgsql'; Container = $env:DMS_TEMPLATE_TEST_PG_CONTAINER },
         @{ Engine = 'mssql'; Dialect = 'mssql'; Container = $env:DMS_TEMPLATE_TEST_MSSQL_CONTAINER }
@@ -145,17 +147,8 @@ SELECT "DocumentId", "ResourceKeyId", 'uri://template', 'school', 'School' FROM 
             Should -Invoke Get-CmsToken -Times 1 -Exactly
             @(Invoke-TestSql $script:restored $fingerprintSql) | Should -Be $fingerprint
         }
-        It 'Rejects <Name> during native SQL Server source inspection' -Skip:($Engine -ne 'mssql') -ForEach @(
-            @{
-                Name = 'a missing marker row'
-                Sql = 'DELETE FROM dms.MssqlPhysicalSchema;'
-                Undo = "INSERT INTO dms.MssqlPhysicalSchema (SingletonId, MssqlPhysicalSchemaVersion) VALUES (1, 'v2');"
-            }
-            @{
-                Name = 'a mismatched marker'
-                Sql = "UPDATE dms.MssqlPhysicalSchema SET MssqlPhysicalSchemaVersion = 'V2';"
-                Undo = "UPDATE dms.MssqlPhysicalSchema SET MssqlPhysicalSchemaVersion = 'v2';"
-            }
+        It 'Rejects <shape> during native SQL Server source inspection' -Skip:($Engine -ne 'mssql') -ForEach @(
+            $physicalDriftCases | Where-Object check -eq 'MssqlPhysicalSchemaVersion'
         ) {
             Invoke-TestSql $source $Sql | Out-Null
             try {
@@ -195,26 +188,25 @@ GO
                 Invoke-TestSql $source $addCheck | Out-Null
             }
         }
-        It 'Rejects a native SQL Server source and restored package with a <Name> object-only CHECK' -Skip:($Engine -ne 'mssql') -ForEach @(
-            @{ Name = 'disabled'; Sql = 'ALTER TABLE dms.DocumentCache NOCHECK CONSTRAINT CK_DocumentCache_IsJsonObject;' }
-            @{ Name = 'untrusted'; Sql = 'ALTER TABLE dms.DocumentCache NOCHECK CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache CHECK CONSTRAINT CK_DocumentCache_IsJsonObject;' }
-            @{ Name = 'weaker'; Sql = 'ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson]) = 1);' }
-            @{ Name = 'lookalike'; Sql = 'ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache ADD [Document Json] json NULL; ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([Document Json], OBJECT) = 1);' }
+        It 'Rejects a native SQL Server source and restored package with <shape>' -Skip:($Engine -ne 'mssql') -ForEach @(
+            $physicalDriftCases | Where-Object check -eq 'MssqlDocumentCacheObjectCheck'
+            @{
+                shape = 'weaker object check'
+                Sql = 'ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson]) = 1);'
+                Undo = 'ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson], OBJECT) = 1);'
+            }
         ) {
             $healthyFacts = Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $source -MssqlPassword $password
             Invoke-TestSql $source $Sql | Out-Null
             try {
-                { Invoke-TestPackageCapture "invalid-$Name" } |
+                { Invoke-TestPackageCapture "invalid-$shape" } |
                     Should -Throw "*CK_DocumentCache_IsJsonObject*enabled and trusted*"
-                Test-Path (Join-Path $TestDrive "invalid-$Name/staging/Focused.Template.bak") | Should -BeFalse
+                Test-Path (Join-Path $TestDrive "invalid-$shape/staging/Focused.Template.bak") | Should -BeFalse
                 # Simulate a producer that did not inspect the CHECK, with a valid artifact hash.
-                $invalidPackage = Invoke-TestPackageCapture "drifted-$Name" $healthyFacts
+                $invalidPackage = Invoke-TestPackageCapture "drifted-$shape" $healthyFacts
             }
             finally {
-                Invoke-TestSql $source 'ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson], OBJECT) = 1);' | Out-Null
-                if ($Name -eq 'lookalike') {
-                    Invoke-TestSql $source 'ALTER TABLE dms.DocumentCache DROP COLUMN [Document Json];' | Out-Null
-                }
+                Invoke-TestSql $source $Undo | Out-Null
             }
             { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory $invalidPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } |
                 Should -Throw "*CK_DocumentCache_IsJsonObject*enabled and trusted*"

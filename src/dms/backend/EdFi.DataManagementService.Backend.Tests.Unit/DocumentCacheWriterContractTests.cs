@@ -179,7 +179,8 @@ public class Given_DocumentCacheWriterContract
                 "DeleteRaceRetryExhausted",
                 "CacheAheadUnconfirmedCallerAbort",
                 "DeterministicInvariantOrTargetFailure",
-                "AlreadyCurrentNoWork"
+                "AlreadyCurrentNoWork",
+                "NativeJsonLimitExceeded"
             );
 
         CreateRepresentativeResults()
@@ -370,6 +371,7 @@ public class Given_DocumentCacheWriterContract
             new DocumentCacheWriterResult.CallerAbortedRetry(attemptCount: 2),
             new DocumentCacheWriterResult.DeleteRaceRetryExhausted(attemptCount: 3),
             DocumentCacheWriterResult.CacheAheadUnconfirmedCallerAbort.Instance,
+            DocumentCacheWriterResult.NativeJsonLimitExceeded.Instance,
             new DocumentCacheWriterResult.DeterministicInvariantOrTargetFailure(
                 DocumentCacheWriterInvariantFailureReason.MatchingVersionResourceMetadataMismatch,
                 currentContentVersion: 11,

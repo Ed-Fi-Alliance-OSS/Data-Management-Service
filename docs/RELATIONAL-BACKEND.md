@@ -521,7 +521,10 @@ contents to include a restore manifest reporting format 2, `documentJsonColumnTy
 descriptor probe for both template kinds, plus the populated schools probe. Use the matching
 SchemaTools and CMS restore consumers for every verification. The restore preflight rejects a
 selected SQL Server SchemaTools manifest without the physical-v2 discriminator before Docker
-work, and CMS rejects packages that do not satisfy the format-2 contract.
+work, and CMS rejects packages that do not satisfy the format-2 contract. Bootstrap reads
+the expected physical version from the selected SchemaTools relational-model manifest,
+using the staged schema inputs. The [DMS-1271](https://edfi.atlassian.net/browse/DMS-1271)
+prepared schema manifest supplies the logical fingerprint.
 
 For the first native-v2 publication, dispatch both MSSQL template workflows from the same
 reviewed commit with `publish_package` off and without a Data Standard filter. Record the
@@ -531,7 +534,9 @@ matching restore consumers. Once the four legs have passed, release maintainers 
 repository variable `MSSQL_TEMPLATE_V2_QUALIFIED_COMMIT` to the full qualified commit SHA.
 Both workflows require that SHA and `TEMPLATE_ATTESTATION_SIGNING_ENABLED=true` to publish
 or promote MSSQL packages. A different main commit or release tag commit requires its own
-qualification while this rollout gate is in place.
+qualification while this rollout gate is in place. An eligible publish or promotion run
+fails with a prerequisite diagnostic if either setting is missing or invalid. Use a
+build-only dispatch to qualify a revision before requesting publication.
 
 The publishing runs build and verify their own package bytes. Record those runs and the
 digests of the exact attested packages that reach the feed, then confirm the four published

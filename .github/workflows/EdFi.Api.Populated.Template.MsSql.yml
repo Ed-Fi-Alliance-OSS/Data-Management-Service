@@ -89,6 +89,18 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  check-publication-prerequisites:
+    name: Report blocked MSSQL template publication
+    if: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false)) && ((github.event_name != 'push' && github.event_name != 'release') || github.repository_owner == 'Ed-Fi-Alliance-OSS') && github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) && !(vars.MSSQL_TEMPLATE_V2_QUALIFIED_COMMIT == github.sha && vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED == 'true') }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Fail an unqualified publish or promotion request
+        shell: bash
+        run: |
+          echo "::error::MSSQL template publication and promotion require MSSQL_TEMPLATE_V2_QUALIFIED_COMMIT to match this revision and TEMPLATE_ATTESTATION_SIGNING_ENABLED=true. See the SQL Server native DocumentCache rollout in docs/RELATIONAL-BACKEND.md."
+          exit 1
+
   # Builds the version matrix once so a manual dispatch can narrow the run to a single Data
   # Standard version (standard_version input) without spending compute on the other legs.
   # Release/tag runs carry no inputs and build every leg. To add or drop a version, edit the
@@ -128,9 +140,9 @@ jobs:
   build-populated-template:
     name: Build Populated Template ${{ matrix.standard_version }}
     needs: configure-matrix
-    # Pull requests and unpublished revisions still build and verify templates without the
+    # Pull requests and build-only dispatches build and verify templates without the
     # Azure Artifacts publishing credentials.
-    if: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false)) && ((github.event_name != 'push' && github.event_name != 'release') || github.repository_owner == 'Ed-Fi-Alliance-OSS') && github.event_name != 'release' && !(github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) && vars.MSSQL_TEMPLATE_V2_QUALIFIED_COMMIT == github.sha && vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED == 'true') }}
+    if: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false)) && ((github.event_name != 'push' && github.event_name != 'release') || github.repository_owner == 'Ed-Fi-Alliance-OSS') && github.event_name != 'release' && !(github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true)) }}
     # Each leg invokes the whole reusable build/SBOM/provenance pipeline, so per-version outputs
     # stay correlated. The matrix is computed by configure-matrix (filterable on dispatch).
     strategy:

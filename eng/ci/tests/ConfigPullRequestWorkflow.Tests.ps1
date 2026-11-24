@@ -110,6 +110,20 @@ bash "$CLASSIFIER"
         $result.ExitCode | Should -Be 0
         $result.Output.config_relevant | Should -BeExactly 'false'
         $result.Output.fresh_build_required | Should -BeExactly 'false'
+        $result.Output.mssql_template_relevant | Should -BeExactly 'false'
+    }
+
+    It 'selects only the MSSQL template checks for a DMS producer change to <Path>' -ForEach @(
+        @{ Path = 'src/dms/Dockerfile' }
+        @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs' }
+        @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend.External/MssqlDocumentCachePhysicalSchema.cs' }
+        @{ Path = 'src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/MssqlDatabaseProvisioner.cs' }
+    ) {
+        $result = Invoke-ConfigDetection -ChangedFile @($Path)
+        $result.ExitCode | Should -Be 0 -Because $result.Diagnostics
+        $result.Output.config_relevant | Should -BeExactly 'false'
+        $result.Output.fresh_build_required | Should -BeExactly 'false'
+        $result.Output.mssql_template_relevant | Should -BeExactly 'true'
     }
 
     It 'retains fresh image detection for <Path>' -ForEach @(
@@ -164,7 +178,6 @@ bash "$CLASSIFIER"
         @{ Job = 'verify-security-metadata-tools' }
         @{ Job = 'run-unit-tests' }
         @{ Job = 'run-e2e-tests' }
-        @{ Job = 'build-cms-mssql-templates' }
     ) {
         $block = Get-JobBlock $Job
         $block | Should -Match '(?m)^    needs: detect-fresh-build-changes$'
@@ -216,6 +229,7 @@ bash "$CLASSIFIER"
 
     It 'requires both native same-run MSSQL package builds before exercising live CMS restore' {
         $producer = Get-JobBlock 'build-cms-mssql-templates'
+        $producer | Should -Match '(?m)^    needs: detect-fresh-build-changes$'
         $producer | Should -Match 'kind: \[Minimal, Populated\]'
         $producer | Should -Match 'bootstrap-local-dms\.ps1 -DatabaseEngine mssql'
         $producer | Should -Match 'Build-TemplateNuGetPackage'
@@ -223,7 +237,10 @@ bash "$CLASSIFIER"
 
         $consumer = Get-JobBlock 'run-dms-provisioning-integration-tests-mssql'
         $consumer | Should -Match 'needs: \[detect-fresh-build-changes, build-cms-mssql-templates\]'
-        $consumer | Should -Match "github.event_name != 'pull_request' \|\|\s+needs.detect-fresh-build-changes.outputs.config_relevant == 'true'"
+        foreach ($job in @($producer, $consumer)) {
+            $job | Should -Match "github.event_name != 'pull_request' \|\|\s+needs.detect-fresh-build-changes.outputs.config_relevant == 'true' \|\|\s+needs.detect-fresh-build-changes.outputs.mssql_template_relevant == 'true'"
+        }
+        (Get-JobBlock 'config-ci-gate') | Should -Match '(?m)^      - build-cms-mssql-templates$'
         $consumer | Should -Match 'pattern: cms-mssql-\*-template'
         $consumer | Should -Match 'Get-FileHash -Algorithm SHA256 .+\.Hash -cne \$expected'
         $consumer | Should -Match 'foreach \(\$kind in "Minimal", "Populated"\)'

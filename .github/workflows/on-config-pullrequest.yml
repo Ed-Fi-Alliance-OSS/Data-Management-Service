@@ -56,6 +56,8 @@ jobs:
       # jobs gate on this so that a PR touching only unrelated areas (e.g. DMS-only) skips the
       # config suite while this workflow still runs and reports config-ci-gate.
       config_relevant: ${{ steps.detect.outputs.config_relevant }}
+      # DMS producer changes can affect the native template consumed by the MSSQL CMS lane.
+      mssql_template_relevant: ${{ steps.detect.outputs.mssql_template_relevant }}
       # Registry reference for the shared Config image build cache. Computed once here because
       # a container registry reference must be lowercase and the expression language has no
       # lowercase function. The E2E jobs consume it; fresh-rebuild-docker-image does not,
@@ -399,7 +401,8 @@ jobs:
     needs: detect-fresh-build-changes
     if: >-
       github.event_name != 'pull_request' ||
-      needs.detect-fresh-build-changes.outputs.config_relevant == 'true'
+      needs.detect-fresh-build-changes.outputs.config_relevant == 'true' ||
+      needs.detect-fresh-build-changes.outputs.mssql_template_relevant == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -583,7 +586,8 @@ jobs:
     needs: [detect-fresh-build-changes, build-cms-mssql-templates]
     if: >-
       github.event_name != 'pull_request' ||
-      needs.detect-fresh-build-changes.outputs.config_relevant == 'true'
+      needs.detect-fresh-build-changes.outputs.config_relevant == 'true' ||
+      needs.detect-fresh-build-changes.outputs.mssql_template_relevant == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     defaults:
