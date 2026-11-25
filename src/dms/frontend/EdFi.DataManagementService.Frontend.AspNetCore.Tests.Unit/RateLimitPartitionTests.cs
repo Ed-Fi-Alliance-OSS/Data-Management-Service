@@ -1081,15 +1081,13 @@ internal sealed class RecordingValidatorLogger : ILogger<JwtValidationService>
         Func<TState, Exception?, string> formatter
     ) => _entries.Enqueue((logLevel, formatter(state, exception)));
 
-    /// <summary>Replaces the validation service with the production one, logging to this recorder.</summary>
-    public void ReplaceValidationService(IServiceCollection services) =>
-        services.Replace(
-            ServiceDescriptor.Singleton<IJwtValidationService>(provider => new JwtValidationService(
-                provider.GetRequiredService<IConfigurationManager<OpenIdConnectConfiguration>>(),
-                provider.GetRequiredService<IOptions<JwtAuthenticationOptions>>(),
-                this
-            ))
-        );
+    /// <summary>
+    /// Registers this recorder as the validation service's logger. The closed registration takes
+    /// precedence over the open generic logger, and production's own validation service
+    /// registration, lifetime included, is left untouched.
+    /// </summary>
+    public void RegisterAsValidatorLogger(IServiceCollection services) =>
+        services.AddSingleton<ILogger<JwtValidationService>>(this);
 }
 
 /// <summary>
@@ -1107,7 +1105,7 @@ public class Given_The_Rate_Limiter_Resolving_Rejected_Tokens : RateLimitAuthHos
     protected override void ConfigureServices(IServiceCollection services)
     {
         base.ConfigureServices(services);
-        _validatorLogger.ReplaceValidationService(services);
+        _validatorLogger.RegisterAsValidatorLogger(services);
     }
 
     [TestCase(TokenFlaw.ForeignSigningKey, "10.70.0.1", "forged-debug-target")]
@@ -1170,7 +1168,7 @@ public abstract class ValidationAcrossTheLimiterAndAuthorizationFixture : RateLi
     protected override void ConfigureServices(IServiceCollection services)
     {
         base.ConfigureServices(services);
-        _validatorLogger.ReplaceValidationService(services);
+        _validatorLogger.RegisterAsValidatorLogger(services);
     }
 
     [Test]
