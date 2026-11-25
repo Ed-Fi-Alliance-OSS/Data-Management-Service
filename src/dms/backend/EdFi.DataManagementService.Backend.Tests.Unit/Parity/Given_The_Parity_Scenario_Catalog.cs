@@ -102,6 +102,22 @@ public class Given_The_Parity_Scenario_Catalog
         "Api/CompactDescriptorHistory/CustomViewLiveSeek",
         "Api/CompactDescriptorHistory/CustomViewTombstoneProbe",
         "Api/CaseVariantIdentity/ResolvesCaseVariantPostByIdentityCollation",
+        "Api/IdentificationCodeQueries/SameElementSchools",
+        "Api/IdentificationCodeQueries/OneResultPerResource",
+        "Api/IdentificationCodeQueries/StaffAssigningOrganization",
+        "Api/IdentificationCodeQueries/StudentEducationOrganizationAssociations",
+        "Api/IdentificationCodeQueries/UnresolvedDescriptor",
+        "Api/IdentificationCodeQueries/DescriptorWithoutFragment",
+        "Api/IdentificationCodeQueries/NulDescriptor",
+        "Api/IdentificationCodeQueries/CourseTranscriptRootPrecedence",
+        "Api/IdentificationCodeQueries/CursorWalk",
+        "Api/IdentificationCodeQueries/Partitions",
+        "Api/IdentificationCodeQueries/ChangeVersionWindow",
+        "Api/IdentificationCodeQueries/NonQualifyingWarning",
+        "Api/IdentificationCodeQueries/ServedMetadata",
+        "Api/IdentificationCodeQueries/ProfileHiddenCollection",
+        "Api/IdentificationCodeQueries/ProfileDocument",
+        "Api/IdentificationCodeQueries/DocumentCachePageHit",
     ];
 
     private static readonly string[] ExpectedProfileIds =

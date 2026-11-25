@@ -409,7 +409,109 @@ public static partial class ParityScenarioCatalog
                 "SQL Server identity text columns use the case-insensitive SQL_Latin1_General_CP1_CI_AS collation, so the natural-key capture finds the stored document and the identity-stability guard rebinds the CI-equal value; PostgreSQL identity text compares ordinally, so the case variant is a different identity."
             )
         ),
+        IdentificationCode(
+            "SameElementSchools",
+            "School identification-code filters match on one collection element, case-insensitively by name, with exact items, Total-Count and no ignored-parameter warning.",
+            "It_filters_schools_on_one_collection_element"
+        ),
+        IdentificationCode(
+            "OneResultPerResource",
+            "A school matched by two collection elements is returned and counted once.",
+            "It_returns_a_school_once_when_several_elements_match"
+        ),
+        IdentificationCode(
+            "StaffAssigningOrganization",
+            "Staff filters by assigningOrganizationIdentificationCode alone and with a code on the same element.",
+            "It_filters_staffs_by_assigning_organization_alone_and_with_a_code"
+        ),
+        IdentificationCode(
+            "StudentEducationOrganizationAssociations",
+            "StudentEducationOrganizationAssociation filters by code and by code plus system on the same element.",
+            "It_filters_student_education_organization_associations_by_code_and_system"
+        ),
+        IdentificationCode(
+            "UnresolvedDescriptor",
+            "An unresolved well-formed descriptor URI filter answers 200 with an empty page and Total-Count 0.",
+            "It_returns_an_empty_page_for_an_unresolved_descriptor_uri"
+        ),
+        IdentificationCode(
+            "DescriptorWithoutFragment",
+            "A descriptor filter value without '#' is a lookup miss: 200 with an empty page and Total-Count 0.",
+            "It_returns_an_empty_page_for_a_descriptor_value_without_a_fragment"
+        ),
+        IdentificationCode(
+            "NulDescriptor",
+            "A NUL-containing descriptor filter value answers 400 with the DescriptorText message keyed by the item path, also beside an emptying filter and on partitions.",
+            "It_rejects_a_descriptor_value_containing_nul"
+        ),
+        IdentificationCode(
+            "CourseTranscriptRootPrecedence",
+            "courseTranscripts keeps the root meaning of assigningOrganizationIdentificationCode and courseCatalogURL while its two collection names filter the alternative codes.",
+            "It_keeps_the_root_meaning_of_the_course_transcript_collision_names"
+        ),
+        IdentificationCode(
+            "CursorWalk",
+            "A pageToken walk with an identification-code filter returns exactly the filtered set, once each.",
+            "It_walks_only_the_filtered_set_with_page_tokens"
+        ),
+        IdentificationCode(
+            "Partitions",
+            "Partitions with an identification-code filter cover exactly the filtered set and return no token when nothing matches.",
+            "It_partitions_only_the_filtered_set"
+        ),
+        IdentificationCode(
+            "ChangeVersionWindow",
+            "A change-version window combines with an identification-code filter on GET-many.",
+            "It_combines_a_change_version_window_with_the_filter"
+        ),
+        IdentificationCode(
+            "NonQualifyingWarning",
+            "students?identificationCode stays unfiltered and is reported in X-EdFi-Warning, because no collection qualifies.",
+            "It_warns_only_where_no_collection_qualifies"
+        ),
+        IdentificationCode(
+            "ServedMetadata",
+            "The served resources document publishes the accepted identification-code names on GET-many and partitions, each accepted without a warning, and none on students.",
+            "It_serves_metadata_publishing_the_accepted_parameters"
+        ),
+        IdentificationCode(
+            "ProfileHiddenCollection",
+            "A read profile that hides the identificationCodes collection still filters by it and projects the collection out.",
+            "It_filters_through_a_profile_that_hides_the_collection",
+            "IdentificationCodeQueries_With_A_Profile"
+        ),
+        IdentificationCode(
+            "ProfileDocument",
+            "The profile document hides the collection from the readable schema and still publishes the identification-code parameters.",
+            "It_serves_the_parameters_in_the_profile_document",
+            "IdentificationCodeQueries_With_A_Profile"
+        ),
+        IdentificationCode(
+            "DocumentCachePageHit",
+            "With cache read acceleration, a filtered GET-many is a cache page hit with no miss or fallback, matching the relational cursor walk; the unfiltered collection returns more.",
+            "It_serves_a_filtered_page_from_the_cache",
+            "IdentificationCodeQueries_From_The_DocumentCache"
+        ),
     ];
+
+    /// <summary>
+    /// An identification-code query row, covered by mirrored fixtures declared in the
+    /// <c>Given_{Engine}_IdentificationCodeQueries.cs</c> wrapper files.
+    /// </summary>
+    private static ParityScenario IdentificationCode(
+        string name,
+        string contract,
+        string method,
+        string fixtureSuffix = "IdentificationCodeQueries"
+    ) =>
+        Api(
+            $"Api/IdentificationCodeQueries/{name}",
+            contract,
+            $"IdentificationCodeQueryScenario.{method}",
+            method,
+            fixtureSuffix: fixtureSuffix,
+            fileSuffix: "IdentificationCodeQueries"
+        );
 
     private static ParityScenario Api(
         string id,
@@ -418,7 +520,8 @@ public static partial class ParityScenarioCatalog
         string method,
         bool profiled = false,
         string fixtureSuffix = "",
-        DialectDifference? diff = null
+        DialectDifference? diff = null,
+        string fileSuffix = ""
     )
     {
         string suffix = fixtureSuffix;
@@ -429,6 +532,9 @@ public static partial class ParityScenarioCatalog
         string pgFixture = $"Given_Postgresql_{suffix}";
         string mssqlFixture = $"Given_Mssql_{suffix}";
 
+        // A fixture class that shares its engine's wrapper file with sibling fixtures names that file here.
+        string fileStem = fileSuffix.Length == 0 ? suffix : fileSuffix;
+
         return new ParityScenario
         {
             Id = id,
@@ -436,8 +542,8 @@ public static partial class ParityScenarioCatalog
             BehavioralContract = contract,
             SharedEntryPoint = sharedEntryPoint,
             Boundary = ProductionBoundary.HttpPipeline,
-            PgsqlLocations = [new ScenarioLocation($"{pgFixture}.cs", pgFixture, [method])],
-            MssqlLocations = [new ScenarioLocation($"{mssqlFixture}.cs", mssqlFixture, [method])],
+            PgsqlLocations = [new ScenarioLocation($"Given_Postgresql_{fileStem}.cs", pgFixture, [method])],
+            MssqlLocations = [new ScenarioLocation($"Given_Mssql_{fileStem}.cs", mssqlFixture, [method])],
             PgsqlCoverage = EngineCoverage.Covered,
             MssqlCoverage = EngineCoverage.Covered,
             Classification = ParityClassification.Both,

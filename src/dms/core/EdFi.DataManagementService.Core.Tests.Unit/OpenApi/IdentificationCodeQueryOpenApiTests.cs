@@ -440,22 +440,14 @@ public class Given_a_profile_document_hiding_the_School_identification_codes
         _unprofiled = AssembleResourceDocument(root);
 
         ContentTypeDefinition everything = new(MemberSelection.IncludeAll, [], [], [], []);
+
+        // IncludeOnly without the collection hides it both here and in response projection, as the
+        // API integration profile does.
         ContentTypeDefinition withoutIdentificationCodes = new(
-            MemberSelection.ExcludeOnly,
+            MemberSelection.IncludeOnly,
+            [new PropertyRule("nameOfInstitution")],
             [],
             [],
-            [
-                new CollectionRule(
-                    "identificationCodes",
-                    MemberSelection.IncludeAll,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null
-                ),
-            ],
             []
         );
 
@@ -478,7 +470,7 @@ public class Given_a_profile_document_hiding_the_School_identification_codes
             "properties"
         ]!.AsObject();
 
-        readableProperties.Should().ContainKey("schoolId");
+        readableProperties.Should().ContainKey("nameOfInstitution");
         readableProperties.Should().NotContainKey("identificationCodes");
     }
 
