@@ -63,9 +63,10 @@ EXISTS (SELECT 1 FROM "edfi"."SchoolIdentificationCode" ci
   `totalCount`, cursor pages under either anchor, the unpaged candidate relation behind
   `/partitions`, and document-cache candidate selection all apply it, beside change-version windows
   and every authorization strategy.
-- **No DDL change.** The correlation column leads each collection table's existing unique key, so
-  the per-resource probe is indexed. There is no index on `IdentificationCode` alone; a filter on
-  the code without a selective root predicate scans the collection table.
+- **No DDL change.** The correlation column leads each collection table's existing unique key,
+  which supports indexed per-resource probes; the optimizer still chooses the access strategy.
+  There is no index on `IdentificationCode` alone, so a filter on the code without a selective
+  root predicate may scan the collection table.
 
 Values are matched exactly with `=`; string comparison follows the column collation, as for root
 string filters. Descriptor values are resolved in the same batched lookup as root descriptor
