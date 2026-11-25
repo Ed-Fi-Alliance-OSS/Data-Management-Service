@@ -131,30 +131,7 @@ public class Given_The_Authoritative_Ds52_And_Sample_Identification_Code_Query_C
     [Test]
     public void It_keeps_every_resource_support_state_and_upstream_field_compilation()
     {
-        foreach (var resource in _resources)
-        {
-            var withoutDerivedFields = _compiler.Compile(
-                resource with
-                {
-                    IdentificationCodeQueryFieldMappingsByQueryField =
-                        new Dictionary<string, RelationalIdentificationCodeQueryFieldMapping>(),
-                }
-            );
-            var withDerivedFields = _compiler.Compile(resource);
-            var resourceName =
-                $"{resource.RelationalModel.Resource.ProjectName}.{resource.RelationalModel.Resource.ResourceName}";
-
-            withDerivedFields.Support.Should().Be(withoutDerivedFields.Support, resourceName);
-            withDerivedFields
-                .UnsupportedFieldsByQueryField.Should()
-                .BeEquivalentTo(withoutDerivedFields.UnsupportedFieldsByQueryField, resourceName);
-            withDerivedFields
-                .SupportedFieldsByQueryField.Where(field =>
-                    !resource.IdentificationCodeQueryFieldMappingsByQueryField.ContainsKey(field.Key)
-                )
-                .Should()
-                .BeEquivalentTo(withoutDerivedFields.SupportedFieldsByQueryField, resourceName);
-        }
+        IdentificationCodeCapabilityAssertions.ShouldKeepSupportAndUpstreamFields(_compiler, _resources);
     }
 
     [Test]
@@ -280,4 +257,123 @@ public class Given_The_Authoritative_Ds52_And_Sample_Identification_Code_Query_C
         );
 
     private static JsonPathExpression Path(string canonical) => JsonPathExpressionCompiler.Compile(canonical);
+}
+
+/// <summary>
+/// Identification-code query fields compile to collection-table targets over the packaged Data
+/// Standard 6.1 model, which moved most identification codes out of collections, without changing any
+/// resource's existing support.
+/// </summary>
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_The_Packaged_Ds61_Identification_Code_Query_Capability(SqlDialect dialect)
+{
+    private readonly RelationalQueryCapabilityCompiler _compiler = new();
+    private IReadOnlyList<ConcreteResourceModel> _resources = null!;
+
+    [OneTimeSetUp]
+    public void Setup()
+    {
+        // Staged into the test output by StageDataStandard61ApiSchema in the project file.
+        var apiSchemaPath = System.IO.Path.Combine(
+            TestContext.CurrentContext.TestDirectory,
+            "StagedApiSchema",
+            "EdFi.DataStandard61.ApiSchema",
+            "ApiSchema.json"
+        );
+
+        File.Exists(apiSchemaPath)
+            .Should()
+            .BeTrue($"the staged DS 6.1 ApiSchema is missing at {apiSchemaPath}");
+
+        _resources = RuntimePlanFixtureModelSetBuilder
+            .Build([(apiSchemaPath, false)], dialect)
+            .ConcreteResourcesInNameOrder;
+    }
+
+    [Test]
+    public void It_targets_each_derived_field_of_exactly_the_four_qualifying_resources()
+    {
+        _resources
+            .SelectMany(resource =>
+            {
+                var capability = _compiler.Compile(resource);
+
+                return resource.IdentificationCodeQueryFieldMappingsByQueryField.Values.Select(field =>
+                {
+                    var target = (RelationalQueryFieldTarget.CollectionColumn)
+                        capability.SupportedFieldsByQueryField[field.QueryFieldName].Target;
+
+                    resource
+                        .RelationalModel.TablesInDependencyOrder.Single(table =>
+                            table.Table == target.CollectionTable
+                        )
+                        .JsonScope.Canonical.Should()
+                        .Be(field.CollectionPath.Canonical);
+
+                    return $"{resource.RelationalModel.Resource.ResourceName}.{field.QueryFieldName} "
+                        + (target.DescriptorResource?.ResourceName ?? "scalar");
+                });
+            })
+            .Should()
+            .BeEquivalentTo(
+                "Assessment.assessmentIdentificationSystemDescriptor AssessmentIdentificationSystemDescriptor",
+                "Assessment.assigningOrganizationIdentificationCode scalar",
+                "Assessment.identificationCode scalar",
+                "Course.assigningOrganizationIdentificationCode scalar",
+                "Course.courseCatalogURL scalar",
+                "Course.courseIdentificationSystemDescriptor CourseIdentificationSystemDescriptor",
+                "Course.identificationCode scalar",
+                "CourseTranscript.courseIdentificationSystemDescriptor CourseIdentificationSystemDescriptor",
+                "CourseTranscript.identificationCode scalar",
+                "LearningStandard.contentStandardName scalar",
+                "LearningStandard.identificationCode scalar"
+            );
+    }
+
+    [Test]
+    public void It_keeps_every_resource_support_state_and_upstream_field_compilation()
+    {
+        IdentificationCodeCapabilityAssertions.ShouldKeepSupportAndUpstreamFields(_compiler, _resources);
+    }
+}
+
+/// <summary>
+/// Compiling a resource with its identification-code query fields must leave its support state, its
+/// unsupported fields and its upstream supported fields exactly as compiling it without them.
+/// </summary>
+file static class IdentificationCodeCapabilityAssertions
+{
+    public static void ShouldKeepSupportAndUpstreamFields(
+        RelationalQueryCapabilityCompiler compiler,
+        IReadOnlyList<ConcreteResourceModel> resources
+    )
+    {
+        resources.Should().NotBeEmpty();
+
+        foreach (var resource in resources)
+        {
+            var withoutDerivedFields = compiler.Compile(
+                resource with
+                {
+                    IdentificationCodeQueryFieldMappingsByQueryField =
+                        new Dictionary<string, RelationalIdentificationCodeQueryFieldMapping>(),
+                }
+            );
+            var withDerivedFields = compiler.Compile(resource);
+            var resourceName =
+                $"{resource.RelationalModel.Resource.ProjectName}.{resource.RelationalModel.Resource.ResourceName}";
+
+            withDerivedFields.Support.Should().Be(withoutDerivedFields.Support, resourceName);
+            withDerivedFields
+                .UnsupportedFieldsByQueryField.Should()
+                .BeEquivalentTo(withoutDerivedFields.UnsupportedFieldsByQueryField, resourceName);
+            withDerivedFields
+                .SupportedFieldsByQueryField.Where(field =>
+                    !resource.IdentificationCodeQueryFieldMappingsByQueryField.ContainsKey(field.Key)
+                )
+                .Should()
+                .BeEquivalentTo(withoutDerivedFields.SupportedFieldsByQueryField, resourceName);
+        }
+    }
 }

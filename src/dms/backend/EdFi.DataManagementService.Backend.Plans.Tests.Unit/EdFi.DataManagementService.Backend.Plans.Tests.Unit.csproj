@@ -20,10 +20,47 @@
         <PackageReference Include="NUnit" />
         <PackageReference Include="NUnit3TestAdapter" />
         <PackageReference Include="Microsoft.CodeAnalysis" />
+        <!-- Restored only so StageDataStandard61ApiSchema below can copy its packaged ApiSchema.json into
+             this project's output. Assets are excluded and no path property is generated, so nothing is
+             bundled into a staged ApiSchema workspace; the fixtures read the copy that travels with the
+             test output, because CI runs these tests on a runner that never restores. -->
+        <PackageReference Include="EdFi.DataStandard61.ApiSchema" ExcludeAssets="all" />
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend\EdFi.DataManagementService.Backend.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Plans\EdFi.DataManagementService.Backend.Plans.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Tests.Common\EdFi.DataManagementService.Backend.Tests.Common.csproj" />
     </ItemGroup>
+    <!-- Copies the centrally pinned EdFi.DataStandard61.ApiSchema package's ApiSchema.json to
+         StagedApiSchema/EdFi.DataStandard61.ApiSchema/ApiSchema.json in the output. -->
+    <Target
+        Name="StageDataStandard61ApiSchema"
+        BeforeTargets="GetCopyToOutputDirectoryItems;GetCopyToPublishDirectoryItems;ComputeFilesToPublish"
+    >
+        <ItemGroup>
+            <_DataStandard61PackageVersion
+                Include="@(PackageVersion)"
+                Condition="'%(Identity)' == 'EdFi.DataStandard61.ApiSchema'"
+            />
+        </ItemGroup>
+        <PropertyGroup>
+            <_DataStandard61ApiSchemaPath>$(NuGetPackageRoot)edfi.datastandard61.apischema/@(_DataStandard61PackageVersion->'%(Version)')/contentFiles/any/any/ApiSchema/ApiSchema.json</_DataStandard61ApiSchemaPath>
+        </PropertyGroup>
+        <Error
+            Condition="'@(_DataStandard61PackageVersion->Count())' != '1'"
+            Text="EdFi.DataStandard61.ApiSchema must have exactly one centrally pinned PackageVersion."
+        />
+        <Error
+            Condition="!Exists('$(_DataStandard61ApiSchemaPath)')"
+            Text="Packaged ApiSchema not found for 'EdFi.DataStandard61.ApiSchema': $(_DataStandard61ApiSchemaPath)"
+        />
+        <ItemGroup>
+            <ContentWithTargetPath Include="$(_DataStandard61ApiSchemaPath)">
+                <TargetPath>StagedApiSchema/EdFi.DataStandard61.ApiSchema/ApiSchema.json</TargetPath>
+                <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+                <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+                <Visible>false</Visible>
+            </ContentWithTargetPath>
+        </ItemGroup>
+    </Target>
 </Project>
