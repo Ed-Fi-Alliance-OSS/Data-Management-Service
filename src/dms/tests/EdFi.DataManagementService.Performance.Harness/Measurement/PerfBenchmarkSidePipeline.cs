@@ -416,9 +416,8 @@ public static class PerfBenchmarkSidePipeline
     /// <summary>
     /// Forces a checkpoint right before the PostgreSQL write phase. A checkpoint resets the
     /// server's checkpoint_timeout timer, so no timed checkpoint can start during the few
-    /// seconds of writes. Without it, whether the timed checkpoint overlapped the write window
-    /// decided the side's write p50 (about 2 ms per request slower while it ran: commits wait
-    /// on its fsyncs and WAL recycling).
+    /// seconds of writes; a running checkpoint slows every commit, which waits on its fsyncs
+    /// and WAL recycling.
     /// </summary>
     private static async Task CheckpointPostgresqlAsync(DbConnection connection)
     {

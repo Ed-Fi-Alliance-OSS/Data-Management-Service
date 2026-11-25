@@ -138,9 +138,9 @@ public class Given_A_Median_Ratio_At_The_Threshold_Boundary
 [TestFixture]
 public class Given_P95_Warnings_Disabled
 {
-    // The profile's 300 measured reads: 280 at 10 ms and 20 at 20 ms, so p50 is 10 ms and the
-    // nearest-rank p95 (rank 285) is 20 ms.
-    internal static double[] TailHeavy => [.. Enumerable.Repeat(10.0, 280), .. Enumerable.Repeat(20.0, 20)];
+    // The profile's 60 measured reads: 56 at 10 ms and 4 at 20 ms, so p50 is 10 ms and the
+    // nearest-rank p95 (rank 57) is 20 ms.
+    internal static double[] TailHeavy => [.. Enumerable.Repeat(10.0, 56), .. Enumerable.Repeat(20.0, 4)];
 
     [Test]
     public void It_reports_the_p95_ratio_without_a_warning()
@@ -1209,7 +1209,7 @@ public class Given_An_Injected_Candidate
                             {
                                 AffectedRequests = PerfBenchmarkScenarios.AllIds.ToDictionary(
                                     id => id,
-                                    id => id == ComparisonBuilder.Write ? 219 : 0
+                                    id => id == ComparisonBuilder.Write ? 1199 : 0
                                 ),
                             },
                         },
@@ -1217,7 +1217,7 @@ public class Given_An_Injected_Candidate
             )
             .Compare()
             .ShouldBeInvalidBecause(
-                "injection affected 219 student-put-collection-update requests; expected 220"
+                "injection affected 1199 student-put-collection-update requests; expected 1200"
             );
     }
 }
