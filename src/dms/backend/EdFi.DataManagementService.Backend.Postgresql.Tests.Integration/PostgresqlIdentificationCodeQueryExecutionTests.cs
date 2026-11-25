@@ -394,8 +394,11 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
     [Test]
     public async Task It_selects_the_same_filtered_set_in_every_paging_mode_and_partition_replay_inside_a_change_version_window()
     {
-        var contentVersions = await ReadSchoolContentVersionsAsync();
-        var window = new ChangeVersionRange(contentVersions[BravoUuid], contentVersions[FoxtrotUuid]);
+        var anchors = await ReadSchoolAnchorsAsync();
+        var window = new ChangeVersionRange(
+            anchors[BravoUuid].ContentVersion,
+            anchors[FoxtrotUuid].ContentVersion
+        );
         QueryElement[] filter =
         [
             Element("educationOrganizationIdentificationSystemDescriptor", SchoolSystemPath, Nces),
@@ -512,9 +515,9 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
         IReadOnlyList<Guid> expectedInDocumentIdOrder
     )
     {
-        var contentVersions = await ReadSchoolContentVersionsAsync();
+        var anchors = await ReadSchoolAnchorsAsync();
         var expectedInContentVersionOrder = expectedInDocumentIdOrder
-            .OrderBy(uuid => contentVersions[uuid])
+            .OrderBy(uuid => anchors[uuid].ContentVersion)
             .ToArray();
 
         // Offset pages of one document each, with the count on every page.
@@ -535,10 +538,24 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
         (await CursorWalkAsync(filter, window, PageOrderingMode.ContentVersion))
             .Should()
             .Equal(expectedInContentVersionOrder);
-        (await PartitionReplayAsync(filter, window, PageOrderingMode.DocumentId))
+        (
+            await PartitionReplayAsync(
+                filter,
+                window,
+                PageOrderingMode.DocumentId,
+                [.. expectedInDocumentIdOrder.Select(uuid => anchors[uuid].DocumentId).Order()]
+            )
+        )
             .Should()
             .Equal(expectedInDocumentIdOrder);
-        (await PartitionReplayAsync(filter, window, PageOrderingMode.ContentVersion))
+        (
+            await PartitionReplayAsync(
+                filter,
+                window,
+                PageOrderingMode.ContentVersion,
+                [.. expectedInDocumentIdOrder.Select(uuid => anchors[uuid].ContentVersion).Order()]
+            )
+        )
             .Should()
             .Equal(expectedInContentVersionOrder);
     }
@@ -581,15 +598,35 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
     }
 
     /// <summary>
-    /// Computes partition boundaries over the filtered set, then replays every partition as one cursor
-    /// page in the same anchor, concatenating the pages in partition order.
+    /// Computes partition boundaries over the filtered set and checks them against the expected starts,
+    /// then replays every partition as one cursor page in the same anchor, concatenating the pages in
+    /// partition order.
     /// </summary>
+    /// <remarks>
+    /// The replay alone cannot show the boundaries were calculated over the filtered set: boundaries
+    /// over every school still replay to the expected documents, because each page reapplies the filter
+    /// and window. The boundaries are therefore checked directly. Every expected set here is smaller than
+    /// the requested partition count, so with a minimum partition size of one each filtered candidate
+    /// starts its own partition, and the expected starts are exactly the persisted anchors of the
+    /// expected documents.
+    /// </remarks>
+    /// <param name="expectedAscendingStarts">
+    /// The persisted anchor values of the expected documents, ascending, read independently of the
+    /// partition result.
+    /// </param>
     private async Task<IReadOnlyList<Guid>> PartitionReplayAsync(
         QueryElement[] filter,
         ChangeVersionRange? window,
-        PageOrderingMode orderingMode
+        PageOrderingMode orderingMode,
+        IReadOnlyList<long> expectedAscendingStarts
     )
     {
+        const int RequestedPartitionCount = 5;
+
+        expectedAscendingStarts
+            .Count.Should()
+            .BeLessThan(RequestedPartitionCount, "each expected document must start its own partition");
+
         await using var scope = _serviceProvider.CreateAsyncScope();
         SetSelectedInstance(scope.ServiceProvider);
 
@@ -602,7 +639,7 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
                     MappingSet: _mappingSet,
                     QueryElements: filter,
                     AuthorizationStrategyEvaluators: [],
-                    RequestedPartitionCount: 5,
+                    RequestedPartitionCount: RequestedPartitionCount,
                     MinimumPartitionSize: 1,
                     TraceId: new TraceId("pg-ident-code-partitions"),
                     PageOrderingMode: orderingMode,
@@ -611,6 +648,19 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
             );
 
         var ranges = partitions.Should().BeOfType<PartitionResult.PartitionSuccess>().Subject.Ranges;
+
+        ranges
+            .Select(static range => range.InclusiveMinimum)
+            .Should()
+            .Equal(expectedAscendingStarts, "boundaries are calculated over the filtered, windowed set");
+        ranges
+            .Select(static range => range.InclusiveMaximum)
+            .Should()
+            .Equal(
+                [.. expectedAscendingStarts.Skip(1).Select(static nextStart => nextStart - 1), long.MaxValue],
+                "each range closes before the next start and the last is unbounded above"
+            );
+
         List<Guid> replayed = [];
 
         foreach (var range in ranges)
@@ -753,11 +803,11 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
             )),
         ];
 
-    private async Task<Dictionary<Guid, long>> ReadSchoolContentVersionsAsync()
+    private async Task<Dictionary<Guid, (long DocumentId, long ContentVersion)>> ReadSchoolAnchorsAsync()
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT doc."DocumentUuid", school."ContentVersion"
+            SELECT doc."DocumentUuid", school."DocumentId", school."ContentVersion"
             FROM "edfi"."School" school
             INNER JOIN "dms"."Document" doc ON doc."DocumentId" = school."DocumentId";
             """
@@ -765,7 +815,11 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
 
         return rows.ToDictionary(
             static row => (Guid)row["DocumentUuid"]!,
-            static row => Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture)
+            static row =>
+                (
+                    Convert.ToInt64(row["DocumentId"], CultureInfo.InvariantCulture),
+                    Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture)
+                )
         );
     }
 
