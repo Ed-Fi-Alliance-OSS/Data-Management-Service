@@ -558,6 +558,11 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
                 VerifyAttestationStep + "." + exception.TrustRefusal,
                 exception
             ),
+            TemplatePackageDefect.ManifestInvalid
+                when exception.InnerException is RestoreManifestException { IsLegacyMssqlTemplate: true } =>
+                DmsProvisioningFailure.ForLegacyMssqlTemplate(
+                    DmsProvisioningDiagnostic.From(exception, ReadPackageStep + ".LegacyMssqlTemplate")
+                ),
             TemplatePackageDefect.PackageInvalid or TemplatePackageDefect.ManifestInvalid => Failure(
                 DmsProvisioningFailureCode.ManifestInvalid,
                 ReadPackageStep,
@@ -687,8 +692,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         CancellationToken cancellationToken
     )
     {
-        string path =
-            _options.TrustPolicyPath
+        string path = _options.TrustPolicyPath
             ?? throw new InvalidOperationException(
                 "DmsDataStoreProvisioning:TrustPolicyPath is not configured; static validation admits no such state."
             );
@@ -831,8 +835,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         string packageId
     )
     {
-        DmsDataStoreProvisioningOptions.CompatibilityExpectations compatibility =
-            _options.Compatibility
+        DmsDataStoreProvisioningOptions.CompatibilityExpectations compatibility = _options.Compatibility
             ?? throw new InvalidOperationException(
                 "DmsDataStoreProvisioning:Compatibility is not configured; static validation admits no such state."
             );

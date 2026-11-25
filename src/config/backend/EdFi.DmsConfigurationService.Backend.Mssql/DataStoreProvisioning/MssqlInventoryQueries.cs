@@ -154,7 +154,7 @@ internal static class MssqlInventoryQueries
     private const string SourceIdentityColumns =
         "CONVERT(nvarchar(36), CONVERT(nvarchar(max), [SourceIdentity])), CONVERT(bit, CASE WHEN DATALENGTH(CONVERT(nvarchar(max), [SourceIdentity])) > 72 THEN 1 ELSE 0 END)";
 
-    /// <summary>Reads independent marker and object-check facts using the shared SQL Server catalog rules.</summary>
+    /// <summary>Reads the marker, object check and all DocumentJson carriers in one catalog batch.</summary>
     public static string DocumentCachePhysicalFacts { get; } = ReadDocumentCachePhysicalFacts();
 
     private static string ReadDocumentCachePhysicalFacts()
@@ -163,34 +163,16 @@ internal static class MssqlInventoryQueries
             "MssqlDocumentCacheCatalog.sql"
         ) ?? throw new InvalidOperationException("Missing SQL Server DocumentCache catalog resource.");
         using var reader = new StreamReader(stream);
-        return "SET NOCOUNT ON;\n"
+        return "SET NOCOUNT ON; DECLARE @require_native_document_cache bit = 0;\n"
             + reader.ReadToEnd()
-            + "\nSELECT @physical_marker_valid, @object_check_valid;";
-    }
+            + """
 
-    /// <summary>
-    /// Every <c>DocumentJson</c> carrier in the <c>dms</c> schema with its type and a bit identifying
-    /// the exactly named column on the cache user table. Mirrors <c>Get-DocumentJsonColumnTypeQuerySql</c>.
-    /// </summary>
-    public const string DocumentJsonColumns = """
-        SET NOCOUNT ON;
-        SELECT o.name,
-            CASE WHEN t.is_user_defined = 1 OR c.user_type_id <> c.system_type_id THEN N'user-defined:' ELSE N'' END
-            + t.name + CASE
-                WHEN t.name IN (N'nvarchar', N'varchar', N'varbinary') AND c.max_length = -1 THEN '(max)'
-                WHEN t.name IN (N'nvarchar', N'nchar') THEN '(' + CONVERT(nvarchar(11), c.max_length / 2) + ')'
-                WHEN t.name IN (N'varchar', N'char', N'varbinary', N'binary') THEN '(' + CONVERT(nvarchar(11), c.max_length) + ')'
-                ELSE '' END,
-            CONVERT(bit, CASE WHEN o.type = 'U' AND s.name COLLATE Latin1_General_100_BIN2 = N'dms'
-                AND o.name COLLATE Latin1_General_100_BIN2 = N'DocumentCache'
-                AND c.name COLLATE Latin1_General_100_BIN2 = N'DocumentJson' THEN 1 ELSE 0 END)
-        FROM sys.columns c
-        JOIN sys.types t ON t.user_type_id = c.user_type_id
-        JOIN sys.objects o ON o.object_id = c.object_id
-        JOIN sys.schemas s ON s.schema_id = o.schema_id
-        WHERE s.name = N'dms' AND c.name = N'DocumentJson'
-        ORDER BY o.name;
-        """;
+                SELECT @physical_marker_valid, @object_check_valid, table_name, column_type, is_cache_column
+                FROM (VALUES (1)) AS facts(dummy)
+                LEFT JOIN @document_json_columns ON 1 = 1
+                ORDER BY table_name;
+                """;
+    }
 
     /// <summary>The live server's major version (<c>17</c> for SQL Server 2025).</summary>
     public const string ProductMajorVersion = "SELECT CONVERT(int, SERVERPROPERTY('ProductMajorVersion'));";

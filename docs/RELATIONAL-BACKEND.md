@@ -515,7 +515,7 @@ Record the tool, worker and SQL Server versions with that release evidence.
 
 Before a SQL Server template cutover, build and verify Minimal and Populated packages for
 Data Standard `5.2.0` and `6.1.0` from the same reviewed release. Keep package publication
-disabled during qualification. Inspect the exact packages and require their attested
+disabled during qualification. Inspect the exact packages and require their
 contents to include a restore manifest reporting format 2, `documentJsonColumnType: "json"`, and
 `mssqlPhysicalSchemaVersion: "v2"`; verify source and restored catalogs and the authenticated
 descriptor probe for both template kinds, plus the populated schools probe. Use the matching
@@ -535,7 +535,9 @@ matching restore consumers. After all four legs pass and the CDC release decisio
 recorded, release maintainers end the first-publication hold by setting
 `MSSQL_TEMPLATE_V2_PUBLICATION_ENABLED=true` and enabling attestation signing with
 `TEMPLATE_ATTESTATION_SIGNING_ENABLED=true`. Main and version-tag pushes still build and
-verify packages during the hold. Once lifted, they resume normal publishing through
+verify packages during the hold. An explicit publication dispatch from main or a version
+tag reports a blocked request if either setting is disabled. Once the hold is lifted,
+pushes resume normal publishing through
 the protected signing and publishing environments. Stable release events promote the
 already published tag version with its companion attestation independently of main's
 current revision.
@@ -574,6 +576,9 @@ requests remain read-only.
 If a document exceeds a SQL Server native JSON storage limit, the cache writer rolls back
 that write and leaves its durable projection work pending. Projection can continue with
 other documents, and API reads for the affected document use the relational source.
+An administrative drain reports the affected document and keeps its work pending. Update
+or remove the source document before resuming the command. An online rebuild stays in
+`Rebuilding` until it drains all durable work to completion.
 
 ### Create-only guardrails and reruns
 

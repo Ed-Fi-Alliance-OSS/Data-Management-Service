@@ -66,6 +66,14 @@ public sealed record DmsProvisioningFailure
         return new DmsProvisioningFailure(category, code, entry.Summary, diagnostic);
     }
 
+    internal static DmsProvisioningFailure ForLegacyMssqlTemplate(DmsProvisioningDiagnostic diagnostic) =>
+        new(
+            DefaultCategoryOf(DmsProvisioningFailureCode.ManifestInvalid),
+            DmsProvisioningFailureCode.ManifestInvalid,
+            "The SQL Server template uses the legacy restore manifest. Pin a verified native v2 template and reprovision a fresh SQL Server 2025 or later database using the supported template restore flow.",
+            diagnostic
+        );
+
     internal static DmsProvisioningFailure ForTargetValidation(
         DmsTargetValidation.Invalid invalid,
         string step,

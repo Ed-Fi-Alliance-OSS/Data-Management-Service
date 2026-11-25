@@ -183,6 +183,23 @@ public class Given_A_Mssql_DocumentCacheWriter
         }
     }
 
+    [Test]
+    public async Task It_propagates_an_unrelated_constraint_failure_without_acknowledging_work()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        var source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await _database.ExecuteNonQueryAsync(
+            "ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_CacheTestRejectDocument CHECK (DocumentId < 0);"
+        );
+
+        var write = () => WriteAsync(source, CreateCandidate(source, "valid"));
+        var exception = (await write.Should().ThrowAsync<SqlException>()).Which;
+
+        exception.Number.Should().Be(547);
+        (await ReadWorkRequiredContentVersionAsync(source.DocumentId)).Should().Be(10);
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+    }
+
     [TestCase("[1,2]", 547)]
     [TestCase("42", 13609)]
     [TestCase("{bad", 13609)]

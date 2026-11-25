@@ -24,6 +24,11 @@ on:
         description: "Provenance file name"
         required: true
         type: string
+      attest_and_attach_release_assets:
+        description: "Allow template signing on eligible refs and attach SBOM and provenance to a tagged GitHub release"
+        required: false
+        type: boolean
+        default: true
       publish_package:
         description: "Publish the built populated template package to the Azure Artifacts feed"
         required: false
@@ -334,10 +339,14 @@ jobs:
       # be, because restore consumers refuse an unattested package (fail-closed).
       - name: Report template signing plan
         env:
+          SIGNING_REQUESTED: ${{ inputs.attest_and_attach_release_assets }}
           SIGNING_ELIGIBLE: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
           SIGNING_ENABLED: ${{ vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED == 'true' }}
         run: |
-          if ($env:SIGNING_ELIGIBLE -ne 'true') {
+          if ($env:SIGNING_REQUESTED -ne 'true') {
+            Write-Host "::notice title=Unattested template build::This verification run skips template signing. The package is UNATTESTED."
+          }
+          elseif ($env:SIGNING_ELIGIBLE -ne 'true') {
             Write-Host "::notice title=Unattested template build::Only main and v*.*.* tag runs (never pull requests) sign template packages; this template package will be UNATTESTED and restore consumers will refuse it (fail-closed)."
           }
           elseif ($env:SIGNING_ENABLED -ne 'true') {
@@ -600,7 +609,7 @@ jobs:
   sign-template-package:
     name: Sign Populated Template Package
     needs: build-template
-    if: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED == 'true' }}
+    if: ${{ inputs.attest_and_attach_release_assets && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED == 'true' }}
     environment: template-attestation-signing
     runs-on: ubuntu-latest
     permissions:
@@ -944,7 +953,7 @@ jobs:
     needs:
       - generate-package-sbom
       - generate-package-provenance
-    if: ${{ startsWith(github.ref, 'refs/tags/') }} # Only run on releases
+    if: ${{ inputs.attest_and_attach_release_assets && startsWith(github.ref, 'refs/tags/') }}
     # The tag was validated by the build job this one follows through its needs.
     env:
       RELEASE_REF: ${{ github.ref_name }}

@@ -599,6 +599,15 @@ Describe "Assert-RestoreManifestShape" {
 }
 
 Describe "Read-RestoreManifest" {
+    It "reads the CMS SQL Server fixture and rejects an array-valued inventory name with the same contents" {
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.mssql.json"
+        $manifest = Read-RestoreManifest -DatabaseEngine mssql -Path $fixture
+        $manifest.inventorySha256 | Should -BeExactly ([IO.File]::ReadAllText((Join-Path (Split-Path $fixture) "inventory.sha256")).Trim())
+        $text = [IO.File]::ReadAllText($fixture)
+        $invalid = $text.Replace('"name": "Document"', '"name": ["Document"]')
+        { Read-RestoreManifest -DatabaseEngine mssql -Path $fixture -Content $invalid } | Should -Throw "*name*JSON string*"
+    }
+
     It "retains PostgreSQL format-1 enumeration of empty compatibility and singleton scalar fields" {
         $manifest = New-ValidRestoreManifest -DatabaseEngine postgresql
         $manifest.databaseCompatibilityLevel = @()
@@ -1342,6 +1351,31 @@ Describe "inventory catalog query SQL builders" {
         $mssqlSql | Should -BeLike "*s.name = N'dms' AND c.name = N'DocumentJson'*" -Because "other carriers follow the database's identifier collation"
         $mssqlSql | Should -BeLike "*s.name COLLATE Latin1_General_100_BIN2 = N'dms'*"
         $mssqlSql | Should -Not -BeLike "*OBJECT_ID(*"
+    }
+}
+
+Describe "Get-RestoreDocumentCacheCatalogFact" {
+    It "validates SQL Server marker, check and all carriers from one catalog query" {
+        $calls = [System.Collections.Generic.List[string]]::new()
+        $facts = Get-RestoreDocumentCacheCatalogFact -QueryParameters @{ DatabaseEngine = "mssql"; DatabaseName = "edfi_dms" } -InvokeCatalogQuery {
+            param($parameters, $sql)
+            $parameters.DatabaseName | Should -BeExactly "edfi_dms"
+            $calls.Add($sql)
+            "1|1|DocumentCache|json|1", "1|1|OtherCarrier|json|0"
+        }
+
+        $facts.MssqlPhysicalSchemaVersion | Should -BeExactly "v2"
+        $facts.DocumentJsonColumnType | Should -BeExactly "json"
+        $calls.Count | Should -Be 1
+        $calls[0] | Should -Match 'SELECT CONCAT\(@physical_marker_valid'
+    }
+
+    It "refuses a different carrier type in the combined SQL Server facts" {
+        {
+            Get-RestoreDocumentCacheCatalogFact -QueryParameters @{ DatabaseEngine = "mssql"; DatabaseName = "edfi_dms" } -InvokeCatalogQuery {
+                "1|1|DocumentCache|json|1", "1|1|OtherCarrier|nvarchar(max)|0"
+            }
+        } | Should -Throw "*do not share one physical storage type*"
     }
 }
 

@@ -431,6 +431,38 @@ function ConvertTo-CanonicalJsonStringLiteral {
     return $builder.ToString()
 }
 
+function Assert-RestoreManifestMemberSet {
+    param ($InputObject, [string]$Subject, [string[]]$Allowed)
+
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        $names = $InputObject.psbase.Keys
+    } elseif ($InputObject -is [pscustomobject]) {
+        $names = $InputObject.PSObject.Properties | ForEach-Object { $_.Name }
+    } else {
+        throw "$Subject must be a JSON object."
+    }
+
+    foreach ($name in $names) {
+        if ([Array]::IndexOf($Allowed, $name) -lt 0) {
+            throw "$Subject member '$name' is not part of the format-2 contract."
+        }
+    }
+}
+
+function Get-RestoreInventoryString {
+    param ($InputObject, [string]$Name, [switch]$Strict)
+
+    if ($Strict) {
+        $value = (Get-RestoreWrappedPropertyValue -InputObject $InputObject -Name $Name).Value
+        if ($value -isnot [string]) {
+            throw "Inventory field '$Name' must be a non-empty JSON string."
+        }
+        return $value
+    }
+
+    return [string](Get-RestorePropertyValue -InputObject $InputObject -Name $Name)
+}
+
 function ConvertTo-CanonicalInventory {
     <#
     .SYNOPSIS
@@ -442,8 +474,14 @@ function ConvertTo-CanonicalInventory {
     #>
     param (
         [Parameter(Mandatory = $true)]
-        $Inventory
+        $Inventory,
+
+        [switch]$Strict
     )
+
+    if ($Strict) {
+        Assert-RestoreManifestMemberSet -InputObject $Inventory -Subject "Restore manifest inventory" -Allowed @("schemas", "principals")
+    }
 
     $schemasWrapped = Get-RestoreWrappedPropertyValue -InputObject $Inventory -Name "schemas"
     if (-not $schemasWrapped.Present -or $null -eq $schemasWrapped.Value) {
@@ -460,7 +498,10 @@ function ConvertTo-CanonicalInventory {
         if ($null -eq $rawSchema) {
             throw "Inventory contains a null schema entry."
         }
-        $schemaName = [string](Get-RestorePropertyValue -InputObject $rawSchema -Name "schemaName")
+        if ($Strict) {
+            Assert-RestoreManifestMemberSet -InputObject $rawSchema -Subject "Restore manifest inventory schema entry" -Allowed @("schemaName", "objects")
+        }
+        $schemaName = Get-RestoreInventoryString -InputObject $rawSchema -Name "schemaName" -Strict:$Strict
         if ([string]::IsNullOrWhiteSpace($schemaName)) {
             throw "Inventory contains a schema entry without a non-empty 'schemaName'."
         }
@@ -482,8 +523,11 @@ function ConvertTo-CanonicalInventory {
             if ($null -eq $rawObject) {
                 throw "Inventory schema '$schemaName' contains a null object entry."
             }
-            $objectName = [string](Get-RestorePropertyValue -InputObject $rawObject -Name "name")
-            $objectType = [string](Get-RestorePropertyValue -InputObject $rawObject -Name "type")
+            if ($Strict) {
+                Assert-RestoreManifestMemberSet -InputObject $rawObject -Subject "Restore manifest inventory object entry" -Allowed @("name", "type")
+            }
+            $objectName = Get-RestoreInventoryString -InputObject $rawObject -Name "name" -Strict:$Strict
+            $objectType = Get-RestoreInventoryString -InputObject $rawObject -Name "type" -Strict:$Strict
             if ([string]::IsNullOrWhiteSpace($objectName) -or [string]::IsNullOrWhiteSpace($objectType)) {
                 throw "Inventory schema '$schemaName' contains an object entry without both a non-empty 'name' and 'type'."
             }
@@ -529,6 +573,9 @@ function ConvertTo-CanonicalInventory {
         if ($null -eq $rawPrincipal) {
             throw "Inventory contains a null principal entry."
         }
+        if ($Strict -and $rawPrincipal -isnot [string]) {
+            throw "Inventory principals must contain non-empty JSON strings."
+        }
         $principalName = [string]$rawPrincipal
         if ([string]::IsNullOrWhiteSpace($principalName)) {
             throw "Inventory contains an empty principal entry."
@@ -556,10 +603,12 @@ function ConvertTo-CanonicalInventoryJson {
     #>
     param (
         [Parameter(Mandatory = $true)]
-        $Inventory
+        $Inventory,
+
+        [switch]$Strict
     )
 
-    $canonical = ConvertTo-CanonicalInventory -Inventory $Inventory
+    $canonical = ConvertTo-CanonicalInventory -Inventory $Inventory -Strict:$Strict
 
     $builder = [System.Text.StringBuilder]::new()
     $null = $builder.Append('{"schemas":[')
@@ -603,10 +652,12 @@ function Get-CanonicalInventoryHash {
     #>
     param (
         [Parameter(Mandatory = $true)]
-        $Inventory
+        $Inventory,
+
+        [switch]$Strict
     )
 
-    $canonicalJson = ConvertTo-CanonicalInventoryJson -Inventory $Inventory
+    $canonicalJson = ConvertTo-CanonicalInventoryJson -Inventory $Inventory -Strict:$Strict
     $jsonBytes = [System.Text.Encoding]::UTF8.GetBytes($canonicalJson)
     $hashBytes = [System.Security.Cryptography.SHA256]::HashData($jsonBytes)
 
@@ -684,6 +735,19 @@ function Assert-RestoreManifestShape {
         $Manifest
     )
 
+    $declaredEngine = (Get-RestoreWrappedPropertyValue -InputObject $Manifest -Name "databaseEngine").Value
+    $isMssql = $declaredEngine -is [string] -and (Test-RestoreOrdinalStringEqual -Left $declaredEngine -Right "mssql")
+    if ($isMssql) {
+        Assert-RestoreManifestMemberSet -InputObject $Manifest -Subject "Restore manifest" -Allowed @(
+            "version", "packageId", "packageVersion", "databaseEngine", "templateKind",
+            "dataStandardVersion", "contentProfile", "projects", "apiSchemaFormatVersion",
+            "effectiveSchemaHash", "resourceKeyCount", "resourceKeySeedHashB64",
+            "relationalMappingVersion", "engineVersion", "databaseCompatibilityLevel",
+            "documentJsonColumnType", "mssqlPhysicalSchemaVersion", "inventory",
+            "inventorySha256", "artifactFileName", "artifactSha256"
+        )
+    }
+
     $manifestVersion = Assert-RestoreManifestField -Manifest $Manifest -FieldName "version"
     if (-not (Test-RestoreManifestInteger -Value $manifestVersion)) {
         throw "Restore manifest field 'version' must be an integer manifest format version."
@@ -693,34 +757,8 @@ function Assert-RestoreManifestShape {
     $null = Assert-RestoreManifestField -Manifest $Manifest -FieldName "packageVersion" -AsNonEmptyString
 
     $databaseEngine = Assert-RestoreManifestField -Manifest $Manifest -FieldName "databaseEngine" -AsNonEmptyString
-    $isMssql = Test-RestoreOrdinalStringEqual -Left $databaseEngine -Right "mssql"
     if (-not $isMssql -and $databaseEngine -cne "postgresql") {
         throw "Restore manifest field 'databaseEngine' must be exactly 'postgresql' or 'mssql', but found '$databaseEngine'."
-    }
-
-    if ($isMssql) {
-        $contractMembers = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
-        foreach ($member in @(
-                "version", "packageId", "packageVersion", "databaseEngine", "templateKind",
-                "dataStandardVersion", "contentProfile", "projects", "apiSchemaFormatVersion",
-                "effectiveSchemaHash", "resourceKeyCount", "resourceKeySeedHashB64",
-                "relationalMappingVersion", "engineVersion", "databaseCompatibilityLevel",
-                "documentJsonColumnType", "mssqlPhysicalSchemaVersion", "inventory",
-                "inventorySha256", "artifactFileName", "artifactSha256"
-            )) {
-            $null = $contractMembers.Add($member)
-        }
-        $memberNames = if ($Manifest -is [System.Collections.IDictionary]) {
-            @($Manifest.GetEnumerator() | ForEach-Object { [string]$_.Key })
-        }
-        else {
-            @($Manifest.PSObject.Properties.Name)
-        }
-        for ($index = 0; $index -lt $memberNames.Count; $index++) {
-            if (-not $contractMembers.Contains($memberNames[$index])) {
-                throw "Restore manifest member at position $($index + 1) ('$($memberNames[$index])') is not part of the format-2 contract."
-            }
-        }
     }
 
     if ($isMssql -and $manifestVersion -ne $script:MssqlRestoreManifestVersion) {
@@ -842,7 +880,7 @@ function Assert-RestoreManifestShape {
     }
 
     $inventory = Assert-RestoreManifestField -Manifest $Manifest -FieldName "inventory"
-    $recomputedInventoryHash = Get-CanonicalInventoryHash -Inventory $inventory
+    $recomputedInventoryHash = Get-CanonicalInventoryHash -Inventory $inventory -Strict:$isMssql
     if ($recomputedInventoryHash -cne $inventorySha256) {
         throw "Restore manifest is internally inconsistent: the recomputed canonical inventory hash '$recomputedInventoryHash' does not match the recorded inventorySha256 '$inventorySha256'."
     }
@@ -862,160 +900,55 @@ function Assert-RestoreManifestShape {
     }
 }
 
-function Assert-RestoreJsonMemberAllowlist {
-    param (
-        [System.Text.Json.JsonElement]$Element,
-        [string[]]$AllowedMember,
-        [string]$Subject
-    )
+function ConvertFrom-RestoreJsonElement {
+    param ([System.Text.Json.JsonElement]$Element)
 
-    if ($Element.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) { return }
-    $allowed = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
-    foreach ($name in $AllowedMember) { $null = $allowed.Add($name) }
-    $position = 0
-    foreach ($property in $Element.EnumerateObject()) {
-        $position++
-        if (-not $allowed.Contains($property.Name)) {
-            throw "Restore manifest $Subject declares a member at position $position that is not part of the format-2 contract."
-        }
-    }
-}
-
-function Get-RestoreJsonPropertyElement {
-    param (
-        [System.Text.Json.JsonElement]$Element,
-        [string]$Name
-    )
-
-    foreach ($property in $Element.EnumerateObject()) {
-        if ([string]::Equals($property.Name, $Name, [System.StringComparison]::Ordinal)) {
-            return [pscustomobject]@{ Present = $true; Value = $property.Value }
-        }
-    }
-
-    return [pscustomobject]@{ Present = $false; Value = $null }
-}
-
-function Assert-RestoreMssqlInventoryJson {
-    param ([System.Text.Json.JsonElement]$Root)
-
-    $inventoryProperty = Get-RestoreJsonPropertyElement -Element $Root -Name "inventory"
-    if (-not $inventoryProperty.Present -or $inventoryProperty.Value.ValueKind -eq [System.Text.Json.JsonValueKind]::Null) { return }
-    $inventory = $inventoryProperty.Value
-    if ($inventory.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) {
-        throw "Restore manifest inventory must be a JSON object."
-    }
-    Assert-RestoreJsonMemberAllowlist -Element $inventory -AllowedMember @("schemas", "principals") -Subject "inventory"
-
-    $schemasProperty = Get-RestoreJsonPropertyElement -Element $inventory -Name "schemas"
-    if (-not $schemasProperty.Present -or $schemasProperty.Value.ValueKind -ne [System.Text.Json.JsonValueKind]::Array) {
-        throw "Restore manifest inventory schemas must be a JSON array."
-    }
-    $schemas = $schemasProperty.Value
-    $schemaPosition = 0
-    foreach ($schema in $schemas.EnumerateArray()) {
-        $schemaPosition++
-        if ($schema.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) {
-            throw "Restore manifest inventory schema entry $schemaPosition must be a JSON object."
-        }
-        Assert-RestoreJsonMemberAllowlist -Element $schema -AllowedMember @("schemaName", "objects") -Subject "inventory schema entry $schemaPosition"
-        $schemaNameProperty = Get-RestoreJsonPropertyElement -Element $schema -Name "schemaName"
-        if (-not $schemaNameProperty.Present -or
-            $schemaNameProperty.Value.ValueKind -ne [System.Text.Json.JsonValueKind]::String -or
-            [string]::IsNullOrWhiteSpace($schemaNameProperty.Value.GetString())) {
-            throw "Restore manifest inventory schema entry $schemaPosition schemaName must be a non-empty JSON string."
-        }
-        $objectsProperty = Get-RestoreJsonPropertyElement -Element $schema -Name "objects"
-        if (-not $objectsProperty.Present -or $objectsProperty.Value.ValueKind -ne [System.Text.Json.JsonValueKind]::Array) {
-            throw "Restore manifest inventory schema entry $schemaPosition objects must be a JSON array."
-        }
-        $objects = $objectsProperty.Value
-        $objectPosition = 0
-        foreach ($entry in $objects.EnumerateArray()) {
-            $objectPosition++
-            if ($entry.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) {
-                throw "Restore manifest inventory object entry $objectPosition of schema entry $schemaPosition must be a JSON object."
-            }
-            Assert-RestoreJsonMemberAllowlist -Element $entry -AllowedMember @("name", "type") -Subject "inventory object entry $objectPosition of schema entry $schemaPosition"
-            foreach ($field in @("name", "type")) {
-                $valueProperty = Get-RestoreJsonPropertyElement -Element $entry -Name $field
-                if (-not $valueProperty.Present -or
-                    $valueProperty.Value.ValueKind -ne [System.Text.Json.JsonValueKind]::String -or
-                    [string]::IsNullOrWhiteSpace($valueProperty.Value.GetString())) {
-                    throw "Restore manifest inventory object entry $objectPosition of schema entry $schemaPosition $field must be a non-empty JSON string."
+    switch ($Element.ValueKind) {
+        Object {
+            $members = [System.Collections.Specialized.OrderedDictionary]::new([System.StringComparer]::Ordinal)
+            foreach ($property in $Element.EnumerateObject()) {
+                $name = $property.Name
+                if ($members.Contains($name)) {
+                    throw "The JSON document contains a duplicate member name."
                 }
+                $members.Add($name, (ConvertFrom-RestoreJsonElement -Element $property.Value))
             }
+            return $members
         }
-    }
-
-    $principalsProperty = Get-RestoreJsonPropertyElement -Element $inventory -Name "principals"
-    if ($principalsProperty.Present -and $principalsProperty.Value.ValueKind -ne [System.Text.Json.JsonValueKind]::Null) {
-        $principals = $principalsProperty.Value
-        if ($principals.ValueKind -ne [System.Text.Json.JsonValueKind]::Array) {
-            throw "Restore manifest inventory principals must be a JSON array when present."
-        }
-        foreach ($principal in $principals.EnumerateArray()) {
-            if ($principal.ValueKind -ne [System.Text.Json.JsonValueKind]::String -or
-                [string]::IsNullOrWhiteSpace($principal.GetString())) {
-                throw "Restore manifest inventory principals must contain non-empty JSON strings."
+        Array {
+            $items = [object[]]::new($Element.GetArrayLength())
+            $index = 0
+            foreach ($item in $Element.EnumerateArray()) {
+                $items[$index++] = ConvertFrom-RestoreJsonElement -Element $item
             }
+            return ,$items
         }
+        String { return $Element.GetString() }
+        Number {
+            $integer = [long]0
+            if ($Element.TryGetInt64([ref]$integer)) { return $integer }
+            return $Element.GetDouble()
+        }
+        True { return $true }
+        False { return $false }
+        Null { return $null }
     }
 }
 
-function Assert-RestoreJsonObject {
+function ConvertFrom-RestoreJsonObject {
     <#
     .SYNOPSIS
-    Validates raw JSON tokens before materializing a restore manifest.
+    Reads strict JSON into ordinal dictionaries and arrays. Decode each name and string
+    to detect malformed Unicode, and reject duplicate names before assigning values.
     #>
-    param (
-        [Parameter(Mandatory = $true)]
-        [string]$Content,
+    param ([Parameter(Mandatory = $true)] [string]$Content)
 
-        [switch]$ValidateMssqlInventory
-    )
-
-    # Inspect raw tokens so duplicate properties and invalid strings cannot be hidden
-    # by materialization of SQL Server manifests or generated DDL evidence.
     $document = [System.Text.Json.JsonDocument]::Parse($Content)
     try {
-        $root = $document.RootElement
-        if ($root.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) {
+        if ($document.RootElement.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) {
             throw "The root must be a JSON object."
         }
-        $rawEngineProperty = Get-RestoreJsonPropertyElement -Element $root -Name "databaseEngine"
-        $rawVersionProperty = Get-RestoreJsonPropertyElement -Element $root -Name "version"
-        if ($ValidateMssqlInventory -and $rawEngineProperty.Present -and $rawVersionProperty.Present -and
-            $rawEngineProperty.Value.ValueKind -eq [System.Text.Json.JsonValueKind]::String -and
-            [string]::Equals($rawEngineProperty.Value.GetString(), "mssql", [System.StringComparison]::Ordinal) -and
-            $rawVersionProperty.Value.ValueKind -eq [System.Text.Json.JsonValueKind]::Number -and
-            $rawVersionProperty.Value.GetRawText() -ceq "2") {
-            Assert-RestoreMssqlInventoryJson -Root $root
-        }
-        $pending = [System.Collections.Generic.Stack[System.Text.Json.JsonElement]]::new()
-        $pending.Push($document.RootElement)
-        while ($pending.Count -gt 0) {
-            $element = $pending.Pop()
-            if ($element.ValueKind -eq [System.Text.Json.JsonValueKind]::Object) {
-                $names = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
-                foreach ($property in $element.EnumerateObject()) {
-                    if (-not $names.Add($property.Name)) {
-                        throw "The JSON document contains a duplicate member name."
-                    }
-                    $pending.Push($property.Value)
-                }
-            }
-            elseif ($element.ValueKind -eq [System.Text.Json.JsonValueKind]::Array) {
-                foreach ($item in $element.EnumerateArray()) {
-                    $pending.Push($item)
-                }
-            }
-            elseif ($element.ValueKind -eq [System.Text.Json.JsonValueKind]::String) {
-                # Force decoding now; ConvertFrom-Json replaces some malformed surrogate
-                # escapes, while CMS rejects them before validating the manifest contract.
-                $null = $element.GetString()
-            }
-        }
+        return ConvertFrom-RestoreJsonElement -Element $document.RootElement
     }
     finally {
         $document.Dispose()
@@ -1091,9 +1024,10 @@ function Read-RestoreManifest {
     $manifest = $null
     try {
         if ($DatabaseEngine -eq "mssql") {
-            Assert-RestoreJsonObject -Content $rawContent -ValidateMssqlInventory
+            $manifest = ConvertFrom-RestoreJsonObject -Content $rawContent
+        } else {
+            $manifest = $rawContent | ConvertFrom-Json -ErrorAction Stop
         }
-        $manifest = $rawContent | ConvertFrom-Json -ErrorAction Stop
     }
     catch {
         throw "Restore manifest at '$Path' is not valid JSON: $($_.Exception.Message)"
@@ -1730,12 +1664,6 @@ function Get-DatabaseCompatibilityLevelQuerySql {
     return "SET NOCOUNT ON; SELECT compatibility_level FROM sys.databases WHERE name = N'$DatabaseName';"
 }
 
-function Get-MssqlDocumentCachePhysicalFactsQuerySql {
-    $catalogPath = Join-Path $PSScriptRoot '../../src/shared/MssqlDocumentCacheCatalog.sql'
-    $catalogSql = Get-Content -LiteralPath $catalogPath -Raw -ErrorAction Stop
-    return "SET NOCOUNT ON;`n$catalogSql`nSELECT CONCAT(@physical_marker_valid, '|', @object_check_valid);"
-}
-
 function Get-RestoreDocumentCacheCatalogFact {
     <#
     .SYNOPSIS
@@ -1753,19 +1681,23 @@ function Get-RestoreDocumentCacheCatalogFact {
     $databaseEngine = $QueryParameters.DatabaseEngine
     $physicalVersion = $null
     $objectCheckValid = $false
+    $failureMessage = if ($databaseEngine -eq "mssql") {
+        "Failed to inspect the SQL Server DocumentCache physical schema in '$databaseName'."
+    }
+    else {
+        "Failed to read the DocumentJson column type from '$databaseName'."
+    }
+    $documentJsonRows = & $InvokeCatalogQuery $QueryParameters (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine $databaseEngine) $failureMessage
     if ($databaseEngine -eq "mssql") {
-        $physicalRows = @(& $InvokeCatalogQuery $QueryParameters (Get-MssqlDocumentCachePhysicalFactsQuerySql) `
-                "Failed to inspect the SQL Server DocumentCache physical schema in '$databaseName'." |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        if ($physicalRows.Count -ne 1 -or $physicalRows[0].Trim() -cnotmatch '^1\|[01]\z') {
+        $rows = @($documentJsonRows | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($rows.Count -eq 0 -or @($rows | Where-Object { $_ -cnotmatch '^\s*1\|[01]\|' }).Count -ne 0) {
             throw "Cannot verify the v2 SQL Server DocumentCache physical schema marker in '$databaseName'. Reprovision the template."
         }
-        $physicalVersion = 'v2'
-        $objectCheckValid = $physicalRows[0].Trim() -ceq '1|1'
+        $physicalVersion = $script:MssqlPhysicalSchemaVersion
+        $objectCheckValid = $rows[0].Trim().StartsWith('1|1|', [System.StringComparison]::Ordinal)
+        $documentJsonRows = @($rows | ForEach-Object { $_.Trim().Substring(4) })
     }
 
-    $documentJsonRows = & $InvokeCatalogQuery $QueryParameters (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine $databaseEngine) `
-        "Failed to read the DocumentJson column type from '$databaseName'."
     $documentJsonColumnType = ConvertFrom-DocumentJsonColumnTypeRow -Row $documentJsonRows -DatabaseEngine $databaseEngine
     if ($databaseEngine -eq "mssql") {
         if ($documentJsonColumnType -cne (Get-RestoreDocumentJsonBaselineType -DatabaseEngine mssql)) {
@@ -1785,10 +1717,9 @@ function Get-RestoreDocumentCacheCatalogFact {
 function Get-DocumentJsonColumnTypeQuerySql {
     <#
     .SYNOPSIS
-    Enumerates every DocumentJson carrier in the dms schema. PostgreSQL returns
-    "table|type". SQL Server returns "table|type|isExactCacheColumn", including the
-    declared length for length-bearing types. Its last field is 1 only for the exactly
-    named DocumentJson column on the dms.DocumentCache user table.
+    Reads all DocumentJson carriers in the dms schema. PostgreSQL returns "table|type".
+    SQL Server adds the marker and object-check bits from the same catalog batch and
+    an exact-cache flag on each carrier. An empty catalog still returns the two bits.
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -1797,25 +1728,18 @@ function Get-DocumentJsonColumnTypeQuerySql {
     )
 
     if ($DatabaseEngine -eq "mssql") {
-        return @'
+        $catalogPath = Join-Path $PSScriptRoot '../../src/shared/MssqlDocumentCacheCatalog.sql'
+        $catalogSql = Get-Content -LiteralPath $catalogPath -Raw -ErrorAction Stop
+        return @"
 SET NOCOUNT ON;
-SELECT o.name + '|'
-    + CASE WHEN t.is_user_defined = 1 OR c.user_type_id <> c.system_type_id THEN N'user-defined:' ELSE N'' END
-    + t.name + CASE
-        WHEN t.name IN (N'nvarchar', N'varchar', N'varbinary') AND c.max_length = -1 THEN '(max)'
-        WHEN t.name IN (N'nvarchar', N'nchar') THEN '(' + CONVERT(nvarchar(11), c.max_length / 2) + ')'
-        WHEN t.name IN (N'varchar', N'char', N'varbinary', N'binary') THEN '(' + CONVERT(nvarchar(11), c.max_length) + ')'
-        ELSE '' END
-    + CASE WHEN o.type = 'U' AND s.name COLLATE Latin1_General_100_BIN2 = N'dms'
-        AND o.name COLLATE Latin1_General_100_BIN2 = N'DocumentCache'
-        AND c.name COLLATE Latin1_General_100_BIN2 = N'DocumentJson' THEN '|1' ELSE '|0' END
-FROM sys.columns c
-JOIN sys.types t ON t.user_type_id = c.user_type_id
-JOIN sys.objects o ON o.object_id = c.object_id
-JOIN sys.schemas s ON s.schema_id = o.schema_id
-WHERE s.name = N'dms' AND c.name = N'DocumentJson'
-ORDER BY o.name;
-'@
+DECLARE @require_native_document_cache bit = 0;
+$catalogSql
+SELECT CONCAT(@physical_marker_valid, '|', @object_check_valid, '|',
+    CASE WHEN table_name IS NOT NULL THEN CONCAT(table_name, '|', column_type, '|', is_cache_column) END)
+FROM (VALUES (1)) AS facts(dummy)
+LEFT JOIN @document_json_columns ON 1 = 1
+ORDER BY table_name;
+"@
     }
 
     return "SELECT table_name || '|' || data_type FROM information_schema.columns WHERE table_schema = 'dms' AND column_name = 'DocumentJson' ORDER BY table_name;"
@@ -3037,7 +2961,7 @@ Export-ModuleMember -Function `
     ConvertTo-CanonicalInventoryJson, `
     Get-CanonicalInventoryHash, `
     Assert-RestoreManifestShape, `
-    Assert-RestoreJsonObject, `
+    ConvertFrom-RestoreJsonObject, `
     Read-RestoreManifest, `
     ConvertFrom-MssqlRestoreManifestByte, `
     Get-PostgresqlAllowedExtensionName, `

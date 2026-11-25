@@ -6,6 +6,7 @@
 # This phase carries configuration and receipts. SchemaTools owns all binding, provider,
 # Kafka, readiness and durable publication decisions.
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'cdc-failure-codes.ps1')
 
 function Read-BootstrapCdcSettings {
     <#
@@ -52,8 +53,8 @@ function Invoke-BootstrapCdcDockerInspection {
 
 function Get-BootstrapCdcHostProcessCommand {
     if ($IsLinux -or $IsMacOS) {
-        $processList = Get-Command ps -CommandType Application -ErrorAction Stop
-        $commands = @(& $processList -eo args= 2>$null)
+        $processListCommand = Get-Command -Name ps -CommandType Application -ErrorAction Stop
+        $commands = @(& $processListCommand -eo args= 2>$null)
         if ($LASTEXITCODE -ne 0) { throw 'CDC host process inspection is unavailable.' }
         return $commands
     }
@@ -260,10 +261,8 @@ function Invoke-BootstrapCdcEnable {
         try {
             $failure = ($output -join "`n") | ConvertFrom-Json
             $codes = @($failure.diagnostics | ForEach-Object {
-                if ($_.component -cin @('Request', 'WorkflowState', 'Projection', 'ProviderSetup', 'Kafka', 'Connect', 'Worker', 'Metrics', 'WriterPublication') -and
-                    $_.failure -cin @('InvalidInput', 'Unavailable', 'Timeout', 'AuthenticationFailed', 'Conflict', 'ValidationFailed', 'NativeDocumentCacheWorkerRequired', 'IncompatibleDocumentCachePhysicalSchema')) {
-                    "$($_.component)/$($_.failure)"
-                }
+                $code = "$($_.component)/$($_.failure)"
+                if (Test-CdcControllerFailureCode $code) { $code }
             } | Select-Object -Unique)
         }
         catch { $codes = @() }

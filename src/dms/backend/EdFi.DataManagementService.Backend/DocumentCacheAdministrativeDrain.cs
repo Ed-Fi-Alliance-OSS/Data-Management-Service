@@ -382,16 +382,23 @@ internal sealed class DocumentCacheAdministrativeDrainer(
 
             if (CompletedCursorPass(startingCursor, endingCursor, drainResult))
             {
+                // A scan over suppressed rows can wrap the cursor immediately after retrying
+                // native-limit failures. Preserve the attempt count until the next retry is due.
                 if (
-                    drainResult.AcknowledgedOrRemovedItemCount > 0
-                    || drainResult.DocumentScopedFailureCount > 0
+                    drainResult.ProcessedItemCount != 0
+                    || !currentPass.IsUnproductivePoisonPass
+                    || !HasNativeLimitFailure(context, currentPass.DiagnosticDocumentIds)
                 )
                 {
                     poisonSuppressionRetryPassCount = 0;
                 }
-                else if (currentPass.IsUnproductiveNoProgressPass)
+
+                if (
+                    currentPass.IsUnproductiveNoProgressPass
+                    && drainResult.AcknowledgedOrRemovedItemCount == 0
+                    && drainResult.DocumentScopedFailureCount == 0
+                )
                 {
-                    poisonSuppressionRetryPassCount = 0;
                     logger.LogDebug(
                         "DocumentCache administrative drain for target {TargetKey} completed a cursor pass without acknowledging, removing, or recording failures and will poll again.",
                         LoggingSanitizer.SanitizeInternalValueForLogging(
@@ -401,11 +408,6 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                     await DelayForPollIntervalAsync(context, effectiveCancellationToken)
                         .ConfigureAwait(false);
                 }
-                else
-                {
-                    poisonSuppressionRetryPassCount = 0;
-                }
-
                 currentPass = NewPass(context);
             }
 
@@ -586,6 +588,18 @@ internal sealed class DocumentCacheAdministrativeDrainer(
         return DocumentCacheAdministrativeDrainToEmptyResult.Failed(stats, failureResult);
     }
 
+    private static bool HasNativeLimitFailure(
+        DocumentCacheAdministrativeCommandExecutionContext context,
+        ImmutableArray<long> documentIds
+    ) =>
+        context
+            .TargetContext.FailureBackoffState.CreateFailureDiagnosticsSnapshot()
+            .DocumentDiagnostics.Any(diagnostic =>
+                diagnostic.Category
+                    == DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                && documentIds.Contains(diagnostic.DocumentId)
+            );
+
     private static DocumentCacheAdministrativeDrainToEmptyResult PersistentPoison(
         DocumentCacheAdministrativeCommandExecutionContext context,
         DocumentCacheAdministrativeDrainStats stats,
@@ -600,7 +614,9 @@ internal sealed class DocumentCacheAdministrativeDrainer(
             DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
             DocumentCacheAdministrativeCommandClassification.PersistentPoison,
             DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison,
-            "Administrative drain observed durable work that repeatedly produced only document-scoped failures after retry was due.",
+            HasNativeLimitFailure(context, boundedDocumentIds)
+                ? "A document exceeds SQL Server native JSON storage limits. Its projection work is still pending. Update or remove the source document before retrying."
+                : "Administrative drain observed durable work that repeatedly produced only document-scoped failures after retry was due.",
             retryable: true,
             affectedDocumentIds: boundedDocumentIds
                 .Take(context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize)

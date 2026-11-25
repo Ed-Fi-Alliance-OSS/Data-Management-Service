@@ -17,7 +17,7 @@ public enum TemplatePackageDefect
     /// <summary>The archive violates an entry rule of the delivered contract, is not a readable zip archive at any boundary (opening, central directory, entry open or decompression), or an entry exceeds the size the contract allows (<c>ManifestInvalid</c>).</summary>
     PackageInvalid,
 
-    /// <summary>The <c>restore-manifest.json</c> entry is not a version-1 manifest; the inner exception is the <see cref="Manifest.RestoreManifestException"/> (<c>ManifestInvalid</c>).</summary>
+    /// <summary>The <c>restore-manifest.json</c> entry violates its engine contract; the inner exception is the <see cref="Manifest.RestoreManifestException"/> (<c>ManifestInvalid</c>).</summary>
     ManifestInvalid,
 
     /// <summary>The manifest or the <c>.nuspec</c> declares a package identity different from the resolved one (<c>ManifestMismatch</c>).</summary>

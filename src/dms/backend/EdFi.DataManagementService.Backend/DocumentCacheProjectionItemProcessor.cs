@@ -322,7 +322,9 @@ internal sealed class DocumentCacheProjectionItemProcessor(
                 RecordDocumentFailure(
                     targetContext,
                     workItem,
-                    DocumentCacheProjectionDocumentDiagnosticCategory.WriterOutcome,
+                    writerResult is DocumentCacheWriterResult.NativeJsonLimitExceeded
+                        ? DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                        : DocumentCacheProjectionDocumentDiagnosticCategory.WriterOutcome,
                     $"Cache writer outcome {writerResult.Outcome}.",
                     observedAt
                 );

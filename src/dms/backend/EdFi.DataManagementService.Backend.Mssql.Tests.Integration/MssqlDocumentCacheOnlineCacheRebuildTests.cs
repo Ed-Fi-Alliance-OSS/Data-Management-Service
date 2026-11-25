@@ -161,6 +161,66 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
     }
 
     [Test]
+    public async Task It_drains_healthy_work_after_an_oversized_document_and_resumes_after_correction()
+    {
+        var tracking = new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false);
+        var rebuilding = new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Rebuilding, false);
+        await SetLifecycleAsync(tracking.State, cacheAheadRecoveryRequired: false);
+        IReadOnlyList<SourceDocument> sources = await InsertProjectedRowsAsync(documentCount: 2);
+        SourceDocument oversized = sources[0];
+        SourceDocument healthy = sources[1];
+        oversized.Document["items"] = new JsonArray(
+            Enumerable.Range(0, 65_536).Select(i => (JsonNode?)JsonValue.Create(i)).ToArray()
+        );
+        var request = new DocumentCacheOnlineCacheRebuildRequest(
+            AdministrativeTargetKey,
+            Fingerprint,
+            DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+        );
+
+        DocumentCacheAdministrativeCommandResult failure = await CreateCommand(
+                tracking,
+                new RecordingObservationSink()
+            )
+            .ExecuteAsync(request);
+
+        failure.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
+        failure.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.PersistentPoison);
+        var diagnostic = failure
+            .PhaseDiagnostics.Should()
+            .ContainSingle(d =>
+                d.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
+            )
+            .Subject;
+        diagnostic.AffectedDocumentIds.Should().Equal(oversized.DocumentId);
+        diagnostic.Message.Should().Contain("native JSON storage limits");
+        oversized.MaterializationCount.Should().BeGreaterThan(1);
+        (await ReadLifecycleAsync()).Should().Be(rebuilding);
+        var pending = await _database.QueryRowsAsync("SELECT DocumentId FROM dms.DocumentProjectionWork;");
+        Convert
+            .ToInt64(pending.Should().ContainSingle().Subject["DocumentId"])
+            .Should()
+            .Be(oversized.DocumentId);
+        var cached = await ReadCachedJsonByDocumentIdAsync();
+        cached.Keys.Should().Equal(healthy.DocumentId);
+        cached[healthy.DocumentId].Should().Contain($"rebuilt-{healthy.DocumentId}");
+
+        oversized.Document.Remove("items");
+        DocumentCacheAdministrativeCommandResult resumed = await CreateCommand(
+                rebuilding,
+                new RecordingObservationSink()
+            )
+            .ExecuteAsync(request);
+
+        resumed.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        (await ReadLifecycleAsync()).Should().Be(tracking);
+        (await ReadCountAsync("DocumentProjectionWork")).Should().Be(0);
+        var resumedCache = await ReadCachedJsonByDocumentIdAsync();
+        resumedCache.Keys.Should().BeEquivalentTo(new[] { healthy.DocumentId, oversized.DocumentId });
+        resumedCache[oversized.DocumentId].Should().Contain($"rebuilt-{oversized.DocumentId}");
+    }
+
+    [Test]
     public async Task It_rejects_a_set_latch_without_mutating_lifecycle_cache_or_work()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: true);
@@ -294,6 +354,7 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
         IDocumentCacheProjectionObservationSink observationSink
     )
     {
+        var clock = new DrainClock();
         DocumentCacheOptions options = new()
         {
             Projector = new DocumentCacheProjectorOptions { MaxConcurrentTargets = 1, PageSize = 3 },
@@ -303,23 +364,18 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
             new DocumentCacheProjectionDrainPageProcessor(
                 new MssqlDocumentProjectionWorkPager(NullLogger<MssqlDocumentProjectionWorkPager>.Instance),
                 new DocumentCacheProjectionItemProcessor(
-                    new FixedTimeProvider(ObservedAtOffset),
+                    clock,
                     NullLogger<DocumentCacheProjectionItemProcessor>.Instance
                 ),
                 NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
-                new FixedTimeProvider(ObservedAtOffset)
+                clock
             ),
             observationSink,
-            new FixedTimeProvider(ObservedAtOffset),
+            clock,
             NullLogger<DocumentCacheProjectionScheduler>.Instance
         );
 
-        return new(
-            scheduler,
-            new DocumentCacheAdministrativeDrainDelay(),
-            new FixedTimeProvider(ObservedAtOffset),
-            NullLogger<DocumentCacheAdministrativeDrainer>.Instance
-        );
+        return new(scheduler, clock, clock, NullLogger<DocumentCacheAdministrativeDrainer>.Instance);
     }
 
     private DocumentCacheTargetExecutionContext ExecutionContext(
@@ -743,6 +799,8 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
                 mappingSet.ResourceKeyIdByResource[PersonResource]
             ];
 
+            source.MaterializationCount++;
+
             return Task.FromResult<DocumentCacheMaterializationResult>(
                 new DocumentCacheMaterializationResult.Success(
                     new DocumentCacheMaterializationCandidate(
@@ -755,7 +813,7 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
                         ObservedAtOffset,
                         new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
                         $"etag-{source.ContentVersion}",
-                        new JsonObject { ["value"] = $"rebuilt-{source.DocumentId}" }
+                        source.Document
                     )
                 )
             );
@@ -767,5 +825,23 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
-    private sealed record SourceDocument(long DocumentId, Guid DocumentUuid, long ContentVersion);
+    private sealed class DrainClock : TimeProvider, IDocumentCacheAdministrativeDrainDelay
+    {
+        private DateTimeOffset _now = ObservedAtOffset;
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public Task DelayAsync(TimeSpan delay, TimeProvider timeProvider, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _now += delay;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed record SourceDocument(long DocumentId, Guid DocumentUuid, long ContentVersion)
+    {
+        public JsonObject Document { get; } = new() { ["value"] = $"rebuilt-{DocumentId}" };
+        public int MaterializationCount { get; set; }
+    }
 }

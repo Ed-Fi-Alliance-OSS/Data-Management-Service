@@ -668,7 +668,13 @@ public class TemplateArtifactCatalogTests
             DmsProvisioningFailure failure = FailureOf(_legacyMssql.Resolution);
             (failure.Code, failure.Diagnostic.Operation)
                 .Should()
-                .Be((DmsProvisioningFailureCode.ManifestInvalid, TemplateArtifactCatalog.ReadPackageStep));
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.ManifestInvalid,
+                        TemplateArtifactCatalog.ReadPackageStep + ".LegacyMssqlTemplate"
+                    )
+                );
+            failure.Summary.Should().Contain("Pin a verified native v2 template").And.Contain("reprovision");
             _legacyMssql.OperationEntries.Should().BeEmpty();
         }
 
@@ -747,9 +753,8 @@ public class TemplateArtifactCatalogTests
             ["projects: the manifest declares more"] = (
                 workspace =>
                     workspace.Build(
-                        Mutated(
-                            workspace,
-                            manifest => manifest["projects"] = new JsonArray("edfi", "tpdm", "sample")
+                        Mutated(workspace, manifest =>
+                            manifest["projects"] = new JsonArray("edfi", "tpdm", "sample")
                         )
                     ),
                 null,
@@ -776,17 +781,11 @@ public class TemplateArtifactCatalogTests
                 DmsDatabaseTemplate.Minimal
             ),
             ["order: data standard before the hash"] = (
-                workspace =>
-                    workspace.Build(
-                        Mutated(
-                            workspace,
-                            manifest =>
-                            {
-                                manifest["dataStandardVersion"] = "5.3.0";
-                                manifest["effectiveSchemaHash"] = _otherHash;
-                            }
-                        )
-                    ),
+                workspace => workspace.Build(Mutated(workspace, manifest =>
+                        {
+                            manifest["dataStandardVersion"] = "5.3.0";
+                            manifest["effectiveSchemaHash"] = _otherHash;
+                        })),
                 null,
                 DmsDatabaseTemplate.Minimal
             ),
@@ -845,15 +844,11 @@ public class TemplateArtifactCatalogTests
             );
             _optionalExpectationsMet = await ResolveInOwnWorkspace(
                 workspace => workspace.Build(workspace.MinimalBuilder()),
-                workspace =>
-                    Expecting(
-                        workspace,
-                        compatibility =>
-                        {
-                            compatibility.ApiSchemaFormatVersion = "1.0.0";
-                            compatibility.RelationalMappingVersion = "v2";
-                        }
-                    )
+                workspace => Expecting(workspace, compatibility =>
+                    {
+                        compatibility.ApiSchemaFormatVersion = "1.0.0";
+                        compatibility.RelationalMappingVersion = "v2";
+                    })
             );
         }
 

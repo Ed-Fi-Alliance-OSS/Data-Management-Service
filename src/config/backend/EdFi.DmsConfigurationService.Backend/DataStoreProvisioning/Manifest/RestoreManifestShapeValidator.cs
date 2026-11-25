@@ -73,7 +73,10 @@ internal static partial class RestoreManifestShapeValidator
         {
             throw new RestoreManifestException(
                 "The restore manifest field 'version' must be 2 for mssql; reprovision legacy templates for native DocumentCache."
-            );
+            )
+            {
+                IsLegacyMssqlTemplate = version == 1,
+            };
         }
         if (
             databaseEngine == RestoreManifest.PostgresqlEngine

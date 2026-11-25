@@ -27,6 +27,12 @@ internal sealed class MssqlDocumentCacheWriter(
 {
     private const int InvalidObjectNameNumber = 208;
 
+    // Native JSON representation limits from the SQL Server engine error catalog.
+    // https://learn.microsoft.com/sql/relational-databases/errors-events/database-engine-events-and-errors-13000-to-13999
+    private const int JsonStringExceedsSupportedLimit = 13641;
+    private const int JsonStringValueTooLong = 13644;
+    private const int JsonUniqueKeyCountExceeded = 13649;
+
     private static readonly DocumentCacheLifecycleReaderQuery LifecycleReaderQuery =
         DocumentCacheLifecycleReaderSupport.GetQuery(SqlDialect.Mssql);
     private static readonly MssqlRelationalWriteExceptionClassifier WriteExceptionClassifier = new();
@@ -363,7 +369,11 @@ internal sealed class MssqlDocumentCacheWriter(
         }
         // Only cache DML in this transaction binds a native JSON value. Leave work pending
         // on representation limits, including when SQL Server already rolled back the transaction.
-        catch (SqlException exception) when (exception.Number is 13641 or (>= 13644 and <= 13649))
+        catch (SqlException exception)
+            when (exception.Number
+                    is JsonStringExceedsSupportedLimit
+                        or (>= JsonStringValueTooLong and <= JsonUniqueKeyCountExceeded)
+            )
         {
             if (!MssqlTransactionStateProbe.Instance.IsAlreadyCompleted(connection, transaction, exception))
             {

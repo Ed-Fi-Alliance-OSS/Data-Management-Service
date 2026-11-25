@@ -70,7 +70,7 @@ This story evaluated native `json` as a physical storage decision for the always
 and cache-backed read path. Ordinary resource CRUD, query, batching, and reconstitution did not exercise
 native-JSON parameter or result behavior. The later DMS-1328 decision below accounts for the shipped cache.
 
-### Decision Record (2026-07-22): Defer
+### July 2026 decision record: Defer native storage
 
 The release-status gate below was executed on 2026-07-22 and the decision is defer.
 
@@ -103,7 +103,7 @@ locally qualified JDBC 13.4.0 worker and column-specific converter preserve the 
 Connect `STRING` contract. The shipped worker pin and package publication follow the
 separate release process. See the [relational backend rollout guide](../../../../../docs/RELATIONAL-BACKEND.md#sql-server-native-documentcache-rollout).
 
-### Evaluation Spike (In Scope Under Defer)
+### July 2026 evaluation spike
 
 The defer decision still ships evaluation tests so their findings detail `DMS-1328`.
 
@@ -148,8 +148,9 @@ Instead, generated MSSQL artifacts have a DMS-owned `MssqlPhysicalSchemaVersion`
 - MSSQL DDL artifact identity and determinism use `(ApiSchema set, mssql, RelationalMappingVersion,
   MssqlPhysicalSchemaVersion)`. Update the authoritative DDL-generation contract and diagnostic manifests to
   include that final component. PostgreSQL keeps its existing identity tuple and byte-for-byte DDL.
-- The native-template rollout will add the physical version beside the `DocumentJson` type in the SQL Server
-  restore manifest. The rollout requires agreement between the package and the live marker and catalog type.
+- SQL Server restore manifest format 2 records the physical version beside the `DocumentJson` type.
+  Package production and scratch restore require agreement between the package and the live marker and
+  catalog type. SchemaTools independently checks the live physical baseline before provisioning.
 - Resource derivation and ordinary mapping-pack keys keep their logical identity. SQL Server provisioning
   checks the physical marker and catalog type separately. The cache and CDC consumer tasks must use that
   physical boundary before enabling native operation.

@@ -14,6 +14,11 @@ GO
 IF ISNULL(TRY_CONVERT(int, SERVERPROPERTY(N'ProductMajorVersion')), 0) < 17
     THROW 51128, 'Native dms.DocumentCache.DocumentJson requires SQL Server 2025 (major version 17) or later. Upgrade the SQL Server engine before provisioning.', 1;
 
+DECLARE @require_native_document_cache bit = 1;
+-- SPDX-License-Identifier: Apache-2.0
+-- The marker is selected dynamically so a fresh database or a wrong object type is safe.
+-- Callers declare @require_native_document_cache. Restore callers read the independent facts.
+
 DECLARE @document_cache_object_id int, @physical_marker_object_id int, @boundary_objects bigint;
 SELECT
     @document_cache_object_id = MAX(CASE WHEN o.[name] = N'DocumentCache' THEN o.[object_id] END),
@@ -24,17 +29,28 @@ INNER JOIN sys.objects o ON o.[schema_id] = s.[schema_id]
 WHERE s.[name] = N'dms'
     AND o.[name] IN (N'DocumentCache', N'MssqlPhysicalSchema', N'EffectiveSchema', N'DocumentCacheState', N'DocumentProjectionWork');
 
-DECLARE @document_json_type sysname, @document_json_max_length smallint;
-SELECT @document_json_type = ty.[name], @document_json_max_length = c.[max_length]
-FROM sys.tables t
-INNER JOIN sys.schemas s ON s.[schema_id] = t.[schema_id]
-INNER JOIN sys.columns c ON c.[object_id] = t.[object_id]
-INNER JOIN sys.types ty ON ty.[user_type_id] = c.[user_type_id]
-WHERE t.[object_id] = @document_cache_object_id
-    AND s.[name] COLLATE Latin1_General_100_BIN2 = N'dms'
-    AND t.[name] COLLATE Latin1_General_100_BIN2 = N'DocumentCache'
-    AND c.[name] COLLATE Latin1_General_100_BIN2 = N'DocumentJson'
-    AND c.[user_type_id] = c.[system_type_id] AND ty.[is_user_defined] = 0;
+-- Observe each carrier once, keeping the database's identifier collation for enumeration
+-- and requiring exact names on a user table for the authoritative cache column.
+DECLARE @document_json_columns TABLE (table_name sysname, column_type nvarchar(256), is_cache_column bit);
+INSERT @document_json_columns (table_name, column_type, is_cache_column)
+SELECT o.name,
+    CASE WHEN t.is_user_defined = 1 OR c.user_type_id <> c.system_type_id THEN N'user-defined:' ELSE N'' END
+    + t.name + CASE
+        WHEN t.name IN (N'nvarchar', N'varchar', N'varbinary') AND c.max_length = -1 THEN '(max)'
+        WHEN t.name IN (N'nvarchar', N'nchar') THEN '(' + CONVERT(nvarchar(11), c.max_length / 2) + ')'
+        WHEN t.name IN (N'varchar', N'char', N'varbinary', N'binary') THEN '(' + CONVERT(nvarchar(11), c.max_length) + ')'
+        ELSE '' END,
+    CONVERT(bit, CASE WHEN o.type = 'U' AND s.name COLLATE Latin1_General_100_BIN2 = N'dms'
+        AND o.name COLLATE Latin1_General_100_BIN2 = N'DocumentCache'
+        AND c.name COLLATE Latin1_General_100_BIN2 = N'DocumentJson' THEN 1 ELSE 0 END)
+FROM sys.columns c
+JOIN sys.types t ON t.user_type_id = c.user_type_id
+JOIN sys.objects o ON o.object_id = c.object_id
+JOIN sys.schemas s ON s.schema_id = o.schema_id
+WHERE s.name = N'dms' AND c.name = N'DocumentJson';
+
+DECLARE @document_json_type nvarchar(256);
+SELECT @document_json_type = column_type FROM @document_json_columns WHERE is_cache_column = 1;
 
 -- Match the generated predicate without letting formatting normalization change an identifier.
 DECLARE @object_check_valid bit = CASE WHEN EXISTS (
@@ -54,7 +70,7 @@ DECLARE @object_check_valid bit = CASE WHEN EXISTS (
 ) THEN 1 ELSE 0 END;
 
 DECLARE @physical_marker_valid bit = 0;
-IF @document_json_type = N'json' AND @object_check_valid = 1 AND EXISTS (
+IF (@require_native_document_cache = 0 OR (@document_json_type = N'json' AND @object_check_valid = 1)) AND EXISTS (
     SELECT 1
     FROM sys.tables t
     INNER JOIN sys.schemas s ON s.[schema_id] = t.[schema_id]
@@ -103,7 +119,7 @@ BEGIN
             N'@valid bit OUTPUT', @valid = @physical_marker_valid OUTPUT;
     END TRY
     BEGIN CATCH
-        SET @physical_marker_valid = 0;
+        IF @require_native_document_cache = 0 THROW;
     END CATCH;
 END;
 
@@ -114,7 +130,7 @@ DECLARE @can_prove_boundary_absence bit =
 DECLARE @document_cache_physical_version varchar(2) = CASE
     WHEN @physical_marker_valid = 1 THEN 'v2'
     WHEN @can_prove_boundary_absence = 1 AND @physical_marker_object_id IS NULL
-        AND @document_json_type = N'nvarchar' AND @document_json_max_length = -1 THEN 'v1'
+        AND @document_json_type = N'nvarchar(max)' THEN 'v1'
     ELSE NULL END;
 
 IF @document_cache_physical_version = 'v1'

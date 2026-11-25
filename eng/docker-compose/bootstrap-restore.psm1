@@ -999,8 +999,7 @@ function Get-RestoreCandidateSchemaVersion {
     $ddlContent = Get-Content -LiteralPath $ddlManifestPath -Raw
     $physicalVersion = $null
     if ($DatabaseEngine -eq "mssql") {
-        Assert-RestoreJsonObject -Content $ddlContent
-        $ddlManifest = $ddlContent | ConvertFrom-Json -AsHashtable
+        $ddlManifest = ConvertFrom-RestoreJsonObject -Content $ddlContent
         $mappingVersion = $ddlManifest['relational_mapping_version']
         if ($mappingVersion -isnot [string] -or [string]::IsNullOrWhiteSpace($mappingVersion)) {
             throw "ddl.manifest.json at '$ddlManifestPath' carries no relational_mapping_version."

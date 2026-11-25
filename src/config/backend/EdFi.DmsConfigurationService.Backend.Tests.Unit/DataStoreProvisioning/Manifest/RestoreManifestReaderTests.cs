@@ -250,9 +250,8 @@ public class RestoreManifestReaderTests
             {
                 Record($"{field} uppercase", m => m[field] = string.Concat(Enumerable.Repeat("AB", 32)));
                 Record($"{field} short", m => m[field] = "abc123");
-                Record(
-                    $"{field} trailing newline",
-                    m => m[field] = string.Concat(Enumerable.Repeat("ab", 32)) + "\n"
+                Record($"{field} trailing newline", m =>
+                    m[field] = string.Concat(Enumerable.Repeat("ab", 32)) + "\n"
                 );
             }
 
@@ -272,16 +271,13 @@ public class RestoreManifestReaderTests
             );
             Record("postgresql level 160", m => m["databaseCompatibilityLevel"] = 160);
             Record("postgresql level null", m => m["databaseCompatibilityLevel"] = null);
-            Record(
-                "inventory hash of another inventory",
-                m => m["inventorySha256"] = string.Concat(Enumerable.Repeat("00", 32))
+            Record("inventory hash of another inventory", m =>
+                m["inventorySha256"] = string.Concat(Enumerable.Repeat("00", 32))
             );
-            Record(
-                "inventory changed after hashing",
-                m =>
-                    ((JsonArray)m["inventory"]!["schemas"]!).Add(
-                        new JsonObject { ["schemaName"] = "extra", ["objects"] = new JsonArray() }
-                    )
+            Record("inventory changed after hashing", m =>
+                ((JsonArray)m["inventory"]!["schemas"]!).Add(
+                    new JsonObject { ["schemaName"] = "extra", ["objects"] = new JsonArray() }
+                )
             );
             Record("artifact with slash", m => m["artifactFileName"] = "nested/dump.sql");
             Record("artifact with backslash", m => m["artifactFileName"] = "nested" + Backslash + "dump.sql");
@@ -567,108 +563,83 @@ public class RestoreManifestReaderTests
             Record("schemas absent", inventory => inventory.Remove("schemas"));
             Record("schemas null", inventory => inventory["schemas"] = null);
             Record("schemas scalar", inventory => inventory["schemas"] = "dms");
-            Record(
-                "schemas singleton object",
-                inventory =>
-                    inventory["schemas"] = new JsonObject
+            Record("schemas singleton object", inventory =>
+                inventory["schemas"] = new JsonObject
+                {
+                    ["schemaName"] = "dms",
+                    ["objects"] = new JsonArray(),
+                }
+            );
+            Record("null schema entry", inventory => inventory["schemas"] = new JsonArray((JsonNode?)null));
+            Record("schema without a name", inventory =>
+                inventory["schemas"] = new JsonArray(new JsonObject { ["objects"] = new JsonArray() })
+            );
+            Record("schema with a numeric name", inventory =>
+                inventory["schemas"] = new JsonArray(
+                    new JsonObject { ["schemaName"] = 5, ["objects"] = new JsonArray() }
+                )
+            );
+            Record("schema without objects", inventory =>
+                inventory["schemas"] = new JsonArray(new JsonObject { ["schemaName"] = "dms" })
+            );
+            Record("schema with null objects", inventory =>
+                inventory["schemas"] = new JsonArray(
+                    new JsonObject { ["schemaName"] = "dms", ["objects"] = null }
+                )
+            );
+            Record("schema with a singleton object", inventory =>
+                inventory["schemas"] = new JsonArray(
+                    new JsonObject { ["schemaName"] = "dms", ["objects"] = Entry("x", "table") }
+                )
+            );
+            Record("schema with an extra member", inventory =>
+                inventory["schemas"] = new JsonArray(
+                    new JsonObject
                     {
                         ["schemaName"] = "dms",
                         ["objects"] = new JsonArray(),
+                        ["extra"] = 1,
                     }
+                )
             );
-            Record("null schema entry", inventory => inventory["schemas"] = new JsonArray((JsonNode?)null));
-            Record(
-                "schema without a name",
-                inventory =>
-                    inventory["schemas"] = new JsonArray(new JsonObject { ["objects"] = new JsonArray() })
+            Record("null object entry", inventory =>
+                inventory["schemas"] = new JsonArray(
+                    new JsonObject { ["schemaName"] = "dms", ["objects"] = new JsonArray((JsonNode?)null) }
+                )
             );
-            Record(
-                "schema with a numeric name",
-                inventory =>
-                    inventory["schemas"] = new JsonArray(
-                        new JsonObject { ["schemaName"] = 5, ["objects"] = new JsonArray() }
-                    )
+            Record("object without a type", inventory =>
+                inventory["schemas"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["schemaName"] = "dms",
+                        ["objects"] = new JsonArray(new JsonObject { ["name"] = "x" }),
+                    }
+                )
             );
-            Record(
-                "schema without objects",
-                inventory => inventory["schemas"] = new JsonArray(new JsonObject { ["schemaName"] = "dms" })
+            Record("object with a blank name", inventory =>
+                inventory["schemas"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["schemaName"] = "dms",
+                        ["objects"] = new JsonArray(Entry(" ", "table")),
+                    }
+                )
             );
-            Record(
-                "schema with null objects",
-                inventory =>
-                    inventory["schemas"] = new JsonArray(
-                        new JsonObject { ["schemaName"] = "dms", ["objects"] = null }
-                    )
-            );
-            Record(
-                "schema with a singleton object",
-                inventory =>
-                    inventory["schemas"] = new JsonArray(
-                        new JsonObject { ["schemaName"] = "dms", ["objects"] = Entry("x", "table") }
-                    )
-            );
-            Record(
-                "schema with an extra member",
-                inventory =>
-                    inventory["schemas"] = new JsonArray(
-                        new JsonObject
-                        {
-                            ["schemaName"] = "dms",
-                            ["objects"] = new JsonArray(),
-                            ["extra"] = 1,
-                        }
-                    )
-            );
-            Record(
-                "null object entry",
-                inventory =>
-                    inventory["schemas"] = new JsonArray(
-                        new JsonObject
-                        {
-                            ["schemaName"] = "dms",
-                            ["objects"] = new JsonArray((JsonNode?)null),
-                        }
-                    )
-            );
-            Record(
-                "object without a type",
-                inventory =>
-                    inventory["schemas"] = new JsonArray(
-                        new JsonObject
-                        {
-                            ["schemaName"] = "dms",
-                            ["objects"] = new JsonArray(new JsonObject { ["name"] = "x" }),
-                        }
-                    )
-            );
-            Record(
-                "object with a blank name",
-                inventory =>
-                    inventory["schemas"] = new JsonArray(
-                        new JsonObject
-                        {
-                            ["schemaName"] = "dms",
-                            ["objects"] = new JsonArray(Entry(" ", "table")),
-                        }
-                    )
-            );
-            Record(
-                "object with an extra member",
-                inventory =>
-                    inventory["schemas"] = new JsonArray(
-                        new JsonObject
-                        {
-                            ["schemaName"] = "dms",
-                            ["objects"] = new JsonArray(
-                                new JsonObject
-                                {
-                                    ["name"] = "x",
-                                    ["type"] = "table",
-                                    ["owner"] = "dbo",
-                                }
-                            ),
-                        }
-                    )
+            Record("object with an extra member", inventory =>
+                inventory["schemas"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["schemaName"] = "dms",
+                        ["objects"] = new JsonArray(
+                            new JsonObject
+                            {
+                                ["name"] = "x",
+                                ["type"] = "table",
+                                ["owner"] = "dbo",
+                            }
+                        ),
+                    }
+                )
             );
             Record("inventory with an extra member", inventory => inventory["generatedAt"] = "2026-11-05");
             Record("principals scalar", inventory => inventory["principals"] = "reader");
@@ -676,20 +647,16 @@ public class RestoreManifestReaderTests
             Record("numeric principal", inventory => inventory["principals"] = new JsonArray(5));
             Record("principals null", inventory => inventory["principals"] = null);
             Record("principals absent", inventory => inventory.Remove("principals"));
-            Record(
-                "duplicate schema",
-                inventory =>
-                    ((JsonArray)inventory["schemas"]!).Add(
-                        new JsonObject { ["schemaName"] = "edfi", ["objects"] = new JsonArray() }
-                    )
+            Record("duplicate schema", inventory =>
+                ((JsonArray)inventory["schemas"]!).Add(
+                    new JsonObject { ["schemaName"] = "edfi", ["objects"] = new JsonArray() }
+                )
             );
-            Record(
-                "duplicate object across type casing",
-                inventory => ((JsonArray)inventory["schemas"]![0]!["objects"]!).Add(Entry("School", "TABLE"))
+            Record("duplicate object across type casing", inventory =>
+                ((JsonArray)inventory["schemas"]![0]!["objects"]!).Add(Entry("School", "TABLE"))
             );
-            Record(
-                "duplicate principal",
-                inventory => inventory["principals"] = new JsonArray("reader", "reader")
+            Record("duplicate principal", inventory =>
+                inventory["principals"] = new JsonArray("reader", "reader")
             );
         }
 
@@ -899,6 +866,15 @@ public class RestoreManifestReaderTests
         [Test]
         public void It_reads_the_bytes_form_identically() =>
             _mssqlFromBytes.InventorySha256.Should().Be(_mssql.InventorySha256);
+
+        [Test]
+        public void It_rejects_an_array_around_an_inventory_name_in_the_mssql_fixture()
+        {
+            string fixture = CanonicalInventoryHashTests.ReadFixtureText("restore-manifest.mssql.json");
+            string invalid = fixture.Replace("\"name\": \"Document\"", "\"name\": [\"Document\"]");
+            Action read = () => RestoreManifestReader.Read(invalid);
+            read.Should().Throw<RestoreManifestException>().WithMessage("*'name'*");
+        }
 
         [Test]
         public void It_reads_the_escaped_schema_name_back_to_its_characters() =>

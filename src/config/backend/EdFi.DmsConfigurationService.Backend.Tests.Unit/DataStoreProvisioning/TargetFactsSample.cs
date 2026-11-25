@@ -213,7 +213,7 @@ internal static class TargetFactsSample
             EffectiveSchema = EffectiveSchema(),
             EngineMajorVersion = 17,
             CompatibilityLevel = 170,
-            MssqlPhysicalSchemaVersion = "v2",
+            HasMssqlPhysicalSchemaMarker = true,
             HasMssqlDocumentCacheObjectCheck = true,
             DocumentJsonColumns =
             [

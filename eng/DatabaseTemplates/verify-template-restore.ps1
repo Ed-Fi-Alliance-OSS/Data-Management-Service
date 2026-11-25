@@ -252,6 +252,11 @@ try {
         }
 
         Write-Host "Restore-manifest assertions passed: kind=$($restoreManifest.templateKind), engine=$($restoreManifest.databaseEngine), projects=[$($manifestProjects -join ', ')], inventory and effective-schema facts match." -ForegroundColor Green
+        if ($DatabaseEngine -eq "mssql") {
+            Write-Host ("Verified SQL Server restore manifest format {0}. Source build {1}, restored build {2}, DocumentJson type {3}, physical schema {4}." -f
+                $restoreManifest.version, $restoreManifest.engineVersion, $restoredFacts.EngineVersion,
+                $restoredFacts.DocumentJsonColumnType, $restoredFacts.MssqlPhysicalSchemaVersion)
+        }
     }
     finally {
         if (Test-Path -LiteralPath $manifestExtractDirectory) {

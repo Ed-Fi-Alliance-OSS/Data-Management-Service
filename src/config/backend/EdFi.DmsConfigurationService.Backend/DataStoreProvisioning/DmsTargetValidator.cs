@@ -247,8 +247,8 @@ public static class DmsTargetValidator
         if (
             manifest.DatabaseEngine == RestoreManifest.MssqlEngine
             && (
-                facts.MssqlPhysicalSchemaVersion != RestoreManifest.NativeMssqlPhysicalSchemaVersion
-                || facts.MssqlPhysicalSchemaVersion != manifest.MssqlPhysicalSchemaVersion
+                !facts.HasMssqlPhysicalSchemaMarker
+                || manifest.MssqlPhysicalSchemaVersion != RestoreManifest.NativeMssqlPhysicalSchemaVersion
             )
         )
         {

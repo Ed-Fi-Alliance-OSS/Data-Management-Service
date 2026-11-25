@@ -336,7 +336,7 @@ public class MssqlDmsTargetEngineFactsTests
                         IsMssqlDocumentCacheColumn = true,
                     }
                 );
-            _facts.MssqlPhysicalSchemaVersion.Should().Be("v2");
+            _facts.HasMssqlPhysicalSchemaMarker.Should().BeTrue();
         }
 
         [Test]

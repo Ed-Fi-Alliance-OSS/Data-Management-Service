@@ -50,7 +50,11 @@ internal static class CdcConnectorTemplateSharedRules
         && table.TableName == DocumentCacheInventoryDefinition.DocumentCache
         && table.Columns.Any(column =>
             column.ColumnName == DocumentCacheInventoryDefinition.DocumentCacheColumns.DocumentJson
-            && string.Equals(column.ProviderDataType, "json", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                column.ProviderDataType,
+                MssqlDocumentCachePhysicalSchema.NativeJsonType,
+                StringComparison.OrdinalIgnoreCase
+            )
         );
 
     internal static IReadOnlyList<CdcExpectedMessageKeyColumns> OrderedMessageKeyColumns(

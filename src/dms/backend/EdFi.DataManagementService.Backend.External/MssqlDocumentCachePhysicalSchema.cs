@@ -49,22 +49,26 @@ public static class MssqlDocumentCachePhysicalSchema
         ) ?? throw new InvalidOperationException("Missing SQL Server DocumentCache catalog resource.");
         using var reader = new StreamReader(stream);
 
-        // Preserve the emitted DDL while restore callers receive independent marker and CHECK
-        // facts and retain their normal SQL error handling.
-        string sql = reader.ReadToEnd().ReplaceLineEndings("\n");
-        return sql[(sql.IndexOf("DECLARE", StringComparison.Ordinal))..]
-            .TrimEnd('\n')
-            .Replace(
-                "/* RequireNativeDocumentCache */",
-                $"@document_json_type = N'{NativeJsonType}' AND @object_check_valid = 1 AND",
-                StringComparison.Ordinal
-            )
-            .Replace(
-                "THROW; -- PreserveMarkerReadError",
-                "SET @physical_marker_valid = 0;",
-                StringComparison.Ordinal
-            );
+        return reader.ReadToEnd().ReplaceLineEndings("\n").TrimEnd('\n');
     }
+
+    private static string NativeCatalogObservationSql { get; } =
+        $"""
+            DECLARE @require_native_document_cache bit = 1;
+            {CatalogObservationSql}
+            """
+        + "\n\n"
+        + """
+            -- Object-level DENY can hide a boundary object even with broader VIEW DEFINITION.
+            -- Only the database owner can establish absence from the catalog for this guard.
+            DECLARE @can_prove_boundary_absence bit =
+                CASE WHEN USER_ID() = DATABASE_PRINCIPAL_ID(N'dbo') THEN 1 ELSE 0 END;
+            DECLARE @document_cache_physical_version varchar(2) = CASE
+                WHEN @physical_marker_valid = 1 THEN 'v2'
+                WHEN @can_prove_boundary_absence = 1 AND @physical_marker_object_id IS NULL
+                    AND @document_json_type = N'nvarchar(max)' THEN 'v1'
+                ELSE NULL END;
+            """;
 
     /// <summary>
     /// Runs before mutations in both raw DDL and the SchemaTools provider. On an admitted
@@ -74,7 +78,7 @@ public static class MssqlDocumentCachePhysicalSchema
         -- Preflight: verify the SQL Server engine and DocumentCache physical baseline
         {{PlatformGuardSql}}
 
-        {{CatalogObservationSql}}
+        {{NativeCatalogObservationSql}}
 
         IF @document_cache_physical_version = '{{LegacyVersion}}'
             THROW {{LegacySchemaError}}, '{{LegacySchemaMessage}}', 1;
@@ -83,7 +87,7 @@ public static class MssqlDocumentCachePhysicalSchema
         """;
 
     public static string ObservedVersionSql { get; } = $"""
-        {CatalogObservationSql}
+        {NativeCatalogObservationSql}
         SELECT @document_cache_physical_version AS physical_schema_version;
         """;
 }

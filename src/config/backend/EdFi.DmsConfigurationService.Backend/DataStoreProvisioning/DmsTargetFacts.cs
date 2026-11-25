@@ -43,8 +43,8 @@ public sealed record DmsTargetFacts
     /// <summary>SQL Server <c>compatibility_level</c>; null on PostgreSQL (item 3).</summary>
     public required int? CompatibilityLevel { get; init; }
 
-    /// <summary>The physical version proven by the SQL Server singleton marker, when present.</summary>
-    public string? MssqlPhysicalSchemaVersion { get; init; }
+    /// <summary>Whether the SQL Server singleton marker proves the native v2 baseline.</summary>
+    public bool HasMssqlPhysicalSchemaMarker { get; init; }
 
     /// <summary>Whether SQL Server enforces the required object-only check on non-null DocumentJson.</summary>
     public bool HasMssqlDocumentCacheObjectCheck { get; init; }

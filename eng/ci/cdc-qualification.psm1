@@ -325,7 +325,7 @@ function Export-CdcQualificationEvidence {
             }
             if ($value['failureCodes'] -is [array]) {
                 $safeValue.failureCodes = @($value['failureCodes'] | Where-Object {
-                    $_ -is [string] -and $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed|NativeDocumentCacheWorkerRequired|IncompatibleDocumentCachePhysicalSchema)\z'
+                    Test-CdcControllerFailureCode $_
                 })
             }
             if ($value['worker'] -is [Collections.IDictionary]) {

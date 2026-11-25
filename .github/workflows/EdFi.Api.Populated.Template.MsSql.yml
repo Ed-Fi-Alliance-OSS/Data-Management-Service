@@ -131,7 +131,7 @@ jobs:
     needs: configure-matrix
     # Pull requests, build-only dispatches, and pushes during the cutover hold still verify
     # packages without Azure Artifacts publishing credentials.
-    if: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false)) && ((github.event_name != 'push' && github.event_name != 'release') || github.repository_owner == 'Ed-Fi-Alliance-OSS') && github.event_name != 'release' && !(github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) && vars.MSSQL_TEMPLATE_V2_PUBLICATION_ENABLED == 'true' && vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED == 'true') }}
+    if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false) || (github.event_name == 'workflow_dispatch' && (inputs.publish_package != true || !((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))))) || (github.event_name == 'push' && github.repository_owner == 'Ed-Fi-Alliance-OSS' && ((vars.MSSQL_TEMPLATE_V2_PUBLICATION_ENABLED != 'true' || vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED != 'true') || !((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))))) }}
     # Each leg invokes the whole reusable build/SBOM/provenance pipeline, so per-version outputs
     # stay correlated. The matrix is computed by configure-matrix (filterable on dispatch).
     strategy:
@@ -145,13 +145,25 @@ jobs:
       manifest_file: "_manifest/spdx_2.2/manifest.spdx.json"
       provenance_file: ${{ matrix.provenance_file }}
       publish_package: false
+      attest_and_attach_release_assets: false
       environment_file: ${{ matrix.environment_file }}
       verify_restore: true
       require_populated_data: true
       database_engine: mssql
     secrets:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY }}
+
+  publication-blocked:
+    name: Report blocked MSSQL template publication
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_package == true && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && !(vars.MSSQL_TEMPLATE_V2_PUBLICATION_ENABLED == 'true' && vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED == 'true') }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Fail the blocked publication request
+        shell: bash
+        run: |
+          echo "::error::MSSQL template publication requires MSSQL_TEMPLATE_V2_PUBLICATION_ENABLED=true and TEMPLATE_ATTESTATION_SIGNING_ENABLED=true. See the SQL Server native DocumentCache rollout in docs/RELATIONAL-BACKEND.md."
+          exit 1
 
   publish-populated-template:
     name: Build and Publish Populated Template ${{ matrix.standard_version }}

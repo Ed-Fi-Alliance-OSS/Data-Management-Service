@@ -250,13 +250,11 @@ public class DmsTargetValidatorTests
     [TestFixture]
     public class Given_engine_and_baseline_drift
     {
-        [TestCase(null)]
-        [TestCase("v1")]
-        [TestCase("V2")]
-        public void It_refuses_an_unproven_mssql_physical_marker(string? marker)
+        [Test]
+        public void It_refuses_an_unproven_mssql_physical_marker()
         {
             DmsTargetFacts facts = MssqlFacts();
-            Staging(facts with { MssqlPhysicalSchemaVersion = marker }, MssqlManifestFor(facts))
+            Staging(facts with { HasMssqlPhysicalSchemaMarker = false }, MssqlManifestFor(facts))
                 .Should()
                 .Be(Invalid(TargetIncompatible, MssqlPhysicalSchemaVersionCheck));
         }
@@ -283,7 +281,7 @@ public class DmsTargetValidatorTests
 
             DmsTargetFacts mssqlFacts = facts with
             {
-                MssqlPhysicalSchemaVersion = "v2",
+                HasMssqlPhysicalSchemaMarker = true,
                 HasMssqlDocumentCacheObjectCheck = true,
                 DocumentJsonColumns =
                 [
