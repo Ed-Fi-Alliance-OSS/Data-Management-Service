@@ -1725,7 +1725,7 @@ public class OpenApiDocument(
             ResourceSchema resourceSchema = new(resourceSchemaNode);
 
             // Skip if this resource doesn't have OpenAPI fragments
-            if (resourceSchema.OpenApiFragments == null)
+            if (resourceSchema.OpenApiFragments is null)
             {
                 continue;
             }
@@ -1735,7 +1735,7 @@ public class OpenApiDocument(
                 documentType == OpenApiDocumentType.Resource ? "resources" : "descriptors";
 
             // Skip if this resource doesn't have fragments for this document type
-            if (fragmentsNode[documentTypeKey] == null)
+            if (fragmentsNode[documentTypeKey] is null)
             {
                 continue;
             }
