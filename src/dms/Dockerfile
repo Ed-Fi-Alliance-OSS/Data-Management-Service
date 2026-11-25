@@ -137,10 +137,11 @@ RUN set -- ; \
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.13-alpine3.24@sha256:819bd3649d8bf53f35527c68d62e17b348ef6f24ae73073f497f00a878348062 AS runtimebase
 
-# Install OpenSSL on the 3.5 line and runtime helpers. icu-libs is required by
-# Microsoft.Data.SqlClient (the MSSQL backend), which does not support Globalization
-# Invariant Mode; the Alpine base image otherwise ships without ICU.
-RUN apk add --no-cache openssl=~3.5 bash=~5 postgresql18-client=~18 jq=~1.8 icu-libs=~78
+# Install OpenSSL on the 3.5 line and runtime helpers. zlib is pinned to >=1.4 to fix
+# CVE-2026-4738 (base image ships 1.3.2-r1); drop once the base image carries a fixed zlib.
+# icu-libs is required by Microsoft.Data.SqlClient (the MSSQL backend), which does not
+# support Globalization Invariant Mode; the Alpine base image otherwise ships without ICU.
+RUN apk add --no-cache "zlib>=1.4" openssl=~3.5 bash=~5 postgresql18-client=~18 jq=~1.8 icu-libs=~78
 
 FROM runtimebase AS setup
 
