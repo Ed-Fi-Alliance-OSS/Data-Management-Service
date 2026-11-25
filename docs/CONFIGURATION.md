@@ -1457,8 +1457,17 @@ authenticated. Successful validations may be reused while caching is enabled
 and the cached entry remains valid (see
 `JwtAuthentication.ValidatedTokenCacheEntryMaxLifetimeSeconds`).
 A failed one is not cached: a well-formed token with a forged signature
-costs a signature check every time, and validation failures are logged at
-the limiter and again during authentication when the request is admitted.
+costs a signature check on every attempt, at the limiter and again during
+authentication when the request is admitted. An expired or malformed token
+is not guaranteed to reach a signature check.
+
+The two validations log differently. While the limiter chooses a partition,
+a token that validation rejects, such as a forged, expired or malformed one,
+is logged at `Debug`, so a request the limiter then rejects leaves no
+validation entry at the default log level. With `Debug` logging enabled,
+each such request still writes one entry. Failures to obtain the identity
+provider's metadata keep their usual levels. Authentication of an admitted
+request logs a rejected token at `Warning`, as before.
 
 Separate budgets do not protect against CPU, log or memory exhaustion.
 Total-load caps, connection limits, and DoS and brute-force protection

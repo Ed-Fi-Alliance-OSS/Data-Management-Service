@@ -397,6 +397,10 @@ strategy names a host may assign in claim-set configuration.
   exhausted, and tell the rejected caller using the standard HTTP response for
   the condition that it has been rate limited.
 
+  _8.2 note:_ From Ed-Fi API 8.2, the limit applies per validated client or
+  client address rather than per request Host; see
+  [RateLimit](./CONFIGURATION.md#ratelimit).
+
 > [!NOTE]
 > This capability has no counterpart in the prior-generation platform,
 > which provided no request-volume protection of any kind.
