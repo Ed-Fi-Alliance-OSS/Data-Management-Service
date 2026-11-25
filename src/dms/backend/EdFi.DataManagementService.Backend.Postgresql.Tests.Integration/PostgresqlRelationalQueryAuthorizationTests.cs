@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
@@ -1475,7 +1476,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         ChangeVersionRange? changeVersionRange = null,
         IReadOnlyList<string>? namespacePrefixes = null,
         IReadOnlyList<short>? ownershipTokenIds = null,
-        CollectionPaging? paging = null
+        CollectionPaging? paging = null,
+        IReadOnlyList<QueryElement>? queryElements = null
     )
     {
         ResetRecorder();
@@ -1493,7 +1495,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 ownershipTokenIds ?? []
             ),
             MappingSet: MappingSet,
-            QueryElements: [],
+            QueryElements: queryElements is null ? [] : [.. queryElements],
             AuthorizationStrategyEvaluators:
             [
                 .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
@@ -4262,4 +4264,238 @@ public class Given_A_Postgresql_Relational_Query_Authorization_With_Anchored_Per
             .Should()
             .Equal(expectedDocumentUuids.Select(static documentUuid => documentUuid.Value.ToString()));
     }
+}
+
+/// <summary>
+/// Identification-code collection filters composed with row-level authorization over the authoritative Data
+/// Standard 5.2 schema. Each resource is seeded with a matching document the caller is not authorized for
+/// and an authorized document that does not match, so a page that dropped either the filter or the
+/// authorization predicate would return one of them.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+[Category("Authorization")]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Relational_Query_Authorization_With_Identification_Code_Filters
+{
+    private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/ds-5.2";
+    private const string EdOrgAuthorizationPredicate =
+        "r.\"EducationOrganization_EducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)";
+    private const string NamespaceAuthorizationPredicate = "r.\"Namespace\" LIKE ANY(@namespacePrefixes)";
+
+    private PostgresqlRelationalQueryAuthorizationTestContext _context = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _context = new PostgresqlRelationalQueryAuthorizationTestContext();
+        await _context.InitializeAsync(FixtureRelativePath, strict: true);
+        await IdentificationCodeAuthorizationSeeds.SeedAsync(
+            _context.SeedSchoolDescriptorDataAsync,
+            _context.SeedDescriptorAsync,
+            (projectEndpointName, resourceName, body, documentUuid, traceId) =>
+                _context.UpsertAsync(projectEndpointName, resourceName, body, documentUuid, traceId)
+        );
+        await _context.InsertAuthEdgeAsync(
+            IdentificationCodeAuthorizationSeeds.ClaimEducationOrganizationId,
+            IdentificationCodeAuthorizationSeeds.AuthorizedSchoolId
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_context is not null)
+        {
+            await _context.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public async Task It_seeds_documents_that_only_the_filter_or_only_edorg_authorization_would_admit()
+    {
+        var filterOnly = await QueryAsync(
+            "StudentEducationOrganizationAssociation",
+            [],
+            [SeoaElement("identificationCode", IdentificationCodeAuthorizationSeeds.MatchingStudentCode)]
+        );
+        var authorizationOnly = await QueryAsync(
+            "StudentEducationOrganizationAssociation",
+            EdOrgStrategy,
+            []
+        );
+
+        Ids(filterOnly)
+            .Should()
+            .Equal(
+                IdentificationCodeAuthorizationSeeds.AuthorizedMatchingSeoaUuid,
+                IdentificationCodeAuthorizationSeeds.UnauthorizedMatchingSeoaUuid
+            );
+        filterOnly.TotalCount.Should().Be(2);
+        Ids(authorizationOnly)
+            .Should()
+            .Equal(
+                IdentificationCodeAuthorizationSeeds.AuthorizedMatchingSeoaUuid,
+                IdentificationCodeAuthorizationSeeds.AuthorizedNonMatchingSeoaUuid
+            );
+        authorizationOnly.TotalCount.Should().Be(2);
+    }
+
+    [Test]
+    public async Task It_returns_and_counts_the_intersection_of_a_collection_filter_and_edorg_authorization()
+    {
+        var success = await QueryAsync(
+            "StudentEducationOrganizationAssociation",
+            EdOrgStrategy,
+            [SeoaElement("identificationCode", IdentificationCodeAuthorizationSeeds.MatchingStudentCode)]
+        );
+
+        Ids(success).Should().Equal(IdentificationCodeAuthorizationSeeds.AuthorizedMatchingSeoaUuid);
+        success.TotalCount.Should().Be(1, "two matching elements on one authorized document count once");
+        AssertFilterAndAuthorizationInPageAndCountSql(
+            "StudentEducationOrganizationAssociation",
+            EdOrgAuthorizationPredicate
+        );
+    }
+
+    [Test]
+    public async Task It_combines_several_collection_predicates_with_edorg_authorization()
+    {
+        var success = await QueryAsync(
+            "StudentEducationOrganizationAssociation",
+            EdOrgStrategy,
+            [
+                SeoaElement("identificationCode", IdentificationCodeAuthorizationSeeds.MatchingStudentCode),
+                SeoaElement(
+                    "assigningOrganizationIdentificationCode",
+                    IdentificationCodeAuthorizationSeeds.MatchingAssigningOrganization
+                ),
+            ]
+        );
+
+        Ids(success).Should().Equal(IdentificationCodeAuthorizationSeeds.AuthorizedMatchingSeoaUuid);
+        success.TotalCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_seeds_assessments_that_only_the_filter_or_only_namespace_authorization_would_admit()
+    {
+        var filterOnly = await QueryAsync(
+            "Assessment",
+            [],
+            [
+                AssessmentElement(
+                    "identificationCode",
+                    IdentificationCodeAuthorizationSeeds.MatchingAssessmentCode
+                ),
+            ]
+        );
+        var authorizationOnly = await QueryAsync("Assessment", NamespaceStrategy, []);
+
+        Ids(filterOnly)
+            .Should()
+            .Equal(
+                IdentificationCodeAuthorizationSeeds.AuthorizedMatchingAssessmentUuid,
+                IdentificationCodeAuthorizationSeeds.UnauthorizedMatchingAssessmentUuid
+            );
+        filterOnly.TotalCount.Should().Be(2);
+        Ids(authorizationOnly)
+            .Should()
+            .Equal(
+                IdentificationCodeAuthorizationSeeds.AuthorizedMatchingAssessmentUuid,
+                IdentificationCodeAuthorizationSeeds.AuthorizedNonMatchingAssessmentUuid
+            );
+        authorizationOnly.TotalCount.Should().Be(2);
+    }
+
+    [Test]
+    public async Task It_returns_and_counts_the_intersection_of_a_collection_filter_and_namespace_authorization()
+    {
+        var success = await QueryAsync(
+            "Assessment",
+            NamespaceStrategy,
+            [
+                AssessmentElement(
+                    "identificationCode",
+                    IdentificationCodeAuthorizationSeeds.MatchingAssessmentCode
+                ),
+                AssessmentElement(
+                    "assessmentIdentificationSystemDescriptor",
+                    IdentificationCodeAuthorizationSeeds.ContractorAssessmentSystem
+                ),
+            ]
+        );
+
+        Ids(success).Should().Equal(IdentificationCodeAuthorizationSeeds.AuthorizedMatchingAssessmentUuid);
+        success.TotalCount.Should().Be(1);
+        AssertFilterAndAuthorizationInPageAndCountSql("Assessment", NamespaceAuthorizationPredicate);
+    }
+
+    private static IReadOnlyList<string> EdOrgStrategy =>
+        [AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly];
+
+    private static IReadOnlyList<string> NamespaceStrategy =>
+        [AuthorizationStrategyNameConstants.NamespaceBased];
+
+    /// <summary>
+    /// The page and count statements that just executed without an ambiguous-column error carry both the
+    /// collection EXISTS, over the physical collection table the mapping set names, and the authorization
+    /// predicate on the root alias.
+    /// </summary>
+    private void AssertFilterAndAuthorizationInPageAndCountSql(
+        string resourceName,
+        string authorizationPredicate
+    )
+    {
+        var target = _context
+            .MappingSet.GetQueryCapabilityOrThrow(new QualifiedResourceName("Ed-Fi", resourceName))
+            .SupportedFieldsByQueryField["identificationCode"]
+            .Target.Should()
+            .BeOfType<RelationalQueryFieldTarget.CollectionColumn>()
+            .Subject;
+        var collectionExists =
+            $"EXISTS (SELECT 1 FROM \"{target.CollectionTable.Schema.Value}\".\"{target.CollectionTable.Name}\" ci";
+        var keyset = _context.AssertSingleQueryHydration();
+
+        foreach (var sql in new[] { keyset.Plan.PageDocumentIdSql, keyset.Plan.TotalCountSql! })
+        {
+            sql.Should().Contain(collectionExists).And.Contain(authorizationPredicate);
+        }
+    }
+
+    private async Task<QueryResult.QuerySuccess> QueryAsync(
+        string resourceName,
+        IReadOnlyList<string> strategyNames,
+        IReadOnlyList<QueryElement> queryElements
+    )
+    {
+        var result = await _context.QueryAsync(
+            "ed-fi",
+            resourceName,
+            [IdentificationCodeAuthorizationSeeds.ClaimEducationOrganizationId],
+            strategyNames,
+            limit: 25,
+            offset: 0,
+            totalCount: true,
+            namespacePrefixes: [IdentificationCodeAuthorizationSeeds.AuthorizedNamespacePrefix],
+            queryElements: queryElements
+        );
+
+        return result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+    }
+
+    private static Guid[] Ids(QueryResult.QuerySuccess success) =>
+        [.. success.EdfiDocs.Select(static document => Guid.Parse(document!["id"]!.GetValue<string>()))];
+
+    private static QueryElement SeoaElement(string queryFieldName, string value) =>
+        new(
+            queryFieldName,
+            [new JsonPath($"$.studentIdentificationCodes[*].{queryFieldName}")],
+            value,
+            "string"
+        );
+
+    private static QueryElement AssessmentElement(string queryFieldName, string value) =>
+        new(queryFieldName, [new JsonPath($"$.identificationCodes[*].{queryFieldName}")], value, "string");
 }
