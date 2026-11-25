@@ -189,11 +189,11 @@ bash "$CLASSIFIER"
         (Get-JobBlock 'run-integration-tests') | Should -Match "build-config\.ps1 IntegrationTest .*-IntegrationTestFilter 'Category!=DmsProvisioning'"
         $postgres = Get-JobBlock 'run-dms-provisioning-integration-tests'
         $mssql = Get-JobBlock 'run-dms-provisioning-integration-tests-mssql'
-        $postgres | Should -Match '--filter "Category=DmsProvisioning"'
+        $postgres | Should -Match '--filter "Category=DmsProvisioning&Category!=DmsProvisioningCrossEngine"'
         $postgres | Should -Match 'DMS_PROVISIONING_TEST_PROJECT: .*Backend\.Postgresql\.Tests\.Integration\.csproj'
         $mssql | Should -Match 'DMS_PROVISIONING_TEST_PROJECT: .*Backend\.Mssql\.Tests\.Integration\.csproj'
         $mssql | Should -Match '(?m)^      - \*run-dms-provisioning-tests$'
-        foreach ($lane in @('run-dms-provisioning-integration-tests', 'run-dms-provisioning-integration-tests-mssql')) {
+        foreach ($lane in @('run-dms-provisioning-integration-tests', 'run-dms-provisioning-integration-tests-mssql', 'run-dms-provisioning-integration-tests-cross-engine')) {
             (Get-JobBlock 'event_file') | Should -Match "needs: \[.*\b$lane(?:,|\])"
             (Get-JobBlock 'config-ci-gate') | Should -Match "(?m)^      - $lane$"
         }
@@ -209,6 +209,37 @@ bash "$CLASSIFIER"
         ($targetAdmin -match '^"Server=tcp:127\.0\.0\.1,1433;') | Should -BeTrue -Because 'managed physical admission requires an explicit TCP endpoint'
         $mssql | Should -Match 'DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH:'
         $mssql | Should -Match 'DMS_PROVISIONING_MSSQL_STAGING_PATH=\$staging" >> "\$GITHUB_ENV"'
+    }
+
+    It 'runs the cross-engine provisioning fixtures only in the lane that holds both engines' {
+        $cross = Get-JobBlock 'run-dms-provisioning-integration-tests-cross-engine'
+        $postgres = Get-JobBlock 'run-dms-provisioning-integration-tests'
+        $mssql = Get-JobBlock 'run-dms-provisioning-integration-tests-mssql'
+        $cross | Should -Match '--filter "Category=DmsProvisioningCrossEngine"'
+        # The same category name the fixtures carry, so a rename cannot silently empty the lane.
+        $cross | Should -Match 'DMS_PROVISIONING_TEST_PROJECTS: .*Backend\.Postgresql\.Tests\.Integration\.csproj;.*Backend\.Mssql\.Tests\.Integration\.csproj'
+        $constant = Get-Content (Join-Path $script:repoRoot 'src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/DataStoreProvisioning/Packaging/DmsProvisioningLaneRequirement.cs') -Raw
+        $constant | Should -Match 'CrossEngineCategory = "DmsProvisioningCrossEngine"'
+        # Both single-engine lanes skip it: the PostgreSQL lane by its own filter, the MSSQL lane by
+        # sharing that filter step.
+        $postgres | Should -Match 'Category!=DmsProvisioningCrossEngine'
+        $mssql | Should -Match '(?m)^      - \*run-dms-provisioning-tests$'
+        foreach ($setting in @(
+                'ConnectionStrings__PostgresqlDmsAdmin:', 'ConnectionStrings__MssqlDmsAdmin:', 'ConnectionStrings__MssqlAdmin:',
+                'DMS_PROVISIONING_PSQL_PATH:', 'DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH:', 'POSTGRESQL_TEMPLATE_PACKAGE_VERSION:')) {
+            $cross | Should -Match ([regex]::Escape($setting))
+        }
+        foreach ($step in @(
+                'install-psql-dms-provisioning', 'download-postgresql-templates-dms-provisioning',
+                'prepare-staging-dms-provisioning', 'start-sql-server-dms-provisioning',
+                'download-mssql-templates-dms-provisioning', 'check-mssql-templates-dms-provisioning')) {
+            $cross | Should -Match "(?m)^      - \*$step$"
+            $workflow | Should -Match "(?m)^      - &$step$"
+        }
+        $cross | Should -Match 'needs: \[detect-fresh-build-changes, build-cms-mssql-templates\]'
+        $cross | Should -Match "needs.detect-fresh-build-changes.outputs.mssql_template_relevant == 'true'"
+        # Both package sets land in one directory, with the PostgreSQL download first.
+        $workflow.IndexOf('*download-postgresql-templates-dms-provisioning') | Should -BeLessThan $workflow.IndexOf('*check-mssql-templates-dms-provisioning')
     }
 
     It 'gives SQL Server read access to the staging directory through the runner group only' {

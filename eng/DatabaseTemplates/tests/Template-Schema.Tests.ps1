@@ -98,10 +98,16 @@ Describe 'Template restore verification ordering' {
         Mock Copy-Item {}
         Mock Expand-Archive {}
         Mock Read-RestoreManifest {
-            [pscustomobject]@{ templateKind = 'Populated'; databaseEngine = $state.Engine; artifactFileName = 'dump'; artifactSha256 = 'sha'; projects = @('ed-fi') }
+            [pscustomobject]@{ version = 'v2'; engineVersion = '17.0.900.7'; templateKind = 'Populated'; databaseEngine = $state.Engine; artifactFileName = 'dump'; artifactSha256 = 'sha'; projects = @('ed-fi') }
         }
         Mock Get-FileSha256Hex { 'sha' }
-        Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{ FullInventory = @(); DatabaseLevelObjects = @() } }
+        # The SQL Server restore summary reads the engine build and DocumentCache facts (StrictMode).
+        Mock Get-TemplateSourceCatalogFacts {
+            [pscustomobject]@{
+                FullInventory = @(); DatabaseLevelObjects = @()
+                EngineVersion = '17.0.900.7'; DocumentJsonColumnType = 'json'; MssqlPhysicalSchemaVersion = 'v2'
+            }
+        }
         Mock Assert-DmsOnlyInventory { [pscustomobject]@{ ProjectSchemaNames = @('ed-fi') } }
         Mock Assert-RestoreManifestMatchesDatabase { $events.Add('manifest') }
         Mock Get-CmsToken { $events.Add('api'); throw 'API checkpoint' }

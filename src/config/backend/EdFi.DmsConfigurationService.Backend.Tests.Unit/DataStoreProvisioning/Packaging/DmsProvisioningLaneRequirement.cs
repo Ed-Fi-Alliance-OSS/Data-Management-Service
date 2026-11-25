@@ -15,6 +15,13 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 /// </summary>
 public static class DmsProvisioningLaneRequirement
 {
+    /// <summary>
+    /// Marks fixtures that need both engines' lane inputs (a second engine's package or admin server). They stay in
+    /// <c>DmsProvisioning</c>, which keeps every other lane from running them, and the single-engine provisioning
+    /// lanes exclude this category. Only the <c>run-dms-provisioning-integration-tests-cross-engine</c> job runs it.
+    /// </summary>
+    public const string CrossEngineCategory = "DmsProvisioningCrossEngine";
+
     public static bool IsGitHubActions =>
         string.Equals(
             Environment.GetEnvironmentVariable("GITHUB_ACTIONS"),

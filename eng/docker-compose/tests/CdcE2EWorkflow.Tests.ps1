@@ -567,6 +567,10 @@ Describe 'Ordinary E2E workspace guard after CDC runtime cleanup' {
         New-Item -ItemType Directory $script:guardRoot | Out-Null
         Copy-Item (Join-Path $script:composeRoot '*.psm1') $script:guardRoot
         Copy-Item (Join-Path $script:composeRoot 'cdc-worker-diagnostics.ps1') $script:guardRoot
+        Copy-Item (Join-Path $script:composeRoot 'cdc-failure-codes.ps1') $script:guardRoot
+        # cdc-runbook-diagnostics.ps1 sources ../docker-compose/cdc-failure-codes.ps1 relative to ci.
+        New-Item -ItemType Directory -Force (Join-Path $TestDrive 'docker-compose') | Out-Null
+        Copy-Item (Join-Path $script:composeRoot 'cdc-failure-codes.ps1') (Join-Path $TestDrive 'docker-compose')
         New-Item -ItemType Directory -Force (Join-Path $TestDrive 'ci') | Out-Null
         Copy-Item (Join-Path $script:composeRoot '../ci/cdc-runbook-diagnostics.ps1') (Join-Path $TestDrive 'ci')
         Copy-Item (Join-Path $script:composeRoot '../schema-package-utility.psm1') $TestDrive
@@ -606,6 +610,10 @@ Describe 'Private API CDC attachment contract' {
         $null = [IO.Directory]::CreateDirectory($script:attachmentRoot, [IO.UnixFileMode]448)
         Copy-Item (Join-Path $script:composeRoot '*.psm1') $script:attachmentRoot
         Copy-Item (Join-Path $script:composeRoot 'cdc-worker-diagnostics.ps1') $script:attachmentRoot
+        Copy-Item (Join-Path $script:composeRoot 'cdc-failure-codes.ps1') $script:attachmentRoot
+        # cdc-runbook-diagnostics.ps1 sources ../docker-compose/cdc-failure-codes.ps1 relative to ci.
+        New-Item -ItemType Directory -Force (Join-Path $TestDrive 'docker-compose') | Out-Null
+        Copy-Item (Join-Path $script:composeRoot 'cdc-failure-codes.ps1') (Join-Path $TestDrive 'docker-compose')
         New-Item -ItemType Directory -Force (Join-Path $TestDrive 'ci') | Out-Null
         Copy-Item (Join-Path $script:composeRoot '../ci/cdc-runbook-diagnostics.ps1') (Join-Path $TestDrive 'ci')
         Copy-Item (Join-Path $script:composeRoot '*.yml') $script:attachmentRoot

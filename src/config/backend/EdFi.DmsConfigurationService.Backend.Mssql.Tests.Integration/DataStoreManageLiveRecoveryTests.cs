@@ -153,7 +153,8 @@ public partial class Given_data_store_namespace_reservations
         TestCase("Minimal"),
         TestCase("Sample"),
         Category("DataStoreManageMixedRecovery"),
-        Category("DmsProvisioning")
+        Category("DmsProvisioning"),
+        Category(DmsProvisioningLaneRequirement.CrossEngineCategory)
     ]
     public Task It_recovers_mixed_catalog_and_target_and_reads_with_published_runtime_credentials(
         string templateName

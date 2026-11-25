@@ -734,6 +734,7 @@ public class MssqlRealPackageTests
     }
 
     [TestFixture]
+    [Category(DmsProvisioningLaneRequirement.CrossEngineCategory)]
     public class Given_the_allowlist_is_pointed_at_the_postgresql_package
     {
         private Lane? _lane;
