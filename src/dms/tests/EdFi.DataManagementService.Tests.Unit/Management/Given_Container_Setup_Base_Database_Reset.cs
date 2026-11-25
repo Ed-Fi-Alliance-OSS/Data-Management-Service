@@ -59,6 +59,7 @@ public class Given_Container_Setup_Base_Database_Reset
                     ("dms", "DataStoreIdentity"),
                     ("dms", "DocumentCacheState"),
                     ("dms", "EffectiveSchema"),
+                    ("dms", "MssqlPhysicalSchema"),
                     ("dms", "ResourceKey"),
                     ("dms", "SchemaComponent")
                 )
@@ -74,6 +75,7 @@ public class Given_Container_Setup_Base_Database_Reset
             .Contain("DataStoreIdentity")
             .And.Contain("DocumentCacheState")
             .And.Contain("EffectiveSchema")
+            .And.Contain("MssqlPhysicalSchema")
             .And.Contain("ResourceKey")
             .And.Contain("SchemaComponent");
     }

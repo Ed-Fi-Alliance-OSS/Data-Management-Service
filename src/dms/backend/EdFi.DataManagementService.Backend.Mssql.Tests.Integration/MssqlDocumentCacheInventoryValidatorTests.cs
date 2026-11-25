@@ -83,7 +83,7 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
         var result = await _validator.ValidateInventoryAsync(database.ConnectionString);
 
         result.IsSatisfied.Should().BeFalse();
-        result.Inventory.Message.Should().Contain("reprovision");
+        result.Inventory.Message.Should().ContainEquivalentOf("reprovision");
     }
 
     [Test]
@@ -132,7 +132,7 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
             );
             var denied = await _validator.ValidateInventoryAsync(connectionString);
             denied.IsSatisfied.Should().BeFalse();
-            denied.Inventory.Message.Should().Contain("reprovision");
+            denied.Inventory.Message.Should().ContainEquivalentOf("reprovision");
         }
         finally
         {
@@ -888,8 +888,8 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
             """
             ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
             ALTER TABLE dms.DocumentCache ADD [Document Json] json NULL;
-            ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject
-                CHECK (ISJSON([Document Json], OBJECT) = 1);
+            EXEC(N'ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject
+                CHECK (ISJSON([Document Json], OBJECT) = 1);');
             """
         ).SetName("It_rejects_the_sqlserver_json_object_check_on_a_lookalike_column");
 

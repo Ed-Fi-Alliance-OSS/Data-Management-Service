@@ -169,9 +169,8 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
         IReadOnlyList<SourceDocument> sources = await InsertProjectedRowsAsync(documentCount: 2);
         SourceDocument oversized = sources[0];
         SourceDocument healthy = sources[1];
-        oversized.Document["items"] = new JsonArray(
-            Enumerable.Range(0, 65_536).Select(i => (JsonNode?)JsonValue.Create(i)).ToArray()
-        );
+        string oversizedKey = new('x', 8_000);
+        oversized.Document[oversizedKey] = 1;
         var request = new DocumentCacheOnlineCacheRebuildRequest(
             AdministrativeTargetKey,
             Fingerprint,
@@ -205,7 +204,7 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
         cached.Keys.Should().Equal(healthy.DocumentId);
         cached[healthy.DocumentId].Should().Contain($"rebuilt-{healthy.DocumentId}");
 
-        oversized.Document.Remove("items");
+        oversized.Document.Remove(oversizedKey);
         DocumentCacheAdministrativeCommandResult resumed = await CreateCommand(
                 rebuilding,
                 new RecordingObservationSink()

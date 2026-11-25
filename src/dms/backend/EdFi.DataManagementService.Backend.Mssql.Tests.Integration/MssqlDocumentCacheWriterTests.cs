@@ -164,9 +164,7 @@ public class Given_A_Mssql_DocumentCacheWriter
             await InsertCacheRowAsync(source, contentVersion: 9);
         }
         var candidate = CreateCandidate(source, "oversized");
-        candidate.DocumentJson["items"] = new JsonArray(
-            Enumerable.Range(0, 65_536).Select(i => (JsonNode?)JsonValue.Create(i)).ToArray()
-        );
+        candidate.DocumentJson[new string('x', 8_000)] = 1;
         if (xactAbort)
         {
             _writer = CreateWriter(sessionInitializationCommandText: "SET XACT_ABORT ON");

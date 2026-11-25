@@ -1069,6 +1069,7 @@ public class Given_Mssql_DocumentCache_Physical_Preflight
         var seed = shape switch
         {
             "wrong singleton" => "(2, 'v2')",
+            "wrong version" => "(1, 'v1')",
             "multiple marker rows" => "(1, 'v2'), (2, 'v2')",
             _ => "(1, 'v2')",
         };

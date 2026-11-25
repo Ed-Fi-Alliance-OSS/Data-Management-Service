@@ -74,6 +74,8 @@ public class Given_MssqlGeneratedDdlTestDatabase
     public async Task It_resets_mutable_generated_ddl_state_without_reprovisioning_the_database()
     {
         var baselineCounts = await ReadBaselineCountsAsync();
+        var physicalMarkerCount = await ReadTableCountAsync("[dms].[MssqlPhysicalSchema]");
+        physicalMarkerCount.Should().Be(1);
 
         var firstDocumentState = await InsertContactDocumentAsync(
             Guid.Parse("11111111-1111-1111-1111-111111111111"),
@@ -90,6 +92,7 @@ public class Given_MssqlGeneratedDdlTestDatabase
 
         var resetMutableCounts = await ReadMutableCountsAsync();
         var resetBaselineCounts = await ReadBaselineCountsAsync();
+        (await ReadTableCountAsync("[dms].[MssqlPhysicalSchema]")).Should().Be(physicalMarkerCount);
         var resetIntegrityState = await ReadResetIntegrityStateAsync();
         var authorCollectionItemDefault = await _database.GetColumnDefaultAsync(
             "sample",

@@ -17,6 +17,7 @@ public abstract class ContainerSetupBase
         ("dms", "DataStoreIdentity"),
         ("dms", "DocumentCacheState"),
         ("dms", "EffectiveSchema"),
+        ("dms", "MssqlPhysicalSchema"),
         ("dms", "ResourceKey"),
         ("dms", "SchemaComponent"),
     ];

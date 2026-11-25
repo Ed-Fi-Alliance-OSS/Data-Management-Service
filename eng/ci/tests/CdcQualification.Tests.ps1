@@ -971,7 +971,7 @@ Describe 'CDC documentation qualification boundary' {
     }
     It 'selects the shared live setup fixture for each owned provider Admission path' {
         $runner = Get-Content (Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1') -Raw
-        $runner | Should -Match "if \(\`$phase -eq 'Admission' -or"
+        $runner | Should -Match "if \(\`$phase -in @\('Admission', 'Lifecycle'\) -and -not \`$nativeWorkerDeferred\)"
         $runner | Should -Match 'New-PesterContainer.*RunbookSetup.Live.Tests.ps1.*Provider = \$selected'
         $runner | Should -Match 'Mssql Admission/Lifecycle/ApiE2E requires CDC_RUNBOOK_OWNED_STACK=1'
         $runner | Should -Match 'Get-CdcRunbookPesterReport.*-QualificationProfile "\$selected\$procedure"'
@@ -1797,6 +1797,7 @@ function global:docker { $global:LASTEXITCODE = 0 }
 }
 
 Describe 'CDC API E2E prerequisite summary' {
+    BeforeAll { Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force }
     It 'retains sanitized evidence for always-upload after the workflow runner fails for <Provider>' -ForEach @(
         @{ Provider = 'Postgresql' }; @{ Provider = 'Mssql' }
     ) {
@@ -1836,7 +1837,16 @@ exit $LASTEXITCODE
         try { $env:RUNNER_TEMP = $workspace; & ([scriptblock]::Create($fallback)) }
         finally { $env:RUNNER_TEMP = $savedRunnerTemp; Pop-Location }
         (Get-FileHash (Join-Path $destination 'qualification.json')).Hash | Should -Be $summaryHash
-        $report = @(Get-Content (Join-Path $destination 'qualification.json') -Raw | ConvertFrom-Json | Where-Object Name -eq "$Provider-ApiE2E")[0]
+        $reports = @(Get-Content (Join-Path $destination 'qualification.json') -Raw | ConvertFrom-Json)
+        if ($Provider -eq 'Mssql' -and -not [object]::Equals((Get-CdcQualificationWorkerImage)['mssqlNativeDocumentCache'], $true)) {
+            $deferred = @($reports | Where-Object Name -eq 'prerequisites-or-runner')[0]
+            $deferred.Status | Should -Be 'EnvironmentUnavailable'
+            $deferred.Reason | Should -Match 'requires a shipped worker qualified for native DocumentJson'
+            @($reports | Where-Object Name -eq 'Mssql-ApiE2E').Count | Should -Be 0
+            Test-Path (Join-Path $destination 'Mssql-ApiE2E/cdc-api-e2e.json') | Should -BeFalse
+            return
+        }
+        $report = @($reports | Where-Object Name -eq "$Provider-ApiE2E")[0]
         $report.InvocationId | Should -Match '^[a-f0-9-]{36}$'
         $report.Stages.Setup | Should -Be Failed
         $report.Stages.Test | Should -Be NotRun
@@ -2242,7 +2252,8 @@ function docker { `$global:LASTEXITCODE = 0 }
         $result = Invoke-CdcRunbookLiveWrapper -Id cdc-pg-e2e-setup -FixtureRoot $script:private -TimeoutSeconds 30
         $result.ExitCode | Should -Be 1
         $result.FailureKind | Should -Be 'None'
-        ((Get-Content "$($result.LogPrefix).stderr" -Raw) -replace '\s', '') | Should -Match 'private-input-sentinel'
+        $stderr = (Get-Content "$($result.LogPrefix).stderr" -Raw) -replace '\x1b\[[0-9;]*m', '' -replace '\s', ''
+        $stderr | Should -Match 'private-input-sentinel'
         $report = Get-CdcRunbookPesterReport -Tests @([pscustomobject]@{ ExpandedName = 'CDC-DOC cdc-managed-start'; Result = 'Failed' }) -QualificationProfile MssqlLifecycle -ProgressPath (Join-Path $script:private 'runbook-progress.json')
         Export-CdcRunbookReport -Report $report -RawDirectory $script:private -Destination $script:published -FileName 'cdc-runbook-live-lifecycle.json'
         $json = Get-Content (Join-Path $script:published 'cdc-runbook-live-lifecycle.json') -Raw

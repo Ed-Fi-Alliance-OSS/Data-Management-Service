@@ -50,7 +50,9 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
             worker: Provider == Ddl.CdcProvider.SqlServer
                 ? CdcDeploymentRequestTestData.Worker()
                 : _request.WorkerPolicy,
-            sourceInventory: sources,
+            sourceInventory: Provider == Ddl.CdcProvider.SqlServer
+                ? sources
+                : _request.ProviderSetup.ExpectedSourceInventory,
             databaseExecutor: executor
         );
 
