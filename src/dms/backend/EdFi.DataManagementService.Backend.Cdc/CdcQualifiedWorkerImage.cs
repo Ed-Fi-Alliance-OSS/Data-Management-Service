@@ -80,11 +80,13 @@ public static class CdcQualifiedWorkerImage
 
     private static (string Image, bool MssqlNativeDocumentCache) ReadQualification()
     {
-        using var stream = typeof(CdcQualifiedWorkerImage).Assembly.GetManifestResourceStream(
-            "EdFi.DataManagementService.Backend.Cdc.CdcQualifiedWorkerImage.json"
-        ) ?? throw new InvalidDataException("The shipped CDC image qualification record is unavailable.");
+        using var stream =
+            typeof(CdcQualifiedWorkerImage).Assembly.GetManifestResourceStream(
+                "EdFi.DataManagementService.Backend.Cdc.CdcQualifiedWorkerImage.json"
+            ) ?? throw new InvalidDataException("The shipped CDC image qualification record is unavailable.");
         using var document = JsonDocument.Parse(stream);
-        string image = document.RootElement.GetProperty("image").GetString()
+        string image =
+            document.RootElement.GetProperty("image").GetString()
             ?? throw new InvalidDataException("The shipped CDC image qualification record is invalid.");
         bool nativeDocumentCache =
             document.RootElement.TryGetProperty("mssqlNativeDocumentCache", out var capability)

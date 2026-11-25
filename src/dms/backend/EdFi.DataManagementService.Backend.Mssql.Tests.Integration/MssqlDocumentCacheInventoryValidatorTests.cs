@@ -69,11 +69,11 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
     [TestCase("ALTER TABLE dms.MssqlPhysicalSchema DROP CONSTRAINT PK_MssqlPhysicalSchema")]
     [TestCase(
         """
-        ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
-        ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
-        ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;
-        ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson, OBJECT) = 1);
-        """
+            ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+            ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
+            ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;
+            ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson, OBJECT) = 1);
+            """
     )]
     public async Task It_rejects_invalid_physical_schema_before_cache_admission(string mutation)
     {

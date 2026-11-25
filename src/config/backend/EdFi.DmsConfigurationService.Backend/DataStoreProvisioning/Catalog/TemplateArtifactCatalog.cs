@@ -692,7 +692,8 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         CancellationToken cancellationToken
     )
     {
-        string path = _options.TrustPolicyPath
+        string path =
+            _options.TrustPolicyPath
             ?? throw new InvalidOperationException(
                 "DmsDataStoreProvisioning:TrustPolicyPath is not configured; static validation admits no such state."
             );
@@ -835,7 +836,8 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         string packageId
     )
     {
-        DmsDataStoreProvisioningOptions.CompatibilityExpectations compatibility = _options.Compatibility
+        DmsDataStoreProvisioningOptions.CompatibilityExpectations compatibility =
+            _options.Compatibility
             ?? throw new InvalidOperationException(
                 "DmsDataStoreProvisioning:Compatibility is not configured; static validation admits no such state."
             );

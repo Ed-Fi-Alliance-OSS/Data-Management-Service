@@ -753,8 +753,9 @@ public class TemplateArtifactCatalogTests
             ["projects: the manifest declares more"] = (
                 workspace =>
                     workspace.Build(
-                        Mutated(workspace, manifest =>
-                            manifest["projects"] = new JsonArray("edfi", "tpdm", "sample")
+                        Mutated(
+                            workspace,
+                            manifest => manifest["projects"] = new JsonArray("edfi", "tpdm", "sample")
                         )
                     ),
                 null,
@@ -781,11 +782,17 @@ public class TemplateArtifactCatalogTests
                 DmsDatabaseTemplate.Minimal
             ),
             ["order: data standard before the hash"] = (
-                workspace => workspace.Build(Mutated(workspace, manifest =>
-                        {
-                            manifest["dataStandardVersion"] = "5.3.0";
-                            manifest["effectiveSchemaHash"] = _otherHash;
-                        })),
+                workspace =>
+                    workspace.Build(
+                        Mutated(
+                            workspace,
+                            manifest =>
+                            {
+                                manifest["dataStandardVersion"] = "5.3.0";
+                                manifest["effectiveSchemaHash"] = _otherHash;
+                            }
+                        )
+                    ),
                 null,
                 DmsDatabaseTemplate.Minimal
             ),
@@ -844,11 +851,15 @@ public class TemplateArtifactCatalogTests
             );
             _optionalExpectationsMet = await ResolveInOwnWorkspace(
                 workspace => workspace.Build(workspace.MinimalBuilder()),
-                workspace => Expecting(workspace, compatibility =>
-                    {
-                        compatibility.ApiSchemaFormatVersion = "1.0.0";
-                        compatibility.RelationalMappingVersion = "v2";
-                    })
+                workspace =>
+                    Expecting(
+                        workspace,
+                        compatibility =>
+                        {
+                            compatibility.ApiSchemaFormatVersion = "1.0.0";
+                            compatibility.RelationalMappingVersion = "v2";
+                        }
+                    )
             );
         }
 

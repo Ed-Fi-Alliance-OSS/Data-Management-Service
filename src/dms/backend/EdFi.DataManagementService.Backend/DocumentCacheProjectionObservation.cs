@@ -964,13 +964,15 @@ public sealed record DocumentCacheProjectionObservationSnapshot
         DateTimeOffset observedAt
     )
     {
-        CurrentTargetHealth = currentTargetHealth
-            ?? throw new ArgumentNullException(nameof(currentTargetHealth));
-        LastEndedTargetDiagnostics = lastEndedTargetDiagnostics
-            ?? throw new ArgumentNullException(nameof(lastEndedTargetDiagnostics));
-        ActiveAdministrativeCommands = activeAdministrativeCommands
+        CurrentTargetHealth =
+            currentTargetHealth ?? throw new ArgumentNullException(nameof(currentTargetHealth));
+        LastEndedTargetDiagnostics =
+            lastEndedTargetDiagnostics ?? throw new ArgumentNullException(nameof(lastEndedTargetDiagnostics));
+        ActiveAdministrativeCommands =
+            activeAdministrativeCommands
             ?? throw new ArgumentNullException(nameof(activeAdministrativeCommands));
-        CurrentGenerationActiveAdministrativeCommands = currentGenerationActiveAdministrativeCommands
+        CurrentGenerationActiveAdministrativeCommands =
+            currentGenerationActiveAdministrativeCommands
             ?? throw new ArgumentNullException(nameof(currentGenerationActiveAdministrativeCommands));
         CurrentGenerationEndedAdministrativeCommandDiagnostics =
             currentGenerationEndedAdministrativeCommandDiagnostics

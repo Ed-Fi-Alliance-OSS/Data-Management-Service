@@ -152,7 +152,8 @@ public sealed class RealTemplatePackage
     public void ExtractArtifactTo(string path)
     {
         using ZipArchive archive = ZipFile.OpenRead(SourcePath);
-        ZipArchiveEntry entry = archive.GetEntry(Manifest.ArtifactFileName)
+        ZipArchiveEntry entry =
+            archive.GetEntry(Manifest.ArtifactFileName)
             ?? throw new InvalidOperationException(
                 "The package does not carry the artifact its manifest names."
             );

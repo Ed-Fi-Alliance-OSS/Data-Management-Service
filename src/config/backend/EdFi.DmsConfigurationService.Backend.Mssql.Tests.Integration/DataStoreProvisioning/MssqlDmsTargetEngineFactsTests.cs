@@ -146,26 +146,26 @@ public class MssqlDmsTargetEngineFactsTests
         )]
         [TestCase(
             """
-            ALTER TABLE dms.MssqlPhysicalSchema DROP CONSTRAINT CK_MssqlPhysicalSchema_Singleton;
-            ALTER TABLE dms.MssqlPhysicalSchema ADD CONSTRAINT CK_MssqlPhysicalSchema_Singleton CHECK (SingletonId >= 1);
-            """,
+                ALTER TABLE dms.MssqlPhysicalSchema DROP CONSTRAINT CK_MssqlPhysicalSchema_Singleton;
+                ALTER TABLE dms.MssqlPhysicalSchema ADD CONSTRAINT CK_MssqlPhysicalSchema_Singleton CHECK (SingletonId >= 1);
+                """,
             DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
         )]
         [TestCase(
             """
-            ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
-            ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
-            EXEC(N'ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;');
-            """,
+                ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+                ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
+                EXEC(N'ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;');
+                """,
             DmsTargetValidator.DocumentJsonColumnTypeCheck
         )]
         [TestCase(
             """
-            DROP TABLE dms.MssqlPhysicalSchema;
-            ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
-            ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
-            EXEC(N'ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;');
-            """,
+                DROP TABLE dms.MssqlPhysicalSchema;
+                ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+                ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
+                EXEC(N'ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;');
+                """,
             DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
         )]
         public Task It_rejects_incompatible_physical_baselines(string mutation, string check) =>
@@ -173,11 +173,11 @@ public class MssqlDmsTargetEngineFactsTests
 
         [TestCase(
             """
-            ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
-            ALTER TABLE dms.DocumentCache ALTER COLUMN DocumentJson json NULL;
-            ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject
-                CHECK (ISJSON([DocumentJson], OBJECT) = 1);
-            """
+                ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+                ALTER TABLE dms.DocumentCache ALTER COLUMN DocumentJson json NULL;
+                ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject
+                    CHECK (ISJSON([DocumentJson], OBJECT) = 1);
+                """
         )]
         [TestCase(
             "ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; "

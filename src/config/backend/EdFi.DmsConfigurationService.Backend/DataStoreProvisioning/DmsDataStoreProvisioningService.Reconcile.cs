@@ -73,8 +73,9 @@ public sealed partial class DmsDataStoreProvisioningService
 
         await using (session)
         {
-            DmsIdentityRead identity = await scope.ReadAsync(ReconcileIdentityStep, token =>
-                engine.ReadIdentityAsync(session, token)
+            DmsIdentityRead identity = await scope.ReadAsync(
+                ReconcileIdentityStep,
+                token => engine.ReadIdentityAsync(session, token)
             );
             ThrowIfAccessDenied(
                 identity,

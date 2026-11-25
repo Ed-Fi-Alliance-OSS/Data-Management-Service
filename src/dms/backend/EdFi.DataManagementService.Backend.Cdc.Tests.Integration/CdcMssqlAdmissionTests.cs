@@ -724,15 +724,18 @@ public sealed class Given_SqlServer_Controller_Admission
         var source = _fixture.CreateManagedSource(database);
         bool created = false;
         bool interrupted = false;
-        var wrapper = new CreationBoundary(source, () =>
-        {
-            created = true;
-            if (fault == "lost-create-result")
+        var wrapper = new CreationBoundary(
+            source,
+            () =>
             {
-                interrupted = true;
-                throw new IOException("lost CREATE result");
+                created = true;
+                if (fault == "lost-create-result")
+                {
+                    interrupted = true;
+                    throw new IOException("lost CREATE result");
+                }
             }
-        });
+        );
         _fixture.Hooks.OnBoundary = e =>
         {
             if (
@@ -1152,15 +1155,18 @@ public sealed class Given_SqlServer_Controller_Admission
     {
         await _fixture.RegisterAsync(Token);
         int unavailable = 0;
-        var kafka = _fixture.Hooks.Decorate<ICdcKafkaAdminAdapter>(_fixture.Kafka, name =>
-        {
-            if (name == nameof(ICdcKafkaAdminAdapter.InspectSchemaHistoryAsync))
+        var kafka = _fixture.Hooks.Decorate<ICdcKafkaAdminAdapter>(
+            _fixture.Kafka,
+            name =>
             {
-                unavailable++;
-                throw new IOException("injected unavailable schema history observation");
+                if (name == nameof(ICdcKafkaAdminAdapter.InspectSchemaHistoryAsync))
+                {
+                    unavailable++;
+                    throw new IOException("injected unavailable schema history observation");
+                }
+                return CdcControllerBoundary.Observation;
             }
-            return CdcControllerBoundary.Observation;
-        });
+        );
         (
             await _fixture
                 .AdmissionWithKafka(kafka)

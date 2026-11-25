@@ -33,7 +33,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        _ = request.ArtifactNames.SqlServer
+        _ =
+            request.ArtifactNames.SqlServer
             ?? throw new InvalidOperationException("SQL Server artifact names were not supplied.");
         var heartbeatTable = SourceTable(request, CdcSourceTableKind.CdcHeartbeat);
 
@@ -2664,13 +2665,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         return rows.Count > 0 && ReadBool(rows[0], "table_exists");
     }
 
-    private static string TableExistsSql(DbTableName table) => $"""
-        /* cdc:sqlserver:table-exists */
-        SELECT CONVERT(nvarchar(5), CASE
-            WHEN OBJECT_ID(N'{ObjectIdName(table)}', N'U') IS NULL THEN 0
-            ELSE 1
-        END) AS table_exists;
-        """;
+    private static string TableExistsSql(DbTableName table) =>
+        $"""
+            /* cdc:sqlserver:table-exists */
+            SELECT CONVERT(nvarchar(5), CASE
+                WHEN OBJECT_ID(N'{ObjectIdName(table)}', N'U') IS NULL THEN 0
+                ELSE 1
+            END) AS table_exists;
+            """;
 
     private const string SourceFingerprintSql = """
         /* cdc:sqlserver:source-fingerprint */
@@ -4408,12 +4410,13 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
     )
     {
         var observedValues = DatabaseCdcObservedValues(inspection, wasEnabledAtStart);
-        var classification = diagnostics
-            .FirstOrDefault(diagnostic =>
-                diagnostic.Severity == CdcProviderDiagnosticSeverity.Error
-                && IsProviderHistoryContinuityDiagnostic(diagnostic)
-            )
-            ?.Classification
+        var classification =
+            diagnostics
+                .FirstOrDefault(diagnostic =>
+                    diagnostic.Severity == CdcProviderDiagnosticSeverity.Error
+                    && IsProviderHistoryContinuityDiagnostic(diagnostic)
+                )
+                ?.Classification
             ?? CdcProviderRetryContinuityClassification.None;
 
         return new CdcProviderSetupStepResult(
@@ -4445,9 +4448,10 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         IReadOnlyList<CdcProviderDiagnostic> diagnostics
     )
     {
-        var classification = diagnostics
-            .FirstOrDefault(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error)
-            ?.Classification
+        var classification =
+            diagnostics
+                .FirstOrDefault(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error)
+                ?.Classification
             ?? CdcProviderRetryContinuityClassification.None;
 
         return new CdcProviderSetupStepResult(
@@ -4482,12 +4486,13 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             inspection,
             wasEnabledAtStart: inspection.IsCdcEnabled
         );
-        var classification = diagnostics
-            .FirstOrDefault(diagnostic =>
-                diagnostic.Severity == CdcProviderDiagnosticSeverity.Error
-                && IsProviderHistoryContinuityDiagnostic(diagnostic)
-            )
-            ?.Classification
+        var classification =
+            diagnostics
+                .FirstOrDefault(diagnostic =>
+                    diagnostic.Severity == CdcProviderDiagnosticSeverity.Error
+                    && IsProviderHistoryContinuityDiagnostic(diagnostic)
+                )
+                ?.Classification
             ?? CdcProviderRetryContinuityClassification.None;
         var state = diagnostics.Any(diagnostic => diagnostic.Severity == CdcProviderDiagnosticSeverity.Error)
             ? CdcProviderArtifactState.Mismatched

@@ -575,9 +575,9 @@ public class Given_Mssql_Bounded_E18_Preflight_Guards
     )]
     [TestCase(
         """
-        ALTER TABLE [dms].[DocumentCacheState] DROP CONSTRAINT [CK_DocumentCacheState_Lifecycle];
-        UPDATE [dms].[DocumentCacheState] SET [ProjectionLifecycleState] = 'Broken' WHERE [StateId] = 1;
-        """,
+            ALTER TABLE [dms].[DocumentCacheState] DROP CONSTRAINT [CK_DocumentCacheState_Lifecycle];
+            UPDATE [dms].[DocumentCacheState] SET [ProjectionLifecycleState] = 'Broken' WHERE [StateId] = 1;
+            """,
         "ProjectionLifecycleState has unsupported value",
         TestName = "It_rejects_invalid_DocumentCacheState_lifecycle"
     )]

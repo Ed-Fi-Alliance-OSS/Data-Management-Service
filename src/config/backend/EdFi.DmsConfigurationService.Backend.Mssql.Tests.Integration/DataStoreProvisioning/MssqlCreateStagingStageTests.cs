@@ -300,10 +300,10 @@ public class MssqlCreateStagingStageTests
         )]
         [TestCase(
             """
-            ALTER TABLE [dms].[DocumentCache] DROP CONSTRAINT [CK_DocumentCache_IsJsonObject];
-            ALTER TABLE [dms].[DocumentCache] DROP COLUMN [DocumentJson];
-            EXEC(N'ALTER TABLE [dms].[DocumentCache] ADD [DocumentJson] nvarchar(max) NOT NULL;');
-            """,
+                ALTER TABLE [dms].[DocumentCache] DROP CONSTRAINT [CK_DocumentCache_IsJsonObject];
+                ALTER TABLE [dms].[DocumentCache] DROP COLUMN [DocumentJson];
+                EXEC(N'ALTER TABLE [dms].[DocumentCache] ADD [DocumentJson] nvarchar(max) NOT NULL;');
+                """,
             DmsTargetValidator.DocumentJsonColumnTypeCheck
         )]
         public async Task It_reports_reprovisioning_guidance_before_publication(string mutation, string check)

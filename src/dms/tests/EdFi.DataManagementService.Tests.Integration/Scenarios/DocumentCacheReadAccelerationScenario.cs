@@ -336,7 +336,8 @@ internal static class DocumentCacheReadAccelerationScenario
     )
     {
         await SetTrackingLifecycleAsync(harness);
-        DocumentCacheDirectFillTimeoutRecorder recorder = harness.DocumentCacheDirectFillTimeoutRecorder
+        DocumentCacheDirectFillTimeoutRecorder recorder =
+            harness.DocumentCacheDirectFillTimeoutRecorder
             ?? throw new InvalidOperationException(
                 "The direct-fill timeout scenario requires the direct-fill timeout recorder."
             );
@@ -1172,7 +1173,8 @@ internal static class DocumentCacheReadAccelerationScenario
         await using DbDataReader reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue("direct fill should write one cache row");
 
-        string documentJson = Convert.ToString(reader.GetValue(4), CultureInfo.InvariantCulture)
+        string documentJson =
+            Convert.ToString(reader.GetValue(4), CultureInfo.InvariantCulture)
             ?? throw new InvalidOperationException("DocumentCache.DocumentJson was null.");
         var row = new DocumentCacheRow(
             Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),

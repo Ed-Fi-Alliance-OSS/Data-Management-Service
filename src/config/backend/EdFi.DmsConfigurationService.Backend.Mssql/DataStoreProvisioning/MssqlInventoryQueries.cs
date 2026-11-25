@@ -159,9 +159,9 @@ internal static class MssqlInventoryQueries
 
     private static string ReadDocumentCachePhysicalFacts()
     {
-        using var stream = typeof(MssqlInventoryQueries).Assembly.GetManifestResourceStream(
-            "MssqlDocumentCacheCatalog.sql"
-        ) ?? throw new InvalidOperationException("Missing SQL Server DocumentCache catalog resource.");
+        using var stream =
+            typeof(MssqlInventoryQueries).Assembly.GetManifestResourceStream("MssqlDocumentCacheCatalog.sql")
+            ?? throw new InvalidOperationException("Missing SQL Server DocumentCache catalog resource.");
         using var reader = new StreamReader(stream);
         return "SET NOCOUNT ON; DECLARE @require_native_document_cache bit = 0;\n"
             + reader.ReadToEnd()

@@ -64,7 +64,8 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
     )
     {
         _targetRegistry = targetRegistry ?? throw new ArgumentNullException(nameof(targetRegistry));
-        _projectionObservationProvider = projectionObservationProvider
+        _projectionObservationProvider =
+            projectionObservationProvider
             ?? throw new ArgumentNullException(nameof(projectionObservationProvider));
         _currentSourceObservers = (
             currentSourceObservers ?? throw new ArgumentNullException(nameof(currentSourceObservers))
@@ -300,11 +301,13 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             );
         }
 
-        RelationalProviderToken providerToken = targetObservation.ProviderToken
+        RelationalProviderToken providerToken =
+            targetObservation.ProviderToken
             ?? throw new InvalidOperationException(
                 "DocumentCache status provider token is required after observer selection."
             );
-        DocumentCacheTargetContextGeneration generation = targetObservation.Generation
+        DocumentCacheTargetContextGeneration generation =
+            targetObservation.Generation
             ?? throw new InvalidOperationException(
                 "DocumentCache target generation is required after observer selection."
             );

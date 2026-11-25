@@ -249,7 +249,8 @@ internal sealed class CdcConnectorTemplateRenderer(
         config["schema.history.internal.kafka.bootstrap.servers"] = request
             .DeploymentPolicy
             .KafkaBootstrapServers;
-        config["schema.history.internal.kafka.topic"] = request.SchemaHistoryTopicName
+        config["schema.history.internal.kafka.topic"] =
+            request.SchemaHistoryTopicName
             ?? throw new InvalidOperationException(
                 "CDC connector template SQL Server schema-history topic was not derived."
             );

@@ -399,8 +399,9 @@ public static class DmsTargetValidator
                 !string.Equals(name, ConfigurationServiceSchemaName, StringComparison.OrdinalIgnoreCase)
             ),
         ];
-        bool everyResourceHasCompanion = Array.TrueForAll(resourceSchemas, resource =>
-            partition.TrackedChangesProjects.Contains(resource, StringComparer.Ordinal)
+        bool everyResourceHasCompanion = Array.TrueForAll(
+            resourceSchemas,
+            resource => partition.TrackedChangesProjects.Contains(resource, StringComparer.Ordinal)
         );
         bool everyCompanionHasResource = partition.TrackedChangesProjects.All(project =>
             partition.ResourceSchemas.Contains(project, StringComparer.Ordinal)

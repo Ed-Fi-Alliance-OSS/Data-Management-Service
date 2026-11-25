@@ -35,18 +35,20 @@ public static class MssqlDocumentCachePhysicalSchema
 
     private const string LegacyVersion = "v1";
 
-    public static string PlatformGuardSql { get; } = $$"""
-        IF ISNULL(TRY_CONVERT(int, SERVERPROPERTY(N'ProductMajorVersion')), 0) < {{MinimumServerMajorVersion}}
-            THROW {{UnsupportedServerError}}, '{{UnsupportedServerMessage}}', 1;
-        """;
+    public static string PlatformGuardSql { get; } =
+        $$"""
+            IF ISNULL(TRY_CONVERT(int, SERVERPROPERTY(N'ProductMajorVersion')), 0) < {{MinimumServerMajorVersion}}
+                THROW {{UnsupportedServerError}}, '{{UnsupportedServerMessage}}', 1;
+            """;
 
     private static string CatalogObservationSql { get; } = ReadCatalogObservationSql();
 
     private static string ReadCatalogObservationSql()
     {
-        using var stream = typeof(MssqlDocumentCachePhysicalSchema).Assembly.GetManifestResourceStream(
-            "MssqlDocumentCacheCatalog.sql"
-        ) ?? throw new InvalidOperationException("Missing SQL Server DocumentCache catalog resource.");
+        using var stream =
+            typeof(MssqlDocumentCachePhysicalSchema).Assembly.GetManifestResourceStream(
+                "MssqlDocumentCacheCatalog.sql"
+            ) ?? throw new InvalidOperationException("Missing SQL Server DocumentCache catalog resource.");
         using var reader = new StreamReader(stream);
 
         return reader.ReadToEnd().ReplaceLineEndings("\n").TrimEnd('\n');
@@ -74,20 +76,22 @@ public static class MssqlDocumentCachePhysicalSchema
     /// Runs before mutations in both raw DDL and the SchemaTools provider. On an admitted
     /// existing schema the marker read is held through the surrounding apply transaction.
     /// </summary>
-    public static string ProvisioningGuardSql { get; } = $$"""
-        -- Preflight: verify the SQL Server engine and DocumentCache physical baseline
-        {{PlatformGuardSql}}
+    public static string ProvisioningGuardSql { get; } =
+        $$"""
+            -- Preflight: verify the SQL Server engine and DocumentCache physical baseline
+            {{PlatformGuardSql}}
 
-        {{NativeCatalogObservationSql}}
+            {{NativeCatalogObservationSql}}
 
-        IF @document_cache_physical_version = '{{LegacyVersion}}'
-            THROW {{LegacySchemaError}}, '{{LegacySchemaMessage}}', 1;
-        IF @document_cache_physical_version IS NULL AND (@boundary_objects <> 0 OR @can_prove_boundary_absence = 0)
-            THROW {{IncompatibleSchemaError}}, '{{IncompatibleSchemaMessage}}', 1;
-        """;
+            IF @document_cache_physical_version = '{{LegacyVersion}}'
+                THROW {{LegacySchemaError}}, '{{LegacySchemaMessage}}', 1;
+            IF @document_cache_physical_version IS NULL AND (@boundary_objects <> 0 OR @can_prove_boundary_absence = 0)
+                THROW {{IncompatibleSchemaError}}, '{{IncompatibleSchemaMessage}}', 1;
+            """;
 
-    public static string ObservedVersionSql { get; } = $"""
-        {NativeCatalogObservationSql}
-        SELECT @document_cache_physical_version AS physical_schema_version;
-        """;
+    public static string ObservedVersionSql { get; } =
+        $"""
+            {NativeCatalogObservationSql}
+            SELECT @document_cache_physical_version AS physical_schema_version;
+            """;
 }
