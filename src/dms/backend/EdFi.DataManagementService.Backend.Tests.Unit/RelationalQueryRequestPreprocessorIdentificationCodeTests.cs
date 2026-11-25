@@ -244,6 +244,71 @@ public partial class Given_RelationalQueryRequestPreprocessor
             result.QueryElementsInOrder.Should().BeEmpty();
         }
 
+        /// <summary>
+        /// Descriptor text is validated only for NUL and unpaired surrogates, not for URI syntax, so a value
+        /// without '#' is an ordinary lookup: it reaches the resolver exactly as supplied, and a miss empties
+        /// the page rather than failing validation. Root and collection descriptor filters behave alike.
+        /// </summary>
+        [TestCase("sexDescriptor", "$.sexDescriptor", "SexDescriptor")]
+        [TestCase("staffIdentificationSystemDescriptor", SystemPath, "StaffIdentificationSystemDescriptor")]
+        public async Task It_looks_up_a_descriptor_value_without_a_hash_and_empties_the_page_on_a_miss(
+            string queryFieldName,
+            string documentPath,
+            string expectedDescriptorResourceName
+        )
+        {
+            const string ValueWithoutHash = "uri://ed-fi.org/NoFragment";
+            List<ReferenceResolverRequest> requests = [];
+            var referenceResolver = A.Fake<IReferenceResolver>();
+            A.CallTo(() =>
+                    referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._)
+                )
+                .ReturnsLazily(
+                    (ReferenceResolverRequest request, CancellationToken _) =>
+                    {
+                        requests.Add(request);
+
+                        return Task.FromResult(
+                            CreateResolvedReferenceSet(
+                                invalidDescriptorReferences:
+                                [
+                                    .. request.DescriptorReferences.Select(static reference =>
+                                        DescriptorReferenceFailure.From(
+                                            reference,
+                                            DescriptorReferenceFailureReason.Missing
+                                        )
+                                    ),
+                                ]
+                            )
+                        );
+                    }
+                );
+
+            var result = await PreprocessAsync(
+                referenceResolver,
+                SqlDialect.Pgsql,
+                CreateQueryElement(queryFieldName, documentPath, ValueWithoutHash, "string")
+            );
+
+            result
+                .Outcome.Should()
+                .BeOfType<RelationalQueryPreprocessingOutcome.EmptyPage>()
+                .Which.Reason.Should()
+                .Contain(queryFieldName)
+                .And.Contain(ValueWithoutHash);
+            result.QueryElementsInOrder.Should().BeEmpty();
+            requests.Should().ContainSingle();
+            requests[0]
+                .DescriptorReferences.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<DescriptorReference>(reference =>
+                    reference.ResourceInfo.ResourceName.Value == expectedDescriptorResourceName
+                    && reference.DocumentIdentity.DocumentIdentityElements.Single().IdentityValue
+                        == ValueWithoutHash
+                );
+        }
+
         [Test]
         public async Task It_rejects_a_malformed_collection_descriptor_even_after_a_filter_that_empties_the_page()
         {
