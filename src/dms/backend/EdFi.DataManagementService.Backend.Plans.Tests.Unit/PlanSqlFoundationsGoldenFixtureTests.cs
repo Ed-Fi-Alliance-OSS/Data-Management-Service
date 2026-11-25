@@ -155,6 +155,19 @@ public class Given_PlanSqlFoundations_GoldenFixture
         AssertGoldenMatches("mssql.insert.sql");
     }
 
+    [TestCase("pgsql.collection-exists-page-document-id.sql")]
+    [TestCase("mssql.collection-exists-page-document-id.sql")]
+    [TestCase("pgsql.collection-exists-total-count.sql")]
+    [TestCase("mssql.collection-exists-total-count.sql")]
+    [TestCase("pgsql.collection-exists-cursor-content-version.sql")]
+    [TestCase("mssql.collection-exists-cursor-content-version.sql")]
+    [TestCase("pgsql.collection-exists-unpaged-candidates.sql")]
+    [TestCase("mssql.collection-exists-unpaged-candidates.sql")]
+    public void It_should_match_the_collection_exists_sql_golden(string fileName)
+    {
+        AssertGoldenMatches(fileName);
+    }
+
     private void AssertGoldenMatches(string fileName)
     {
         _diffByFileName.TryGetValue(fileName, out var diffOutput).Should().BeTrue();
@@ -187,6 +200,30 @@ public class Given_PlanSqlFoundations_GoldenFixture
             ["mssql.unpaged-candidates.sql"] = BuildUnpagedCandidatesSql(SqlDialect.Mssql),
             ["pgsql.insert.sql"] = BuildSimpleInsertSql(SqlDialect.Pgsql),
             ["mssql.insert.sql"] = BuildSimpleInsertSql(SqlDialect.Mssql),
+            ["pgsql.collection-exists-page-document-id.sql"] = PlanSqlGoldenFixtureQueryPlans
+                .CompileCollectionExistsPageDocumentIdPlan(SqlDialect.Pgsql)
+                .PageDocumentIdSql,
+            ["mssql.collection-exists-page-document-id.sql"] = PlanSqlGoldenFixtureQueryPlans
+                .CompileCollectionExistsPageDocumentIdPlan(SqlDialect.Mssql)
+                .PageDocumentIdSql,
+            ["pgsql.collection-exists-total-count.sql"] = PlanSqlGoldenFixtureQueryPlans
+                .CompileCollectionExistsPageDocumentIdPlan(SqlDialect.Pgsql)
+                .TotalCountSql!,
+            ["mssql.collection-exists-total-count.sql"] = PlanSqlGoldenFixtureQueryPlans
+                .CompileCollectionExistsPageDocumentIdPlan(SqlDialect.Mssql)
+                .TotalCountSql!,
+            ["pgsql.collection-exists-cursor-content-version.sql"] = PlanSqlGoldenFixtureQueryPlans
+                .CompileCollectionExistsContentVersionCursorPlan(SqlDialect.Pgsql)
+                .PageDocumentIdSql,
+            ["mssql.collection-exists-cursor-content-version.sql"] = PlanSqlGoldenFixtureQueryPlans
+                .CompileCollectionExistsContentVersionCursorPlan(SqlDialect.Mssql)
+                .PageDocumentIdSql,
+            ["pgsql.collection-exists-unpaged-candidates.sql"] = PlanSqlGoldenFixtureQueryPlans
+                .CompileCollectionExistsUnpagedCandidatesPlan(SqlDialect.Pgsql)
+                .PageDocumentIdSql,
+            ["mssql.collection-exists-unpaged-candidates.sql"] = PlanSqlGoldenFixtureQueryPlans
+                .CompileCollectionExistsUnpagedCandidatesPlan(SqlDialect.Mssql)
+                .PageDocumentIdSql,
         };
     }
 

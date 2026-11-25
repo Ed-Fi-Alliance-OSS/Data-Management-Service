@@ -266,6 +266,7 @@ public static class PlanNamingConventions
             PlanSqlAliasRole.Document => "doc",
             PlanSqlAliasRole.Descriptor => "d",
             PlanSqlAliasRole.RowSet => "v",
+            PlanSqlAliasRole.CollectionFilter => "ci",
             _ => throw new ArgumentOutOfRangeException(nameof(role), role, "Unknown SQL alias role."),
         };
     }
@@ -331,6 +332,11 @@ public enum PlanSqlAliasRole
     /// Correlated inline row-set alias used to expand several source columns from one table scan.
     /// </summary>
     RowSet,
+
+    /// <summary>
+    /// Collection-table alias inside a correlated <c>EXISTS</c> filter of a page-<c>DocumentId</c> query.
+    /// </summary>
+    CollectionFilter,
 }
 
 /// <summary>
