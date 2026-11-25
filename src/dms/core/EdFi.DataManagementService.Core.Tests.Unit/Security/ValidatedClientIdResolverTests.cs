@@ -6,12 +6,15 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
@@ -174,7 +177,11 @@ public class ValidatedClientIdResolverTests
         {
             IJwtValidationService validator = A.Fake<IJwtValidationService>();
             A.CallTo(() =>
-                    validator.ValidateAndExtractClientAuthorizationsAsync(A<string>._, A<CancellationToken>._)
+                    validator.ValidateAndExtractClientAuthorizationsAsync(
+                        A<string>._,
+                        A<LogLevel>._,
+                        A<CancellationToken>._
+                    )
                 )
                 .Returns(Task.FromResult(outcome));
 
@@ -187,7 +194,7 @@ public class ValidatedClientIdResolverTests
         }
 
         [Test]
-        public async Task It_passes_only_the_bearer_token_to_the_validator()
+        public async Task It_passes_only_the_bearer_token_to_the_validator_asking_for_debug_rejections()
         {
             (_, Harness harness, IJwtValidationService validator) = await Resolve(
                 (null, null),
@@ -198,6 +205,7 @@ public class ValidatedClientIdResolverTests
                 A.CallTo(() =>
                         validator.ValidateAndExtractClientAuthorizationsAsync(
                             "the-token",
+                            LogLevel.Debug,
                             A<CancellationToken>._
                         )
                     )
@@ -253,7 +261,11 @@ public class ValidatedClientIdResolverTests
 
             IJwtValidationService validator = A.Fake<IJwtValidationService>();
             A.CallTo(() =>
-                    validator.ValidateAndExtractClientAuthorizationsAsync("the-token", cancellation.Token)
+                    validator.ValidateAndExtractClientAuthorizationsAsync(
+                        "the-token",
+                        LogLevel.Debug,
+                        cancellation.Token
+                    )
                 )
                 .Returns(Task.FromCanceled<(ClaimsPrincipal?, ClientAuthorizations?)>(cancellation.Token));
 
@@ -384,6 +396,133 @@ public class ValidatedClientIdResolverTests
             string token = CreateToken([new Claim("jti", "token-without-client")]);
 
             (await Resolve(token)).Should().BeNull();
+        }
+    }
+
+    /// <summary>
+    /// The limiter resolves every bearer request, including the ones it then rejects, so the real
+    /// validation service logs a token it rejects for the resolver at Debug, in the same shape as the
+    /// Warning Core's own authentication logs for it.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Real_Jwt_Validation_Service_Rejecting_A_Token : ValidatedClientIdResolverTests
+    {
+        private RecordingLogger<JwtValidationService> _logger = null!;
+        private Harness _harness = null!;
+        private JwtSecurityTokenHandler _tokenHandler = null!;
+        private RsaSecurityKey _signingKey = null!;
+        private string _issuer = null!;
+        private string _audience = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _logger = new RecordingLogger<JwtValidationService>();
+            var (service, configurationManager, options, _, tokenHandler, signingKey) =
+                JwtValidationServiceTests.CreateService(logger: _logger);
+
+            _tokenHandler = tokenHandler;
+            _signingKey = signingKey;
+            _issuer = options.Value.Authority;
+            _audience = options.Value.Audience;
+
+            OpenIdConnectConfiguration metadata = new() { Issuer = _issuer };
+            metadata.SigningKeys.Add(signingKey);
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(metadata));
+
+            _harness = new Harness(bypassAuthorization: false, _ => service);
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        /// <summary>
+        /// Resolves a token the validator rejects and returns the one entry the validator logged,
+        /// after asserting that nothing was logged at Warning or above.
+        /// </summary>
+        private async Task<LogRecord> ResolveRejected(string token)
+        {
+            (await _harness.Resolver.ResolveAsync($"Bearer {token}", CancellationToken.None))
+                .Should()
+                .BeNull();
+
+            _logger.Records.Should().NotContain(entry => entry.Level >= LogLevel.Warning);
+            LogRecord entry = _logger.Records.Should().ContainSingle().Which;
+            entry.Level.Should().Be(LogLevel.Debug);
+            return entry;
+        }
+
+        [Test]
+        public async Task It_logs_a_value_that_is_not_a_jwt_at_debug_without_the_exception()
+        {
+            LogRecord entry = await ResolveRejected("not-a-jwt");
+
+            entry
+                .Message.Should()
+                .Be($"Token validation failed: malformed token ({nameof(SecurityTokenMalformedException)})");
+            entry.Properties["ExceptionType"].Should().Be(nameof(SecurityTokenMalformedException));
+            entry.Exception.Should().BeNull();
+        }
+
+        [Test]
+        public async Task It_logs_a_trusted_token_with_a_claim_of_the_wrong_type_at_debug_without_the_exception()
+        {
+            // Signed with the trusted key, so it fails only on its content.
+            string payload =
+                $$"""{"iss":"{{_issuer}}","aud":"{{_audience}}","exp":"x","client_id":"client-a"}""";
+            string signingInput =
+                $"{Base64UrlEncoder.Encode("""{"alg":"RS256","typ":"JWT"}""")}.{Base64UrlEncoder.Encode(payload)}";
+            byte[] signature = _signingKey.Rsa.SignData(
+                Encoding.ASCII.GetBytes(signingInput),
+                HashAlgorithmName.SHA256,
+                RSASignaturePadding.Pkcs1
+            );
+
+            LogRecord entry = await ResolveRejected($"{signingInput}.{Base64UrlEncoder.Encode(signature)}");
+
+            entry
+                .Message.Should()
+                .Be($"Token validation failed: malformed token ({nameof(ArgumentException)})");
+            entry.Properties["ExceptionType"].Should().Be(nameof(ArgumentException));
+            entry.Exception.Should().BeNull();
+        }
+
+        [Test]
+        public async Task It_logs_an_expired_token_at_debug_with_its_exception()
+        {
+            string expired = JwtValidationServiceTests.CreateTestToken(
+                [new Claim("client_id", "client-a")],
+                _issuer,
+                _audience,
+                _signingKey,
+                _tokenHandler,
+                expired: true
+            );
+
+            LogRecord entry = await ResolveRejected(expired);
+
+            entry.Message.Should().Be("Token validation failed");
+            entry.Exception.Should().BeAssignableTo<SecurityTokenException>();
+        }
+
+        [Test]
+        public async Task It_logs_a_token_signed_by_another_key_at_debug_with_its_exception()
+        {
+            using RSA otherRsa = RSA.Create(2048);
+            string forged = JwtValidationServiceTests.CreateTestToken(
+                [new Claim("client_id", "client-a")],
+                _issuer,
+                _audience,
+                new RsaSecurityKey(otherRsa),
+                _tokenHandler
+            );
+
+            LogRecord entry = await ResolveRejected(forged);
+
+            entry.Message.Should().Be("Token validation failed");
+            entry.Exception.Should().BeAssignableTo<SecurityTokenException>();
         }
     }
 }

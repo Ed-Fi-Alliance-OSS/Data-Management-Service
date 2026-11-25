@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Security.Claims;
@@ -506,10 +507,19 @@ public abstract class RateLimitAuthHostFixture : RateLimitPartitionHostFixture
             ["DataManagement:DocumentCache:Status:RequiredRole"] = DocumentCacheRole,
         };
 
+    /// <summary>The RSA key every <see cref="Bearer"/> token without a forged signature is signed with.</summary>
+    protected static RSA SigningRsa => _signingKey.Rsa;
+
+    /// <summary>
+    /// The key the OIDC metadata publishes. A fixture that needs its own key object, for example to
+    /// observe signature checks, overrides this instead of changing the shared key.
+    /// </summary>
+    protected virtual SecurityKey MetadataSigningKey => _signingKey;
+
     protected override void ConfigureServices(IServiceCollection services)
     {
         OpenIdConnectConfiguration metadata = new() { Issuer = Issuer };
-        metadata.SigningKeys.Add(_signingKey);
+        metadata.SigningKeys.Add(MetadataSigningKey);
         services.Replace(
             ServiceDescriptor.Singleton<IConfigurationManager<OpenIdConnectConfiguration>>(
                 new FixedConfigurationManager(metadata)
@@ -1044,4 +1054,256 @@ public class Given_The_Rate_Limiter_With_Bypass_Authorization_And_No_Oidc_Metada
 
         resolve.Should().Throw<InvalidOperationException>().WithMessage("*MetadataAddress*");
     }
+}
+
+/// <summary>
+/// Records what the JWT validation service logs, apart from every other category, so a Warning
+/// from Core's endpoint authorization is never mistaken for one from the validator.
+/// </summary>
+internal sealed class RecordingValidatorLogger : ILogger<JwtValidationService>
+{
+    private readonly ConcurrentQueue<(LogLevel Level, string Message)> _entries = new();
+
+    public IReadOnlyList<(LogLevel Level, string Message)> Entries => [.. _entries];
+
+    public void Clear() => _entries.Clear();
+
+    public IDisposable? BeginScope<TState>(TState state)
+        where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter
+    ) => _entries.Enqueue((logLevel, formatter(state, exception)));
+
+    /// <summary>Replaces the validation service with the production one, logging to this recorder.</summary>
+    public void ReplaceValidationService(IServiceCollection services) =>
+        services.Replace(
+            ServiceDescriptor.Singleton<IJwtValidationService>(provider => new JwtValidationService(
+                provider.GetRequiredService<IConfigurationManager<OpenIdConnectConfiguration>>(),
+                provider.GetRequiredService<IOptions<JwtAuthenticationOptions>>(),
+                this
+            ))
+        );
+}
+
+/// <summary>
+/// The limiter validates every bearer token before it admits or rejects the request. A token it
+/// rejects is budgeted by address and logged by the validator at Debug only, so a flood of rejected
+/// tokens answered with 429 leaves no Warning. GET /health is anonymous, so everything the validator
+/// logs here comes from resolving the partition.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_The_Rate_Limiter_Resolving_Rejected_Tokens : RateLimitAuthHostFixture
+{
+    private readonly RecordingValidatorLogger _validatorLogger = new();
+
+    protected override void ConfigureServices(IServiceCollection services)
+    {
+        base.ConfigureServices(services);
+        _validatorLogger.ReplaceValidationService(services);
+    }
+
+    [TestCase(TokenFlaw.ForeignSigningKey, "10.70.0.1", "forged-debug-target")]
+    [TestCase(TokenFlaw.Expired, "10.70.0.2", "expired-debug-target")]
+    [TestCase(TokenFlaw.NotAJwt, "10.70.0.3", "malformed-debug-target")]
+    public async Task It_rejects_on_the_address_budget_and_logs_the_tokens_only_at_debug(
+        TokenFlaw flaw,
+        string address,
+        string clientId
+    )
+    {
+        _validatorLogger.Clear();
+
+        (await GetHealthAsync(address, authorization: Bearer(clientId, flaw))).Should().Be(HttpStatusCode.OK);
+        (await GetHealthAsync(address, authorization: Bearer(clientId))).Should().Be(HttpStatusCode.OK);
+
+        using HttpRequestMessage request = CreateRequest(
+            HttpMethod.Get,
+            "/health",
+            address,
+            Bearer(clientId, flaw)
+        );
+        using HttpResponseMessage rejected = await SendAsync(request);
+        rejected.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        JsonNode body = JsonNode.Parse(await rejected.Content.ReadAsStringAsync())!;
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:too-many-requests");
+
+        IReadOnlyList<(LogLevel Level, string Message)> entries = _validatorLogger.Entries;
+        entries.Should().NotContain(entry => entry.Level >= LogLevel.Warning);
+        entries
+            .Where(entry => entry.Message.StartsWith("Token validation failed", StringComparison.Ordinal))
+            .Select(entry => entry.Level)
+            .Should()
+            .Equal(LogLevel.Debug, LogLevel.Debug);
+    }
+}
+
+/// <summary>
+/// One request whose fresh token the limiter validates to choose a partition and Core then
+/// validates again to authorize it. The token lacks the document-cache role, so Core answers 403
+/// "Insufficient permissions", which it does only after accepting the token. The metadata key is a
+/// key object of this fixture's own over the shared signing RSA, whose crypto provider factory counts
+/// signature verifications, so the shared key and other fixtures are untouched.
+/// </summary>
+public abstract class ValidationAcrossTheLimiterAndAuthorizationFixture : RateLimitAuthHostFixture
+{
+    private readonly CountingCryptoProviderFactory _verifications = new();
+    private readonly RecordingValidatorLogger _validatorLogger = new();
+    private SecurityKey? _metadataSigningKey;
+
+    protected abstract string ClientId { get; }
+
+    protected abstract string Address { get; }
+
+    protected abstract int ExpectedVerifications { get; }
+
+    protected override SecurityKey MetadataSigningKey =>
+        _metadataSigningKey ??= new RsaSecurityKey(SigningRsa) { CryptoProviderFactory = _verifications };
+
+    protected override void ConfigureServices(IServiceCollection services)
+    {
+        base.ConfigureServices(services);
+        _validatorLogger.ReplaceValidationService(services);
+    }
+
+    [Test]
+    public async Task It_verifies_the_token_signature_the_expected_number_of_times()
+    {
+        _verifications.Verifications.Should().Be(0, "no token has been validated yet");
+
+        using HttpRequestMessage request = CreateRequest(
+            HttpMethod.Get,
+            "/health/document-cache",
+            Address,
+            Bearer(ClientId, TokenFlaw.None, new Claim(RoleClaimType, "another-role"))
+        );
+        using HttpResponseMessage response = await SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Headers.WwwAuthenticate.Should().BeEmpty();
+        JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        body["errors"]!
+            .AsArray()
+            .Select(node => node!.GetValue<string>())
+            .Should()
+            .Equal("Insufficient permissions");
+
+        _verifications.Verifications.Should().Be(ExpectedVerifications);
+
+        // Endpoint authorization logs the missing role under its own category; the validator
+        // accepted the token both times and logged nothing above Debug.
+        _validatorLogger.Entries.Should().NotContain(entry => entry.Level >= LogLevel.Warning);
+    }
+
+    /// <summary>
+    /// Creates the provider the default factory would, wrapped so that each call to a public Verify
+    /// overload counts once. The wrapped provider is not counted, so a call it delegates internally
+    /// between its own overloads is not counted twice. Providers are not cached, so every
+    /// verification asks this factory.
+    /// </summary>
+    private sealed class CountingCryptoProviderFactory : CryptoProviderFactory
+    {
+        private int _verifications;
+
+        public CountingCryptoProviderFactory()
+        {
+            CacheSignatureProviders = false;
+        }
+
+        public int Verifications => Volatile.Read(ref _verifications);
+
+        public override SignatureProvider CreateForVerifying(SecurityKey key, string algorithm) =>
+            new CountingSignatureProvider(base.CreateForVerifying(key, algorithm), this);
+
+        public override void ReleaseSignatureProvider(SignatureProvider signatureProvider) =>
+            signatureProvider.Dispose();
+
+        private void CountVerification() => Interlocked.Increment(ref _verifications);
+
+        private sealed class CountingSignatureProvider(
+            SignatureProvider inner,
+            CountingCryptoProviderFactory factory
+        ) : SignatureProvider(inner.Key, inner.Algorithm)
+        {
+            public override byte[] Sign(byte[] input) => inner.Sign(input);
+
+            public override bool Verify(byte[] input, byte[] signature)
+            {
+                factory.CountVerification();
+                return inner.Verify(input, signature);
+            }
+
+            public override bool Verify(
+                byte[] input,
+                int inputOffset,
+                int inputLength,
+                byte[] signature,
+                int signatureOffset,
+                int signatureLength
+            )
+            {
+                factory.CountVerification();
+                return inner.Verify(
+                    input,
+                    inputOffset,
+                    inputLength,
+                    signature,
+                    signatureOffset,
+                    signatureLength
+                );
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing)
+                {
+                    inner.Dispose();
+                }
+            }
+        }
+    }
+}
+
+/// <summary>
+/// With validation caching on (the default), Core reuses the validation the limiter performed for
+/// the same request, so the signature is verified once.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_A_Fresh_Token_Validated_By_The_Limiter_And_Authorization_With_Caching
+    : ValidationAcrossTheLimiterAndAuthorizationFixture
+{
+    protected override string ClientId => "cache-reuse-client";
+
+    protected override string Address => "10.80.0.1";
+
+    protected override int ExpectedVerifications => 1;
+}
+
+/// <summary>
+/// The control: with validation caching off, Core verifies the signature again.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_A_Fresh_Token_Validated_By_The_Limiter_And_Authorization_Without_Caching
+    : ValidationAcrossTheLimiterAndAuthorizationFixture
+{
+    protected override IReadOnlyDictionary<string, string?> HostSettings =>
+        new Dictionary<string, string?>(base.HostSettings)
+        {
+            ["JwtAuthentication:ValidatedTokenCacheEntryMaxLifetimeSeconds"] = "0",
+        };
+
+    protected override string ClientId => "no-cache-client";
+
+    protected override string Address => "10.80.0.2";
+
+    protected override int ExpectedVerifications => 2;
 }

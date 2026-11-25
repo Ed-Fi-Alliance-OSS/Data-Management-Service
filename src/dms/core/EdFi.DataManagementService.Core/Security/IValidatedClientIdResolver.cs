@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Core.Security;
@@ -34,6 +35,10 @@ public interface IValidatedClientIdResolver
 /// OIDC configuration manager factory throws on missing or invalid metadata settings, and a bypass
 /// deployment never warms that metadata up, so a request that cannot carry a valid bearer token, or
 /// any request to a bypass deployment, must not construct it.
+///
+/// A rejected token is logged at Debug here. The limiter resolves every bearer request, including the
+/// ones it then rejects, and Core still logs the rejection at Warning when it authenticates a request
+/// the limiter admitted.
 /// </remarks>
 internal sealed class ValidatedClientIdResolver(
     IServiceProvider serviceProvider,
@@ -55,7 +60,11 @@ internal sealed class ValidatedClientIdResolver(
 
         (_, ClientAuthorizations? clientAuthorizations) = await serviceProvider
             .GetRequiredService<IJwtValidationService>()
-            .ValidateAndExtractClientAuthorizationsAsync(headerResult.Token!, cancellationToken);
+            .ValidateAndExtractClientAuthorizationsAsync(
+                headerResult.Token!,
+                LogLevel.Debug,
+                cancellationToken
+            );
 
         string? clientId = clientAuthorizations?.ClientId;
         return string.IsNullOrEmpty(clientId) ? null : clientId;

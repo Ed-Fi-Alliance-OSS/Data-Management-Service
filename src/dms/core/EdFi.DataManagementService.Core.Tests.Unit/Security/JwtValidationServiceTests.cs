@@ -1888,7 +1888,12 @@ public class JwtValidationServiceTests
     }
 
     private static async Task<RecordingLogger<JwtValidationService>> ValidateWithControlledMetadata(
-        Func<RsaSecurityKey, JwtAuthenticationOptions, JwtSecurityTokenHandler, string> createToken
+        Func<RsaSecurityKey, JwtAuthenticationOptions, JwtSecurityTokenHandler, string> createToken,
+        Func<
+            JwtValidationService,
+            string,
+            Task<(ClaimsPrincipal? Principal, ClientAuthorizations? ClientAuthorizations)>
+        >? validate = null
     )
     {
         var logger = new RecordingLogger<JwtValidationService>();
@@ -1899,10 +1904,10 @@ public class JwtValidationServiceTests
         A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
             .Returns(Task.FromResult(CreateMetadata(TestAuthority, signingKey)));
 
-        var (principal, clientAuthorizations) = await service.ValidateAndExtractClientAuthorizationsAsync(
-            createToken(signingKey, options.Value, tokenHandler),
-            CancellationToken.None
-        );
+        string token = createToken(signingKey, options.Value, tokenHandler);
+        var (principal, clientAuthorizations) = validate is null
+            ? await service.ValidateAndExtractClientAuthorizationsAsync(token, CancellationToken.None)
+            : await validate(service, token);
 
         principal.Should().BeNull();
         clientAuthorizations.Should().BeNull();
@@ -2116,6 +2121,229 @@ public class JwtValidationServiceTests
             error.Level.Should().Be(LogLevel.Error);
             error.Message.Should().Be("Unexpected error during token validation");
             error.Exception.Should().BeSameAs(thrown);
+        }
+    }
+
+    /// <summary>
+    /// Core's middlewares validate through the header overload, which logs a rejected token at Warning
+    /// as it always has.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Rejected_Token_Validated_Through_The_Header_Overload : JwtValidationServiceTests
+    {
+        private static Task<(
+            ClaimsPrincipal? Principal,
+            ClientAuthorizations? ClientAuthorizations
+        )> ValidateAsAuthorizationHeader(JwtValidationService service, string token) =>
+            service.ValidateAndExtractClientAuthorizationsAsync(
+                $"Bearer {token}",
+                "Bearer ".Length,
+                CancellationToken.None
+            );
+
+        private static async Task<LogRecord> ValidateRejected(
+            Func<RsaSecurityKey, JwtAuthenticationOptions, JwtSecurityTokenHandler, string> createToken
+        )
+        {
+            RecordingLogger<JwtValidationService> logger = await ValidateWithControlledMetadata(
+                createToken,
+                ValidateAsAuthorizationHeader
+            );
+
+            LogRecord warning = logger
+                .Records.Should()
+                .ContainSingle(entry => entry.Level >= LogLevel.Warning)
+                .Which;
+            warning.Level.Should().Be(LogLevel.Warning);
+            return warning;
+        }
+
+        [Test]
+        public async Task It_logs_a_malformed_token_as_a_warning_without_the_exception()
+        {
+            LogRecord warning = await ValidateRejected((_, _, _) => "garbage");
+
+            warning
+                .Message.Should()
+                .Be($"Token validation failed: malformed token ({nameof(SecurityTokenMalformedException)})");
+            warning.Exception.Should().BeNull();
+        }
+
+        [Test]
+        public async Task It_logs_an_expired_token_as_the_generic_warning_with_its_exception()
+        {
+            LogRecord warning = await ValidateRejected(
+                (signingKey, options, tokenHandler) =>
+                    CreateTestToken(
+                        [new Claim("client_id", "client-a")],
+                        TestAuthority,
+                        options.Audience,
+                        signingKey,
+                        tokenHandler,
+                        expired: true
+                    )
+            );
+
+            warning.Message.Should().Be("Token validation failed");
+            warning.Exception.Should().BeAssignableTo<SecurityTokenException>();
+        }
+
+        [Test]
+        public async Task It_logs_a_token_signed_by_an_untrusted_key_as_a_warning_with_its_exception()
+        {
+            using var untrustedRsa = RSA.Create(2048);
+
+            LogRecord warning = await ValidateRejected(
+                (_, options, tokenHandler) =>
+                    CreateTestToken(
+                        [new Claim("client_id", "client-a")],
+                        TestAuthority,
+                        options.Audience,
+                        new RsaSecurityKey(untrustedRsa),
+                        tokenHandler
+                    )
+            );
+
+            warning.Message.Should().Be("Token validation failed");
+            warning.Exception.Should().BeAssignableTo<SecurityTokenException>();
+        }
+    }
+
+    /// <summary>
+    /// Asking for rejected tokens at Debug lowers only the rejection of the token itself. A failure
+    /// that does not come from validating the token keeps its level.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Rejections_Requested_At_Debug_And_A_Failure_Outside_Token_Validation
+        : JwtValidationServiceTests
+    {
+        private static Task<(
+            ClaimsPrincipal? Principal,
+            ClientAuthorizations? ClientAuthorizations
+        )> ValidateLoggingRejectionsAtDebug(JwtValidationService service, string token) =>
+            service.ValidateAndExtractClientAuthorizationsAsync(
+                token,
+                LogLevel.Debug,
+                CancellationToken.None
+            );
+
+        private static async Task<RecordingLogger<JwtValidationService>> ValidateWhileMetadataThrows(
+            Exception thrown
+        )
+        {
+            var logger = new RecordingLogger<JwtValidationService>();
+            var (service, configurationManager, _, _, _, _) = CreateService(logger: logger);
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .ThrowsAsync(thrown);
+
+            var (principal, clientAuthorizations) = await ValidateLoggingRejectionsAtDebug(
+                service,
+                "not-read"
+            );
+
+            principal.Should().BeNull();
+            clientAuthorizations.Should().BeNull();
+            return logger;
+        }
+
+        [TestCase(typeof(InvalidOperationException))]
+        [TestCase(typeof(ArgumentException))]
+        [TestCase(typeof(FormatException))]
+        public async Task It_keeps_a_metadata_failure_as_an_unexpected_error(Type exceptionType)
+        {
+            var thrown = (Exception)Activator.CreateInstance(exceptionType, "metadata failure")!;
+
+            RecordingLogger<JwtValidationService> logger = await ValidateWhileMetadataThrows(thrown);
+
+            LogRecord error = logger
+                .Records.Should()
+                .ContainSingle(entry => entry.Level >= LogLevel.Warning)
+                .Which;
+            error.Level.Should().Be(LogLevel.Error);
+            error.Message.Should().Be("Unexpected error during token validation");
+            error.Exception.Should().BeSameAs(thrown);
+        }
+
+        [Test]
+        public async Task It_keeps_a_security_token_exception_from_metadata_retrieval_as_a_warning()
+        {
+            var thrown = new SecurityTokenException("metadata failure");
+
+            RecordingLogger<JwtValidationService> logger = await ValidateWhileMetadataThrows(thrown);
+
+            LogRecord warning = logger
+                .Records.Should()
+                .ContainSingle(entry => entry.Level >= LogLevel.Warning)
+                .Which;
+            warning.Level.Should().Be(LogLevel.Warning);
+            warning.Message.Should().Be("Token validation failed");
+            warning.Exception.Should().BeSameAs(thrown);
+        }
+
+        [Test]
+        public async Task It_keeps_an_empty_token_as_an_unexpected_error()
+        {
+            RecordingLogger<JwtValidationService> logger = await ValidateWithControlledMetadata(
+                (_, _, _) => string.Empty,
+                ValidateLoggingRejectionsAtDebug
+            );
+
+            LogRecord error = logger
+                .Records.Should()
+                .ContainSingle(entry => entry.Level >= LogLevel.Warning)
+                .Which;
+            error.Level.Should().Be(LogLevel.Error);
+            error.Message.Should().Be("Unexpected error during token validation");
+            error.Exception.Should().BeOfType<ArgumentNullException>();
+        }
+
+        [Test]
+        public async Task It_keeps_the_first_issuer_mismatch_as_an_error()
+        {
+            var logger = new RecordingLogger<JwtValidationService>();
+            var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService(
+                logger: logger
+            );
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(CreateMetadata("https://another-issuer/realms/edfi", signingKey)));
+            string token = CreateTestToken(
+                [new Claim("client_id", "client-a")],
+                TestAuthority,
+                options.Value.Audience,
+                signingKey,
+                tokenHandler
+            );
+
+            var (principal, _) = await ValidateLoggingRejectionsAtDebug(service, token);
+
+            principal.Should().BeNull();
+            LogRecord error = logger
+                .Records.Should()
+                .ContainSingle(entry => entry.Level >= LogLevel.Warning)
+                .Which;
+            error.Level.Should().Be(LogLevel.Error);
+            error.Message.Should().StartWith("Token validation failed: OIDC metadata issuer");
+        }
+
+        [Test]
+        public async Task It_propagates_the_callers_cancellation()
+        {
+            var (service, configurationManager, _, _, _, _) = CreateService();
+            using CancellationTokenSource cancellation = new();
+            await cancellation.CancelAsync();
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromCanceled<OpenIdConnectConfiguration>(cancellation.Token));
+
+            Func<Task> validate = () =>
+                service.ValidateAndExtractClientAuthorizationsAsync(
+                    "not-read",
+                    LogLevel.Debug,
+                    cancellation.Token
+                );
+
+            await validate.Should().ThrowAsync<OperationCanceledException>();
         }
     }
 }
