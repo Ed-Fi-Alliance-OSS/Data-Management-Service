@@ -557,6 +557,25 @@ internal static class MappingSetManifestJsonEmitter
                 WriteQualifiedResourceName(writer, descriptorIdColumn.DescriptorResource);
                 break;
 
+            case RelationalQueryFieldTarget.CollectionColumn collectionColumn:
+                writer.WriteString("kind", "collection_column");
+                writer.WriteString("column_name", collectionColumn.Column.Value);
+                writer.WritePropertyName("table");
+                WriteTableName(writer, collectionColumn.CollectionTable);
+                writer.WriteString("root_locator_column", collectionColumn.RootLocatorColumn.Value);
+                writer.WritePropertyName("descriptor_resource");
+
+                if (collectionColumn.DescriptorResource is { } descriptorResource)
+                {
+                    WriteQualifiedResourceName(writer, descriptorResource);
+                }
+                else
+                {
+                    writer.WriteNullValue();
+                }
+
+                break;
+
             default:
                 throw new ArgumentOutOfRangeException(
                     nameof(target),
@@ -677,6 +696,8 @@ internal static class MappingSetManifestJsonEmitter
             RelationalQueryFieldFailureKind.NonRootTable => "non_root_table",
             RelationalQueryFieldFailureKind.UnmappedPath => "unmapped_path",
             RelationalQueryFieldFailureKind.AmbiguousRootTarget => "ambiguous_root_target",
+            RelationalQueryFieldFailureKind.IdentificationCodeCollectionUnresolved =>
+                "identification_code_collection_unresolved",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(failureKind),
                 failureKind,
