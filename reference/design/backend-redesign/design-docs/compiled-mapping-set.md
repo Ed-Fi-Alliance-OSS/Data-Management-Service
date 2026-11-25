@@ -724,7 +724,7 @@ For a read request targeting resource `R`:
 2. **Resolve the page keyset (`DocumentId`s)**
    - GET by id: resolve `DocumentUuid → DocumentId` via `dms.Document`.
    - Query: compile and execute “page DocumentId SQL” (a separate root-table query compiler/executor step) to produce a page keyset of `DocumentId`s:
-     - translate supported query parameters using the resource’s `ApiSchema.queryFieldMapping` to predicates over **root-table columns only** (no array traversal),
+     - translate supported query parameters using the resource’s `ApiSchema.queryFieldMapping` to predicates over **root-table columns only** (no array traversal); the identification-code collection fields derived from the resource schema are the one exception and compile to a correlated `EXISTS` over the collection table (see [identification-code-queries.md](identification-code-queries.md)),
      - include reference identity query fields by targeting the root table’s API-bound binding/path columns (including `UnifiedAlias` columns) rather than canonical storage-only columns, preserving optional-path presence semantics without joins,
      - emit parameterized SQL with deterministic paging (`ORDER BY r.DocumentId ASC` + dialect paging clause), and
      - return `DocumentId` only (optionally also compile/execute a `TotalCountSql` for `totalCount=true`).

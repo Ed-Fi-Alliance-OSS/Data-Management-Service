@@ -276,7 +276,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
   3. Hydrate relational tables and reconstitute JSON; compose `_etag` from `ContentVersion` plus the current representation `variantKey`; serve `ChangeVersion` from `dms.Document` and `_lastModifiedDate` from the joined resource root/descriptor; and project reference identity fields from local reference-identity binding columns (which may be presence-gated aliases under key unification).
 
 - **Query**
-  - Query compilation is constrained to root-table paths (`queryFieldMapping` does not cross array boundaries).
+  - Query compilation is constrained to root-table paths (`queryFieldMapping` does not cross array boundaries). The one exception is a resource's identification-code collection, whose derived query fields compile to a correlated `EXISTS` over the collection table; see `identification-code-queries.md`.
   - Page selection is done over the resource root table, ordered by `DocumentId` (ascending), and MUST apply authorization filters at the SQL layer so only authorized `DocumentId`s enter the page keyset; see `auth.md`.
   - Reconstitution is page-based (not “GET by id N times”):
     - materialize a page keyset of `DocumentId`s,

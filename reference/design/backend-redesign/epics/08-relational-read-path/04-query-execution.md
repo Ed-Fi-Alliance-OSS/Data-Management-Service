@@ -15,6 +15,8 @@ Implement query execution consistent with the redesign constraints:
 
 Align with `reference/design/backend-redesign/design-docs/summary.md` and `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` query sections.
 
+Note: a later extension adds query fields over a resource's identification-code collection, which compile to a correlated `EXISTS` over the collection table rather than to a root-table column. `queryFieldMapping` itself remains root-only. See `reference/design/backend-redesign/design-docs/identification-code-queries.md`.
+
 Note: applies to non-descriptor resources; descriptor endpoint query behavior is covered separately.
 
 ## Acceptance Criteria
