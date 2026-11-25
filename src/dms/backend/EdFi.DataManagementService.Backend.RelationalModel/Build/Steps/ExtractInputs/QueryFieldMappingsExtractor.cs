@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.RelationalModel.Schema;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
 
@@ -54,6 +55,32 @@ internal static class QueryFieldMappingsExtractor
             );
 
         return mappingsByField;
+    }
+
+    /// <summary>
+    /// Extracts the query fields the resource offers over its identification-code collection, derived
+    /// by <see cref="IdentificationCodeQueryFieldRule"/> and normalized to canonical JSONPath expressions.
+    /// </summary>
+    public static IReadOnlyDictionary<
+        string,
+        RelationalIdentificationCodeQueryFieldMapping
+    > ExtractIdentificationCodeQueryFieldMappings(JsonObject resourceSchema)
+    {
+        ArgumentNullException.ThrowIfNull(resourceSchema);
+
+        return IdentificationCodeQueryFieldRule
+            .Derive(resourceSchema)
+            .Select(static queryField => new RelationalIdentificationCodeQueryFieldMapping(
+                queryField.QueryFieldName,
+                JsonPathExpressionCompiler.Compile(queryField.CollectionPath.Value),
+                JsonPathExpressionCompiler.Compile(queryField.ItemPath.Value),
+                queryField.Type
+            ))
+            .ToFrozenDictionary(
+                static queryFieldMapping => queryFieldMapping.QueryFieldName,
+                static queryFieldMapping => queryFieldMapping,
+                StringComparer.Ordinal
+            );
     }
 
     private static RelationalQueryFieldMapping CreateQueryFieldMapping(

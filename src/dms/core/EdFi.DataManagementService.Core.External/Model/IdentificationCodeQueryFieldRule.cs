@@ -23,9 +23,10 @@ namespace EdFi.DataManagementService.Core.External.Model;
 /// case-insensitively as filter names are matched, is not offered: the existing field keeps its meaning.
 /// </para>
 /// <para>
-/// The rule reads the resource schema and never changes it. A shape it does not recognize qualifies
-/// nothing rather than failing, so a schema without such a collection is simply left as it is. Only plain
-/// ASCII letter-and-digit property names are used, because they are spliced into JSONPath expressions.
+/// The rule reads the resource schema and never changes it. It expects the resource-schema shape
+/// ApiSchema defines, where every schema node is an object; within that shape, a resource without a
+/// qualifying collection, and a property that is not a scalar, simply qualify nothing. Only plain ASCII
+/// letter-and-digit property names are used, because they are spliced into JSONPath expressions.
 /// </para>
 /// </remarks>
 public static class IdentificationCodeQueryFieldRule

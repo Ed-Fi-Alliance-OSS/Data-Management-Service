@@ -23,6 +23,21 @@ public sealed record RelationalQueryFieldMapping(
 public sealed record RelationalQueryFieldPath(JsonPathExpression Path, string Type);
 
 /// <summary>
+/// One query field a resource offers over a scalar property of its identification-code collection,
+/// derived from the resource schema rather than read from <c>queryFieldMapping</c>.
+/// </summary>
+/// <param name="QueryFieldName">The public query parameter name.</param>
+/// <param name="CollectionPath">The canonical JSON path of the collection's items.</param>
+/// <param name="ItemPath">The canonical JSON path of the property within an item.</param>
+/// <param name="Type">The ApiSchema scalar type label.</param>
+public sealed record RelationalIdentificationCodeQueryFieldMapping(
+    string QueryFieldName,
+    JsonPathExpression CollectionPath,
+    JsonPathExpression ItemPath,
+    string Type
+);
+
+/// <summary>
 /// Compiled relational GET-many query metadata for one resource.
 /// </summary>
 /// <param name="Support">Whether relational GET-many is supported for the resource or intentionally omitted.</param>
