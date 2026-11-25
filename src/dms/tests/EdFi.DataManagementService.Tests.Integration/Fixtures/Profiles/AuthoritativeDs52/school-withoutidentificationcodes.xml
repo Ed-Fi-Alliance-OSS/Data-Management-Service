@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    A read profile over Data Standard 5.2 School that includes only nameOfInstitution, beside the identity
+    every profile keeps, so the identificationCodes collection is hidden from readers.
+
+    The identification-code query scenario uses it to prove that a GET-many filter on that collection
+    still applies, and is still published, when the profile hides the collection from the response.
+-->
+<Profile name="School-WithoutIdentificationCodes">
+    <Resource name="School">
+        <ReadContentType memberSelection="IncludeOnly">
+            <Property name="nameOfInstitution" />
+        </ReadContentType>
+    </Resource>
+</Profile>
