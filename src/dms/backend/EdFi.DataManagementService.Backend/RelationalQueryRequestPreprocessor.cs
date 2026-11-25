@@ -81,6 +81,7 @@ internal static class RelationalQueryRequestPreprocessor
             switch (supportedField.Target)
             {
                 case RelationalQueryFieldTarget.RootColumn:
+                case RelationalQueryFieldTarget.CollectionColumn { DescriptorResource: null }:
                     preprocessedElements[index] = new PreprocessedRelationalQueryElement(
                         queryElement,
                         supportedField,
@@ -105,14 +106,20 @@ internal static class RelationalQueryRequestPreprocessor
                         new PreprocessedRelationalQueryValue.DocumentUuid(documentUuid)
                     );
                     continue;
-                case RelationalQueryFieldTarget.DescriptorIdColumn(var _, var descriptorResource):
+                case RelationalQueryFieldTarget.DescriptorIdColumn:
+                case RelationalQueryFieldTarget.CollectionColumn:
+                    // Root and collection descriptor filters are resolved in one batched lookup.
                     pendingDescriptorResolutions ??= [];
                     pendingDescriptorResolutions.Add(
                         new PendingDescriptorQueryResolution(
                             index,
                             queryElement,
                             supportedField,
-                            CreateDescriptorReference(queryElement, descriptorResource, index)
+                            CreateDescriptorReference(
+                                queryElement,
+                                GetDescriptorResource(supportedField.Target),
+                                index
+                            )
                         )
                     );
                     continue;
@@ -222,7 +229,7 @@ internal static class RelationalQueryRequestPreprocessor
                     queryElement.QueryFieldName,
                     out var supportedField
                 )
-                && supportedField.Target is RelationalQueryFieldTarget.DescriptorIdColumn
+                && IsDescriptorTarget(supportedField.Target)
                 && !DescriptorText.IsWellFormedWithoutNul(queryElement.Value)
             )
             {
@@ -239,11 +246,27 @@ internal static class RelationalQueryRequestPreprocessor
         return failures;
     }
 
+    private static QualifiedResourceName GetDescriptorResource(RelationalQueryFieldTarget target) =>
+        target switch
+        {
+            RelationalQueryFieldTarget.DescriptorIdColumn(_, var descriptorResource) => descriptorResource,
+            RelationalQueryFieldTarget.CollectionColumn { DescriptorResource: { } descriptorResource } =>
+                descriptorResource,
+            _ => throw new InvalidOperationException(
+                $"Relational query preprocessing expected a descriptor target, but received '{target.GetType().Name}'."
+            ),
+        };
+
+    private static bool IsDescriptorTarget(RelationalQueryFieldTarget target) =>
+        target
+            is RelationalQueryFieldTarget.DescriptorIdColumn
+                or RelationalQueryFieldTarget.CollectionColumn { DescriptorResource: not null };
+
     /// <summary>
-    /// Appends a failure for every SQL Server string filter wider than the root column it is compared
-    /// against, by the column's mapped length. Descriptor references are not checked here: they bind a
-    /// resolved descriptor ID, and the descriptor lookup accepts URIs wider than any stored one because the
-    /// SQL Server identity collation can equate them with a stored descriptor.
+    /// Appends a failure for every SQL Server string filter wider than the root or collection column it is
+    /// compared against, by the column's mapped length. Descriptor references are not checked here: they
+    /// bind a resolved descriptor ID, and the descriptor lookup accepts URIs wider than any stored one
+    /// because the SQL Server identity collation can equate them with a stored descriptor.
     /// Runs before the main pass for the same reason descriptor values are checked first, so a rejection
     /// does not depend on an earlier element proving the query has no matches.
     /// </summary>
@@ -262,7 +285,7 @@ internal static class RelationalQueryRequestPreprocessor
             return failures;
         }
 
-        Dictionary<DbColumnName, DbColumnModel>? rootColumnsByName = null;
+        RelationalResourceModel? resourceModel = null;
 
         foreach (var queryElement in queryElements)
         {
@@ -272,21 +295,38 @@ internal static class RelationalQueryRequestPreprocessor
                     queryElement.QueryFieldName,
                     out var supportedField
                 )
-                || supportedField.Target is not RelationalQueryFieldTarget.RootColumn(var column)
             )
             {
                 continue;
             }
 
-            rootColumnsByName ??= mappingSet
-                .GetConcreteResourceModelOrThrow(requestResource)
-                .RelationalModel.Root.Columns.ToDictionary(static rootColumn => rootColumn.ColumnName);
+            if (
+                supportedField.Target
+                is not (
+                    RelationalQueryFieldTarget.RootColumn
+                    or RelationalQueryFieldTarget.CollectionColumn { DescriptorResource: null }
+                )
+            )
+            {
+                continue;
+            }
 
-            int? columnLength =
-                rootColumnsByName.TryGetValue(column, out var rootColumn)
-                && rootColumn.ScalarType is { Kind: ScalarKind.String } scalarType
-                    ? scalarType.MaxLength
-                    : null;
+            resourceModel ??= mappingSet.GetConcreteResourceModelOrThrow(requestResource).RelationalModel;
+
+            DbColumnModel? filterColumn = supportedField.Target switch
+            {
+                RelationalQueryFieldTarget.RootColumn(var column) => FindColumn(resourceModel.Root, column),
+                RelationalQueryFieldTarget.CollectionColumn collectionColumn => FindColumn(
+                    resourceModel.TablesInDependencyOrder.FirstOrDefault(table =>
+                        table.Table == collectionColumn.CollectionTable
+                    ),
+                    collectionColumn.Column
+                ),
+                _ => null,
+            };
+            int? columnLength = filterColumn?.ScalarType is { Kind: ScalarKind.String } scalarType
+                ? scalarType.MaxLength
+                : null;
 
             if (QueryFilterStorageWidth.ExceedsSqlServerColumn(dialect, queryElement.Value, columnLength))
             {
@@ -297,6 +337,9 @@ internal static class RelationalQueryRequestPreprocessor
 
         return failures;
     }
+
+    private static DbColumnModel? FindColumn(DbTableModel? table, DbColumnName columnName) =>
+        table?.Columns.FirstOrDefault(column => column.ColumnName == columnName);
 
     private static string BuildDescriptorLookupFailureMessage(
         QueryElement queryElement,

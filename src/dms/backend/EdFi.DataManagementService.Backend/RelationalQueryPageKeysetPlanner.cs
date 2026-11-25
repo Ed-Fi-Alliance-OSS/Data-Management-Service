@@ -40,7 +40,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
         PageDocumentIdAuthorizationSpec? authorization = null,
         ChangeVersionRange? changeVersionRange = null,
-        PageOrderingMode orderingMode = PageOrderingMode.DocumentId
+        PageOrderingMode orderingMode = PageOrderingMode.DocumentId,
+        IReadOnlyList<DbTableModel>? resourceTables = null
     )
     {
         ArgumentNullException.ThrowIfNull(paging);
@@ -52,7 +53,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             authorization,
             out var emptyPageReason,
             comparisonOperatorResolver,
-            changeVersionRange
+            changeVersionRange,
+            resourceTables
         );
 
         return plannedCandidates is null
@@ -71,7 +73,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
         PageDocumentIdAuthorizationSpec? authorization = null,
         ChangeVersionRange? changeVersionRange = null,
-        PageOrderingMode orderingMode = PageOrderingMode.DocumentId
+        PageOrderingMode orderingMode = PageOrderingMode.DocumentId,
+        IReadOnlyList<DbTableModel>? resourceTables = null
     )
     {
         ArgumentNullException.ThrowIfNull(paging);
@@ -83,7 +86,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             authorization,
             out emptyPageReason,
             comparisonOperatorResolver,
-            changeVersionRange
+            changeVersionRange,
+            resourceTables
         );
 
         plannedQuery = plannedCandidates is null ? null : ToPageKeysetSpec(plannedCandidates);
@@ -101,6 +105,10 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
     /// key a page of the same request seeks. Boundaries cut on a different key than the page a client
     /// replays them as would overlap and leave rows in no partition.
     /// </param>
+    /// <param name="resourceTables">
+    /// The resource's tables, required when a query element targets a collection table: its column
+    /// metadata types, converts, and bounds the collection filter's values.
+    /// </param>
     public bool TryPlanCandidates(
         DbTableModel rootTable,
         RelationalQueryPreprocessingResult preprocessingResult,
@@ -109,7 +117,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
         PageDocumentIdAuthorizationSpec? authorization = null,
         ChangeVersionRange? changeVersionRange = null,
-        PageOrderingMode orderingMode = PageOrderingMode.DocumentId
+        PageOrderingMode orderingMode = PageOrderingMode.DocumentId,
+        IReadOnlyList<DbTableModel>? resourceTables = null
     )
     {
         plannedCandidates = PlanOrEmptyPage(
@@ -119,7 +128,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             authorization,
             out emptyPageReason,
             comparisonOperatorResolver,
-            changeVersionRange
+            changeVersionRange,
+            resourceTables
         );
 
         return plannedCandidates is not null;
@@ -141,7 +151,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         PageDocumentIdAuthorizationSpec? authorization,
         out string? emptyPageReason,
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        IReadOnlyList<DbTableModel>? resourceTables = null
     )
     {
         ArgumentNullException.ThrowIfNull(rootTable);
@@ -175,6 +186,9 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             foldedMode.OwnedParameterNames
         );
         var predicates = new List<QueryValuePredicate>(preprocessingResult.QueryElementsInOrder.Count + 2);
+        // Every predicate on one collection table goes into that table's single EXISTS, so all of them
+        // must hold for the same collection element.
+        Dictionary<DbTableName, CollectionFilterBuilder> collectionFiltersByTable = [];
         Dictionary<string, object?> parameterValues = new(StringComparer.Ordinal);
 
         foreach (var (parameterName, parameterValue) in foldedMode.ParameterValues)
@@ -192,6 +206,38 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
                 );
             var comparisonOperator = comparisonOperatorResolver(queryElement);
             var parameterName = parameterNamesByIndex[index];
+
+            if (
+                queryElement.SupportedField.Target
+                is RelationalQueryFieldTarget.CollectionColumn collectionColumn
+            )
+            {
+                var plannedCollectionPredicate = PlanCollectionPredicate(
+                    resourceTables,
+                    queryElement,
+                    collectionColumn,
+                    parameterName,
+                    comparisonOperator,
+                    out var collectionEmptyPageReason
+                );
+
+                if (plannedCollectionPredicate is null)
+                {
+                    emptyPageReason =
+                        collectionEmptyPageReason
+                        ?? "Relational query planning determined this query has no matches.";
+                    return null;
+                }
+
+                AddCollectionPredicate(
+                    collectionFiltersByTable,
+                    collectionColumn,
+                    plannedCollectionPredicate.Predicate
+                );
+                parameterValues[parameterName] = plannedCollectionPredicate.ParameterValue;
+                continue;
+            }
+
             var plannedPredicate = PlanPredicate(
                 rootTable,
                 rootColumnsByName,
@@ -245,7 +291,13 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             Predicates: predicates,
             UnifiedAliasMappingsByColumn: BuildUnifiedAliasMappingsByColumn(rootTable),
             Mode: foldedMode.Mode,
-            Authorization: authorization
+            Authorization: authorization,
+            CollectionExistsPredicates:
+            [
+                .. collectionFiltersByTable.Values.Select(static collectionFilter =>
+                    collectionFilter.ToPredicate()
+                ),
+            ]
         );
         var sqlPlan = _sqlCompiler.Compile(querySpec);
 
@@ -420,6 +472,134 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             new QueryValuePredicate(column, comparisonOperator, parameterName),
             descriptorId
         );
+    }
+
+    /// <summary>
+    /// Plans one value predicate over an identification-code collection column, typed and converted from
+    /// that collection column's metadata as a root predicate is from its root column. Returns null when a
+    /// scalar value cannot be represented in the column, so the query has no matches.
+    /// </summary>
+    private static PlannedCollectionPredicate? PlanCollectionPredicate(
+        IReadOnlyList<DbTableModel>? resourceTables,
+        PreprocessedRelationalQueryElement queryElement,
+        RelationalQueryFieldTarget.CollectionColumn target,
+        string parameterName,
+        QueryComparisonOperator comparisonOperator,
+        out string? emptyPageReason
+    )
+    {
+        emptyPageReason = null;
+        var queryFieldName = queryElement.SupportedField.QueryFieldName;
+
+        if (comparisonOperator is not QueryComparisonOperator.Equal)
+        {
+            throw new NotSupportedException(
+                $"Relational query planning only supports exact-match equality predicates. Query field "
+                    + $"'{queryFieldName}' was routed with operator '{comparisonOperator}'."
+            );
+        }
+
+        ValidateSinglePathOrThrow(queryElement);
+
+        var collectionTable =
+            resourceTables?.FirstOrDefault(table => table.Table == target.CollectionTable)
+            ?? throw new InvalidOperationException(
+                $"Relational query planning requires the table model of collection table '{target.CollectionTable}' "
+                    + $"for query field '{queryFieldName}', but it was not supplied."
+            );
+        var column =
+            collectionTable.Columns.FirstOrDefault(candidate => candidate.ColumnName == target.Column)
+            ?? throw new InvalidOperationException(
+                $"Relational query planning could not find column '{target.Column.Value}' on collection table "
+                    + $"'{target.CollectionTable}' for query field '{queryFieldName}'."
+            );
+
+        if (target.DescriptorResource is not null)
+        {
+            if (queryElement.Value is not PreprocessedRelationalQueryValue.DescriptorId(var descriptorId))
+            {
+                throw new InvalidOperationException(
+                    $"Relational query planning expected a resolved compact descriptor id for query field "
+                        + $"'{queryFieldName}', but received '{queryElement.Value.GetType().Name}'."
+                );
+            }
+
+            if (column.Kind is not ColumnKind.DescriptorFk || column.ScalarType?.Kind is not ScalarKind.Int32)
+            {
+                throw new InvalidOperationException(
+                    $"Relational query planning requires descriptor column '{target.Column.Value}' on collection table "
+                        + $"'{target.CollectionTable}' to expose Int32 descriptor FK metadata for query field '{queryFieldName}'."
+                );
+            }
+
+            return new PlannedCollectionPredicate(
+                new QueryCollectionValuePredicate(target.Column, comparisonOperator, parameterName),
+                descriptorId
+            );
+        }
+
+        if (queryElement.Value is not PreprocessedRelationalQueryValue.Raw(var rawValue))
+        {
+            throw new InvalidOperationException(
+                $"Relational query planning expected a raw scalar value for query field "
+                    + $"'{queryFieldName}', but received '{queryElement.Value.GetType().Name}'."
+            );
+        }
+
+        var scalarType =
+            column.ScalarType
+            ?? throw new InvalidOperationException(
+                $"Relational query planning requires column '{target.Column.Value}' on collection table "
+                    + $"'{target.CollectionTable}' to expose scalar type metadata for query field '{queryFieldName}'."
+            );
+
+        ValidateCompatibleQueryTypeOrThrow(queryFieldName, queryElement.SupportedField.Path.Type, scalarType);
+
+        if (
+            !TryConvertRawValue(
+                queryFieldName,
+                rawValue,
+                scalarType,
+                out var convertedValue,
+                out emptyPageReason
+            )
+        )
+        {
+            return null;
+        }
+
+        return new PlannedCollectionPredicate(
+            new QueryCollectionValuePredicate(
+                target.Column,
+                comparisonOperator,
+                parameterName,
+                scalarType.Kind is ScalarKind.String ? new QuerySqlStringContract(scalarType.MaxLength) : null
+            ),
+            convertedValue!
+        );
+    }
+
+    private static void AddCollectionPredicate(
+        Dictionary<DbTableName, CollectionFilterBuilder> collectionFiltersByTable,
+        RelationalQueryFieldTarget.CollectionColumn target,
+        QueryCollectionValuePredicate predicate
+    )
+    {
+        if (!collectionFiltersByTable.TryGetValue(target.CollectionTable, out var collectionFilter))
+        {
+            collectionFilter = new CollectionFilterBuilder(target.CollectionTable, target.RootLocatorColumn);
+            collectionFiltersByTable[target.CollectionTable] = collectionFilter;
+        }
+
+        if (collectionFilter.RootLocatorColumn != target.RootLocatorColumn)
+        {
+            throw new InvalidOperationException(
+                $"Relational query planning found collection table '{target.CollectionTable}' located from its root by "
+                    + $"both '{collectionFilter.RootLocatorColumn.Value}' and '{target.RootLocatorColumn.Value}'."
+            );
+        }
+
+        collectionFilter.Predicates.Add(predicate);
     }
 
     /// <summary>
@@ -640,4 +820,17 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
     }
 
     private sealed record PlannedPredicate(QueryValuePredicate Predicate, object ParameterValue);
+
+    private sealed record PlannedCollectionPredicate(
+        QueryCollectionValuePredicate Predicate,
+        object ParameterValue
+    );
+
+    private sealed record CollectionFilterBuilder(DbTableName CollectionTable, DbColumnName RootLocatorColumn)
+    {
+        public List<QueryCollectionValuePredicate> Predicates { get; } = [];
+
+        public QueryCollectionExistsPredicate ToPredicate() =>
+            new(CollectionTable, RootLocatorColumn, [.. Predicates]);
+    }
 }
