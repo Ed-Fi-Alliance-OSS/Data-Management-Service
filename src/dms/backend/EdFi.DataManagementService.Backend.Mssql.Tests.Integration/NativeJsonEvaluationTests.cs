@@ -260,7 +260,9 @@ public class Given_NativeJsonEvaluationTests_A_DocumentCache_Shaped_Scratch_Tabl
         var providerVersion = typeof(SqlConnection)
             .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!
             .InformationalVersion;
-        TestContext.Out.WriteLine($"SQL Server {engineVersion}, Microsoft.Data.SqlClient {providerVersion}");
+        await TestContext.Out.WriteLineAsync(
+            $"SQL Server {engineVersion}, Microsoft.Data.SqlClient {providerVersion}"
+        );
 
         command.CommandText = $"SELECT DocumentJson FROM {ScratchTableName};";
         await using var reader = await command.ExecuteReaderAsync();
