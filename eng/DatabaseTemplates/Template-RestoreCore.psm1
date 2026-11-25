@@ -1732,6 +1732,9 @@ function Get-DocumentJsonColumnTypeQuerySql {
         $catalogSql = Get-Content -LiteralPath $catalogPath -Raw -ErrorAction Stop
         return @"
 SET NOCOUNT ON;
+-- The catalog's conditional aggregates can emit informational NULL-elimination
+-- warnings through sqlcmd's row stream. Keep that stream reserved for facts.
+SET ANSI_WARNINGS OFF;
 DECLARE @require_native_document_cache bit = 0;
 $catalogSql
 SELECT CONCAT(@physical_marker_valid, '|', @object_check_valid, '|',

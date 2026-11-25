@@ -367,6 +367,8 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
 
     # --- Serveability probe ---
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
+    # CMS enforces unique names; independent and repeated verifications can share a CMS.
+    $verificationName = "Template Verify $([Guid]::NewGuid().ToString('N'))"
 
     # PostgreSQL: Add-DataStore builds the connection string from the credential.
     # MSSQL: the connection string is supplied complete, so no PostgreSQL credential is passed.
@@ -375,7 +377,7 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
         AccessToken    = $cmsToken
         PostgresDbName = $VerificationDatabaseName
         DatabaseEngine = $DatabaseEngine
-        Name           = "Template Restore Verification"
+        Name           = $verificationName
         DataStoreType  = "Verification"
     }
     if ($DatabaseEngine -eq "mssql") {
@@ -393,14 +395,14 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
 
     $verificationDataStoreId = Add-DataStore @dataStoreParameters
 
-    $vendorId = Add-Vendor -CmsUrl $CmsUrl -AccessToken $cmsToken -Company "Template Restore Verification Vendor"
+    $vendorId = Add-Vendor -CmsUrl $CmsUrl -AccessToken $cmsToken -Company "$verificationName Vendor"
 
     $applicationParams = @{
         CmsUrl          = $CmsUrl
         AccessToken     = $cmsToken
         VendorId        = $vendorId
         ClaimSetName    = "EdFiSandbox"
-        ApplicationName = "Template Restore Verification"
+        ApplicationName = $verificationName
         DataStoreIds    = @($verificationDataStoreId)
     }
 

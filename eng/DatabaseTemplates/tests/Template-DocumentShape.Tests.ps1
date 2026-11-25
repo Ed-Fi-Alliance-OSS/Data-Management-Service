@@ -189,10 +189,10 @@ Describe "verify-template-restore.ps1 dms.Document shape checks" -ForEach $scrip
         Mock Copy-Item {}
         Mock Expand-Archive {}
         Mock Read-RestoreManifest {
-            [pscustomobject]@{ templateKind = 'Minimal'; databaseEngine = $engine; artifactFileName = 'dump'; artifactSha256 = 'sha'; projects = @('ed-fi') }
+            [pscustomobject]@{ version = 2; engineVersion = '17'; templateKind = 'Minimal'; databaseEngine = $engine; artifactFileName = 'dump'; artifactSha256 = 'sha'; projects = @('ed-fi') }
         }
         Mock Get-FileSha256Hex { 'sha' }
-        Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{ FullInventory = @(); DatabaseLevelObjects = @() } }
+        Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{ FullInventory = @(); DatabaseLevelObjects = @(); EngineVersion = '17'; DocumentJsonColumnType = 'json'; MssqlPhysicalSchemaVersion = 'v2' } }
         Mock Assert-DmsOnlyInventory { [pscustomobject]@{ ProjectSchemaNames = @('ed-fi') } }
         Mock Assert-RestoreManifestMatchesDatabase {}
         # Serves the Invoke-*Scalar count queries and `docker restart`.
@@ -208,6 +208,20 @@ Describe "verify-template-restore.ps1 dms.Document shape checks" -ForEach $scrip
     }
 
     Context "on <engine>" {
+        It "uses distinct CMS names for repeated verification runs" {
+            $names = [System.Collections.Generic.List[string]]::new()
+            Mock Add-DataStore { $names.Add("datastore:$Name"); 7 }
+            Mock Add-Vendor { $names.Add("vendor:$Company"); 3 }
+
+            1..2 | ForEach-Object {
+                & $script:verifyScript -SourceDatabaseName src_db -PackageDirectory $TestDrive -ExpectedTemplateKind Minimal -ExpectedModelManifestPath $manifest -DatabaseEngine $engine
+            }
+
+            @($names | Where-Object { $_ -like 'datastore:*' } | Select-Object -Unique).Count | Should -Be 2
+            @($names | Where-Object { $_ -like 'vendor:*' } | Select-Object -Unique).Count | Should -Be 2
+            Should -Invoke Add-Application -Times 2 -Exactly -ParameterFilter { $ApplicationName.Length -le 50 }
+        }
+
         It "(f1) a source shape failure stops the script before the restore" {
             Mock Assert-DocumentTableShape { throw "dms.Document in $DatabaseEngine database '$DatabaseName' still carries CreatedAt." } -ParameterFilter { $DatabaseName -eq 'src_db' }
 

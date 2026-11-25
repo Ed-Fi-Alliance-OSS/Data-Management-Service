@@ -94,6 +94,9 @@ foreach ($case in @(
             }
             if ($LASTEXITCODE -ne 0) { throw 'Could not provision fixture' }
             & docker exec $Container rm -f $remoteDdl
+            # This focused fixture has an extension-only sample schema. Add the empty
+            # companion required by the template inventory gate for this synthetic package.
+            Invoke-TestSql $source 'CREATE SCHEMA tracked_changes_sample;' | Out-Null
             $seed = if ($Engine -eq 'mssql') {
                 @'
 DECLARE @key smallint = (SELECT ResourceKeyId FROM dms.ResourceKey WHERE ProjectName = 'Ed-Fi' AND ResourceName = 'SchoolTypeDescriptor');
@@ -162,7 +165,7 @@ SELECT "DocumentId", "ResourceKeyId", 'uri://template', 'school', 'School' FROM 
         It 'Rejects <Name> during native SQL Server source inspection' -Skip:($Engine -ne 'mssql') -ForEach @(
             @{ Name = 'a markerless v1 baseline'; Column = 'nvarchar(max) NOT NULL'; HideMarker = $true; Message = '*physical schema marker*' }
             @{ Name = 'a legacy text column with a v2 marker'; Column = 'nvarchar(max) NOT NULL'; HideMarker = $false; Message = '*Cannot verify native json*' }
-            @{ Name = 'a nullable native column'; Column = 'json NULL'; HideMarker = $false; Message = '*CK_DocumentCache_IsJsonObject*enabled and trusted*' }
+            @{ Name = 'a nullable native column'; Column = 'json NULL'; HideMarker = $false; Message = '*enabled and trusted CK_DocumentCache_IsJsonObject*' }
         ) {
             # The fixture seeds relational data directly and leaves the cache empty.
             $replaceColumn = @'
@@ -200,7 +203,7 @@ GO
             Invoke-TestSql $source $Sql | Out-Null
             try {
                 { Invoke-TestPackageCapture "invalid-$shape" } |
-                    Should -Throw "*CK_DocumentCache_IsJsonObject*enabled and trusted*"
+                    Should -Throw "*enabled and trusted CK_DocumentCache_IsJsonObject*"
                 Test-Path (Join-Path $TestDrive "invalid-$shape/staging/Focused.Template.bak") | Should -BeFalse
                 # Simulate a producer that did not inspect the CHECK, with a valid artifact hash.
                 $invalidPackage = Invoke-TestPackageCapture "drifted-$shape" $healthyFacts
@@ -209,7 +212,7 @@ GO
                 Invoke-TestSql $source $Undo | Out-Null
             }
             { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory $invalidPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } |
-                Should -Throw "*CK_DocumentCache_IsJsonObject*enabled and trusted*"
+                Should -Throw "*enabled and trusted CK_DocumentCache_IsJsonObject*"
             Should -Invoke Get-CmsToken -Times 0 -Exactly
         }
         It 'Rejects a disabled singleton CHECK before packaging or serving a restore' -Skip:($Engine -ne 'mssql') {
