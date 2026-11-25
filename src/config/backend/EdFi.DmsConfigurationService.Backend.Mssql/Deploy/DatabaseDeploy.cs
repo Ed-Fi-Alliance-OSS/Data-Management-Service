@@ -19,7 +19,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Deploy;
 /// <c>LogScriptOutput</c> captures, which is the only channel an upgrade script has for diagnostics
 /// too large to fit in the thrown error. <see cref="ScriptFilter"/> exists so upgrade tests can build
 /// a database journaled up to an earlier script, which is the state a real deployment upgrades from.
-/// Both are internal and unset in production, where every embedded script runs and logging stays on
+/// Both are internal and unset in production, where every embedded deploy script runs and logging stays on
 /// the autodetected log.
 /// </remarks>
 public class DatabaseDeploy : IDatabaseDeploy
@@ -36,6 +36,15 @@ public class DatabaseDeploy : IDatabaseDeploy
     /// </summary>
     internal Func<string, bool>? ScriptFilter { get; init; }
 
+    /// <summary>
+    /// Only the numbered upgrade scripts are deployable. The assembly also embeds non-deploy SQL
+    /// (the shared DocumentCache catalog query, whose caller must declare its variables), which
+    /// must never run as a migration.
+    /// </summary>
+    internal static bool IsDeployScript(string resourceName) =>
+        resourceName.Contains(".Deploy.Scripts.", StringComparison.Ordinal)
+        && resourceName.EndsWith(".sql", StringComparison.OrdinalIgnoreCase);
+
     public DatabaseDeployResult DeployDatabase(string connectionString)
     {
         try
@@ -49,7 +58,10 @@ public class DatabaseDeploy : IDatabaseDeploy
 
         UpgradeEngineBuilder builder = DeployChanges
             .To.SqlDatabase(connectionString)
-            .WithScriptsEmbeddedInAssembly(Assembly.GetExecutingAssembly(), ScriptFilter ?? (_ => true))
+            .WithScriptsEmbeddedInAssembly(
+                Assembly.GetExecutingAssembly(),
+                name => IsDeployScript(name) && (ScriptFilter?.Invoke(name) ?? true)
+            )
             .JournalToSqlTable("dbo", "dmscs_SchemaVersions")
             .WithVariablesDisabled()
             .LogScriptOutput()
