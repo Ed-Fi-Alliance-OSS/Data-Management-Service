@@ -60,7 +60,7 @@ public static class PerfBenchmarkComparisonWriter
     public static readonly IReadOnlyList<string> StandingLimits =
     [
         "Warnings judge p50 only (p95 warnings are off unless the profile enables them), so a regression that only affects the tail can be missed.",
-        "p99 is descriptive and limited by the sample size: with 60 measured samples it is the maximum.",
+        "p99 is descriptive and limited by the sample size: nearest-rank p99 rests on the slowest few measured requests.",
         "Command counts are driver command executions per request, not network round trips.",
         "This is serial latency at concurrency 1, not capacity or throughput.",
     ];

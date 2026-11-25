@@ -197,7 +197,7 @@ public class Given_The_Committed_Benchmark_Profile
     {
         _profile.Workload.Fixture.Should().Be(PerfFixtureKind.Primary500k.Id);
         _profile.Workload.DeepOffset.Should().Be(450_000);
-        _profile.Workload.Reads.Should().Be(new PerfBenchmarkIterations(10, 60));
+        _profile.Workload.Reads.Should().Be(new PerfBenchmarkIterations(10, 300));
         _profile.Workload.Writes.Should().Be(new PerfBenchmarkIterations(20, 200));
         _profile.Workload.Concurrency.Should().Be(1);
         _profile.Workload.LogLevel.Should().Be("Warning");

@@ -380,6 +380,11 @@ public static class PerfBenchmarkSidePipeline
                     definition,
                     targets
                 );
+                if (plan.Provider == PerfProvider.Postgresql)
+                {
+                    await CheckpointPostgresqlAsync(harness.DbConnection);
+                }
+
                 if (beforeWrites is not null)
                 {
                     await beforeWrites();
@@ -406,6 +411,21 @@ public static class PerfBenchmarkSidePipeline
             },
             () => injection?.AffectedRequests ?? PerfBenchmarkScenarios.AllIds.ToDictionary(id => id, _ => 0)
         );
+    }
+
+    /// <summary>
+    /// Forces a checkpoint right before the PostgreSQL write phase. A checkpoint resets the
+    /// server's checkpoint_timeout timer, so no timed checkpoint can start during the few
+    /// seconds of writes. Without it, whether the timed checkpoint overlapped the write window
+    /// decided the side's write p50 (about 2 ms per request slower while it ran: commits wait
+    /// on its fsyncs and WAL recycling).
+    /// </summary>
+    private static async Task CheckpointPostgresqlAsync(DbConnection connection)
+    {
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = "CHECKPOINT;";
+        command.CommandTimeout = 600;
+        await command.ExecuteNonQueryAsync();
     }
 
     /// <summary>

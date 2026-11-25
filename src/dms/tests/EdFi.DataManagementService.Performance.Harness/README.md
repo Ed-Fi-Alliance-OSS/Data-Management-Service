@@ -316,7 +316,7 @@ One execution platform is supported, and every comparison checks it:
 depends on:
 
 - the supported range and the approved reference commit;
-- the `workload`: fixture `primary-500k`, deep offset 450,000, reads 10 warmups / 60 measured
+- the `workload`: fixture `primary-500k`, deep offset 450,000, reads 10 warmups / 300 measured
   per cell, writes 20 / 200, one request in flight, authorization bypassed, Serilog `Warning`,
   published ownership, and the pinned connection settings;
 - the `smokeWorkload` for rehearsals: `smoke-10k`, reads 5 / 30, writes 5 / 20, and fixed
@@ -368,7 +368,10 @@ Inside a side, the harness:
   paging and final-gate runs do not compact;
 - publishes data-store ownership;
 - runs the six read cells and then the write scenario, each with its warmups before its
-  measured iterations. Nothing is cleared between warmup and measurement: the warmups are the
+  measured iterations. On PostgreSQL, a `CHECKPOINT` runs right before the writes. It
+  restarts the server's `checkpoint_timeout` timer, so the periodic checkpoint cannot start
+  during the few seconds of writes. Commits wait on a running checkpoint's fsyncs, so its
+  timing used to decide a side's write p50 (about 2 ms per request slower when it overlapped). Nothing is cleared between warmup and measurement: the warmups are the
   warm-cache procedure.
 
 The reads mutate nothing. Each write is a `PUT` of a target student's full fixture document
@@ -497,7 +500,8 @@ Build logs (`build-<commit12>.log`) stay in the results directory.
 - `comparison.md` is the human-readable report.
 - **Latency.** p50 drives the verdict. p95 is always reported, but its warnings are off unless
   the profile enables them, so a regression that only affects the tail can be missed. p99 is
-  descriptive and limited by the sample size: nearest-rank p99 over 60 samples is the maximum.
+  descriptive and limited by the sample size: nearest-rank p99 is the 297th of 300 read
+  samples and the 198th of 200 write samples, so it rests on the slowest few requests.
   No throughput is reported: this is serial latency with one request in flight, not capacity.
 - **Command counts** are driver command executions per request, counted from Npgsql's
   `ActivitySource` (activities carrying a statement) and SqlClient's `DiagnosticListener`
@@ -541,7 +545,7 @@ the injection is the only controlled difference:
 | Purpose | Injection | Pairs | Output |
 | --- | --- | --- | --- |
 | `Calibration` | none | 5 or more | `calibration`: each scenario's derived threshold `max(5%, 2 × max \|pair ratio − 1\|)`, rounded up to a whole percent, and the observed fingerprint |
-| `Sizing` | `-InjectSlowdown`, required | 2 | `sizing`: for each demonstration scenario, `in-band` (20% ± 2 pp), `adjust` with `suggestedFactor = factor × 0.20 / observed`, or `inconclusive`; `nextFactor` is always defined |
+| `Sizing` | `-InjectSlowdown`, required | 5 | `sizing`: for each demonstration scenario, `in-band` (20% ± 2 pp), `adjust` with `suggestedFactor = factor × 0.20 / observed`, or `inconclusive`; `nextFactor` is always defined |
 | `Repeatability` | none | 5 or more | must show no warnings; qualification evidence |
 | `Detection` | the frozen `detection.injectionFactors` | 5 or more | `detection`: the frozen rule above; qualification evidence |
 | `BoundaryProbe` | the frozen factors × `threshold / 0.20` | the profile's pair count | the outcomes, reported whatever they are |
@@ -553,7 +557,7 @@ requires. Everything else is a diagnostic.
 The procedure, for each provider, one provider at a time:
 
 1. Run one `Calibration` with at least 5 pairs.
-2. Size each demonstration scenario with 2-pair `Sizing` runs: start at factor 0.20, then use
+2. Size each demonstration scenario with 5-pair `Sizing` runs: start at factor 0.20, then use
    each scenario's `nextFactor`. Stop when both are in band, after four runs, or after two
    consecutive inconclusive runs for one scenario.
 3. Once both providers have in-band factors and every derived demonstration threshold is at

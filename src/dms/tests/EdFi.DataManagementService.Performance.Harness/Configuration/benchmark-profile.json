@@ -1,5 +1,5 @@
 {
-  "profileVersion": "0.1.0",
+  "profileVersion": "0.2.0",
   "workloadDefinitionVersion": "1.0.0",
   "supportedRange": {
     "floorCommit": "df7e23425beef2de46fa98b3b5b48578cb2d3692"
@@ -10,7 +10,7 @@
     "deepOffset": 450000,
     "reads": {
       "warmupIterations": 10,
-      "measuredIterations": 60
+      "measuredIterations": 300
     },
     "writes": {
       "warmupIterations": 20,
