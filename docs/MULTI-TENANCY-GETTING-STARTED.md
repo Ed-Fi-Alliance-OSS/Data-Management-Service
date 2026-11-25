@@ -550,6 +550,14 @@ the route qualifiers, is answered `404 target-not-found`. See
 [Provisioning the Configuration Service credential](EDUCATION-ORGANIZATION-PROJECTION.md#provisioning-the-configuration-service-credential)
 for the full procedure.
 
+With the credentials configured and job workers on, each tenant gets its own
+refresh schedule, and `GET /v3/tenants/{tenantName}/dataStores/edOrgs`, with the
+same tenant in the `Tenant` header, returns that tenant's data stores and their
+education organizations. The refreshes of a tenant whose credential is missing
+fail with `EdOrgProjectionNotConfigured` (listed in the composite error of a
+refresh of every data store), while other tenants refresh normally. See
+[Education Organization Refresh](CMS-EDUCATION-ORGANIZATION-REFRESH.md).
+
 ## Upgrading an Existing Multi-Tenant Deployment
 
 Earlier releases stored profiles without a tenant, so every tenant saw every

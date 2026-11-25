@@ -268,6 +268,7 @@ jobs:
             "eng/docker-compose/tests/E2EIdentityEnvironment.Tests.ps1",
             "eng/docker-compose/tests/IdentityToggleWiring.Tests.ps1",
             "eng/docker-compose/tests/EducationOrganizationProjectionToggleWiring.Tests.ps1",
+            "eng/docker-compose/tests/EducationOrganizationRefreshWiring.Tests.ps1",
             "eng/docker-compose/tests/E2ETeardownSafety.Tests.ps1",
             "eng/docker-compose/tests/InstanceE2EForwarding.Tests.ps1",
             "eng/docker-compose/tests/oauth-token-contract/TokenContractE2E.Tests.ps1",

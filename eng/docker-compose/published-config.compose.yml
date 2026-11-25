@@ -72,6 +72,12 @@ services:
       JobSettings__FinishedJobRetention: ${CONFIGURATION_SERVICE_JOBS_FINISHED_JOB_RETENTION:-7.00:00:00}
       JobSettings__RetentionInterval: ${CONFIGURATION_SERVICE_JOBS_RETENTION_INTERVAL:-01:00:00}
       JobSettings__RetentionBatchSize: ${CONFIGURATION_SERVICE_JOBS_RETENTION_BATCH_SIZE:-500}
+      # DMS education organization reader (docs/CONFIGURATION.md, Bootstrap and operational modes). Job workers run
+      # the education organization refresh, so an instance with workers on refuses to start until the base URL and a
+      # credential are set. Unset variables render empty, which the service treats as absent.
+      DmsEducationOrganizationProjectionSettings__DmsBaseUrl: ${CONFIGURATION_SERVICE_DMS_EDORG_BASE_URL:-}
+      DmsEducationOrganizationProjectionSettings__Credentials__ClientId: ${CONFIGURATION_SERVICE_DMS_EDORG_CLIENT_ID:-}
+      DmsEducationOrganizationProjectionSettings__Credentials__ClientSecret: ${CONFIGURATION_SERVICE_DMS_EDORG_CLIENT_SECRET:-}
       # DMS data store provisioning (docs/CONFIGURATION.md, DmsDataStoreProvisioning). Off by default.
       # When enabled, every line without a default must be set, and the trust policy, artifact
       # directory and (SQL Server) staging directory must be mounted. Optional settings are not

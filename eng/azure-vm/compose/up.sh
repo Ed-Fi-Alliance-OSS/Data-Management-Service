@@ -19,6 +19,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./legacy-env-warning.sh
 warn_legacy_env_names .env
 
+# shellcheck source=compose-files.sh
+source ./compose-files.sh
+
 # Refuse to deploy the .env.example placeholder secrets: they satisfy the complexity checks,
 # so nothing downstream would reject them, and 443 is Internet-open on the VM.
 if grep -qE '=.*CHANGEME' .env; then
@@ -26,6 +29,8 @@ if grep -qE '=.*CHANGEME' .env; then
   echo "(generates strong secrets on first run) or replace every CHANGEME value, then retry."
   exit 1
 fi
+# The reader override's example values would replace working .env credentials (see compose-files.sh).
+refuse_reader_override_placeholders || exit 1
 
 # External network shared by docker-compose.yml and keycloak.compose.yml.
 docker network inspect dms-sec >/dev/null 2>&1 || docker network create dms-sec
@@ -115,7 +120,7 @@ if [ "$starts_dms" = true ] && ! find .bootstrap/ApiSchema -type f -name '*.json
   exit 1
 fi
 
-compose=(docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env)
+compose=(docker compose "${compose_files[@]}" --env-file .env)
 if [ "$#" -eq 0 ]; then
   echo "Stopping DMS services before dependency restart/update..."
   "${compose[@]}" stop st-dms mt-dms

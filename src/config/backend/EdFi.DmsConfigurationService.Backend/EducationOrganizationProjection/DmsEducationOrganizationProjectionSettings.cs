@@ -8,8 +8,9 @@ namespace EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
 /// <summary>
 /// The <c>DmsEducationOrganizationProjectionSettings</c> section (DMS-1440 spec §5.2): where the Configuration Service
 /// reads the DMS education-organization projection and with which credentials.
-/// <see cref="DmsEducationOrganizationProjectionSettingsValidator"/> checks it at startup when
-/// <see cref="DmsBaseUrl"/> is set; with no base URL every read is <c>NotConfigured</c>.
+/// <see cref="DmsEducationOrganizationProjectionSettingsValidator"/> checks it at startup on every instance. An instance
+/// whose job workers are on must set <see cref="DmsBaseUrl"/> and a credential, because its workers run the education
+/// organization refresh. With no base URL every read is <c>NotConfigured</c>.
 /// </summary>
 public sealed class DmsEducationOrganizationProjectionSettings
 {

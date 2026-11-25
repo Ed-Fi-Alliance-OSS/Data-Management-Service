@@ -71,6 +71,10 @@ public sealed class JobExecutor(
     internal static readonly EventId LateWriteRejected = new(1437_07, nameof(LateWriteRejected));
     internal static readonly EventId WriteOutcomeUnknown = new(1437_08, nameof(WriteOutcomeUnknown));
     internal static readonly EventId JobReleasedOnShutdown = new(1437_09, nameof(JobReleasedOnShutdown));
+    internal static readonly EventId JobCompositeErrorRejected = new(
+        1437_13,
+        nameof(JobCompositeErrorRejected)
+    );
 
     private JobOptions Settings => options.Value;
 
@@ -247,10 +251,10 @@ public sealed class JobExecutor(
         }
         catch (JobPermanentException permanent)
         {
-            JobErrorCode errorCode = errorCodes.TryGet(permanent.ErrorCode.Code, out JobErrorCode? registered)
-                ? registered
-                : JobErrorCode.HandlerFailed;
-            return new Decision.Terminal(errorCode, JobDiagnostics.From(permanent, "Handler"));
+            return new Decision.Terminal(
+                TerminalErrorCode(job, permanent),
+                JobDiagnostics.From(permanent, "Handler")
+            );
         }
         catch (JobLeaseLostException lost)
         {
@@ -266,6 +270,41 @@ public sealed class JobExecutor(
         {
             return new Decision.Transient(JobDiagnostics.From(exception, "Handler"));
         }
+    }
+
+    /// <summary>
+    /// The registered error a permanent failure records. A single code is looked up as it always was. A composite's
+    /// message is composed from registered text only, and a composite that cannot be composed fails closed to
+    /// <see cref="JobErrorCode.HandlerFailed"/>.
+    /// </summary>
+    private JobErrorCode TerminalErrorCode(ClaimedJob job, JobPermanentException permanent)
+    {
+        string code = permanent.ErrorCode.Code;
+        if (permanent.CategoryCodes is not { } categories)
+        {
+            return errorCodes.TryGet(code, out JobErrorCode? registered)
+                ? registered
+                : JobErrorCode.HandlerFailed;
+        }
+
+        if (errorCodes.TryCompose(code, categories, out string? composed))
+        {
+            return new JobErrorCode(code, composed);
+        }
+
+        logger.LogWarning(
+            JobCompositeErrorRejected,
+            "{Event} JobId={JobId} JobType={JobType} TenantId={TenantId} Attempt={Attempt} JobErrorCode={JobErrorCode} CategoryCount={CategoryCount} CategoryCodes={CategoryCodes}",
+            nameof(JobCompositeErrorRejected),
+            JobDiagnostics.SafeIdentifier(job.JobId),
+            JobDiagnostics.SafeIdentifier(job.JobType),
+            job.TenantId,
+            job.AttemptCount,
+            JobDiagnostics.SafeIdentifier(code),
+            categories.Count,
+            string.Join(',', categories.Select(JobDiagnostics.SafeIdentifier))
+        );
+        return JobErrorCode.HandlerFailed;
     }
 
     /// <summary>

@@ -136,11 +136,15 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
             "eng/docker-compose/tests/plugin-deployment/stock-image-pin-dms.yml",
             "eng/docker-compose/tests/secret-resolution/secret-resolution-isolation.yml"
         )
+        # The Azure VM's reader credential override example only adds environment entries to st-config and mt-config,
+        # which docker-compose.yml declares with the cap.
+        $excludedAzureOverrideFiles = @("eng/azure-vm/compose/reader.compose.override.example.yml")
 
         return @(
             Get-TrackedRelativePath -Root $script:dockerComposeRoot -Pattern "*.yml" |
                 Where-Object { $excludedOverrideFiles -notcontains $_ }
-            Get-TrackedRelativePath -Root $script:azureComposeRoot -Pattern "*.yml"
+            Get-TrackedRelativePath -Root $script:azureComposeRoot -Pattern "*.yml" |
+                Where-Object { $excludedAzureOverrideFiles -notcontains $_ }
         ) | Sort-Object
     }
 

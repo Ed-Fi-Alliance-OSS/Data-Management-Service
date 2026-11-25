@@ -181,12 +181,25 @@ public class Given_external_managed_data_store_suppression
             {
                 response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             }
-            // Positive progress in every unrelated hosted service bounds the suppression observation.
+            // Positive progress in every unrelated hosted service bounds the suppression observation. The scheduler
+            // stays on, so the education organization refresh schedule also enqueues jobs on this host; they read a
+            // DMS that does not exist and can end in Error. Only the jobs this test seeded or scheduled count.
+            var seeded = new
+            {
+                Ordinary = ordinaryId,
+                NearMatch = nearMatchId,
+                Exhausted = exhaustedId,
+                ScheduleId = scheduleId,
+            };
+            // Null-safe, so its negation also selects jobs without a source schedule.
+            const string SeededJob =
+                """("JobId" IN (@Ordinary, @NearMatch, @Exhausted) OR ("SourceScheduleId" IS NOT NULL AND "SourceScheduleId" = @ScheduleId))""";
             await WaitFor(async () =>
             {
                 await using var cms = await deployment.OpenAsync();
                 return await cms.ExecuteScalarAsync<int>(
-                        """SELECT COUNT(*) FROM dmscs."Job" WHERE "Status" = 'Error';"""
+                        $"""SELECT COUNT(*) FROM dmscs."Job" WHERE "Status" = 'Error' AND {SeededJob};""",
+                        seeded
                     ) == 4
                     && await cms.ExecuteScalarAsync<int>(
                         """SELECT COUNT(*) FROM dmscs."Job" WHERE "JobId" = @Id;""",
@@ -195,9 +208,29 @@ public class Given_external_managed_data_store_suppression
             });
             await using (var cms = await deployment.OpenAsync())
             {
+                (
+                    await cms.ExecuteScalarAsync<int>(
+                        """SELECT COUNT(*) FROM dmscs."JobSchedule" WHERE "ScheduleType" = @Type AND "Enabled" = @Enabled;""",
+                        new { Type = "EducationOrganization.ScheduledRefresh", Enabled = true }
+                    )
+                )
+                    .Should()
+                    .Be(1, "the scheduler stays on and keeps the refresh schedule enabled on this host");
+                (
+                    await cms.QueryAsync<string>(
+                        $"""SELECT DISTINCT "JobType" FROM dmscs."Job" WHERE "Status" = 'Error' AND NOT {SeededJob};""",
+                        seeded
+                    )
+                )
+                    .Should()
+                    .BeSubsetOf(
+                        ["EducationOrganization.Refresh"],
+                        "every other job that ended in Error is a refresh job of the refresh schedule"
+                    );
                 var errors = (
                     await cms.QueryAsync<(
                         string JobId,
+                        string JobType,
                         string ErrorMessage,
                         int AttemptCount,
                         long FencingToken,
@@ -205,7 +238,8 @@ public class Given_external_managed_data_store_suppression
                         DateTime? LeaseExpiresAt,
                         DateTime? FinishedAt
                     )>(
-                        """SELECT "JobId", "ErrorMessage", "AttemptCount", "FencingToken", "LeaseOwner", "LeaseExpiresAt", "FinishedAt" FROM dmscs."Job" WHERE "Status" = 'Error';"""
+                        $"""SELECT "JobId", "JobType", "ErrorMessage", "AttemptCount", "FencingToken", "LeaseOwner", "LeaseExpiresAt", "FinishedAt" FROM dmscs."Job" WHERE "Status" = 'Error' AND {SeededJob};""",
+                        seeded
                     )
                 ).ToArray();
                 errors.Should().HaveCount(4);
@@ -246,6 +280,15 @@ public class Given_external_managed_data_store_suppression
                     .Select(error => error.JobId)
                     .Should()
                     .BeEquivalentTo(ordinaryId, nearMatchId, exhaustedId, occurrence.JobId);
+                errors
+                    .Select(error => (error.JobId, error.JobType))
+                    .Should()
+                    .BeEquivalentTo([
+                        (ordinaryId, "Unrelated.Unknown"),
+                        (nearMatchId, "manageddatastore.create"),
+                        (exhaustedId, "Unrelated.Exhausted"),
+                        (occurrence.JobId, "Unrelated.Scheduled"),
+                    ]);
                 schedule.LastEnqueuedOccurrence.Should().Be(occurrence.ScheduledOccurrence);
                 schedule.NextRunAt.Should().BeAfter(schedule.LastEnqueuedOccurrence);
                 schedule.NextRunAt.Should().BeAfter(DateTime.UtcNow);

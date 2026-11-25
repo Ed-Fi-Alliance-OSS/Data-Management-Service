@@ -35,7 +35,7 @@ public partial class Given_data_store_namespace_reservations
     public async Task Deploy()
     {
         _database = new();
-        _database.DeployThrough(41);
+        _database.DeployThrough(42);
         await Task.CompletedTask;
     }
 

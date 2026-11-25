@@ -65,6 +65,23 @@ public static class JobServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Registers a composite error code, its fixed public message, and the category codes a failure may list. Each
+    /// category must already be registered, as a consumer or infrastructure code, appear once, and not be composite;
+    /// the message followed by every category code must fit in 1000 characters.
+    /// </summary>
+    public static IServiceCollection AddJobCompositeErrorCode(
+        this IServiceCollection services,
+        string code,
+        string message,
+        IReadOnlyList<string> categoryCodes
+    )
+    {
+        services.AddJobServices();
+        Instance<JobErrorCodeRegistrations>(services).AddComposite(code, message, categoryCodes);
+        return services;
+    }
+
     /// <summary>The single instance of <typeparamref name="T"/> registered while the services are composed.</summary>
     private static T Instance<T>(IServiceCollection services)
         where T : class, new()

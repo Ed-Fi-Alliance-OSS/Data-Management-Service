@@ -14,6 +14,7 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
+using EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
@@ -124,6 +125,7 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddDmsEducationOrganizationProjectionReader(
             webApplicationBuilder.Configuration
         );
+        webApplicationBuilder.Services.AddEducationOrganizationRefresh(webApplicationBuilder.Configuration);
         ConfigureDatastore(webApplicationBuilder, logger);
         ConfigureDmsDataStoreProvisioning(webApplicationBuilder, logger);
         ConfigureManagedDataStores(webApplicationBuilder.Services, webApplicationBuilder.Configuration);
@@ -269,6 +271,10 @@ public static class WebApplicationBuilderExtensions
                 Backend.Postgresql.ClaimsDataLoader.ResourceClaimMetadataRepository
             >();
             webAppBuilder.Services.AddTransient<IResourceClaimRepository, ResourceClaimRepository>();
+            webAppBuilder.Services.AddTransient<
+                IEducationOrganizationSnapshotRepository,
+                EducationOrganizationSnapshotRepository
+            >();
             AddPostgresqlJobs(webAppBuilder.Services);
         }
         else
@@ -478,6 +484,10 @@ public static class WebApplicationBuilderExtensions
         if (configured.WorkerEnabled)
         {
             services.AddHostedService<JobWorkerService>();
+        }
+        else
+        {
+            services.AddHostedService<JobWorkersDisabledNotice>();
         }
 
         if (configured.SchedulerEnabled)
