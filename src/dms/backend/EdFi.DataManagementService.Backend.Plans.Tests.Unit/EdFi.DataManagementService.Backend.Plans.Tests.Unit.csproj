@@ -22,8 +22,8 @@
         <PackageReference Include="Microsoft.CodeAnalysis" />
         <!-- Restored only so StageDataStandard61ApiSchema below can copy its packaged ApiSchema.json into
              this project's output. Assets are excluded and no path property is generated, so nothing is
-             bundled into a staged ApiSchema workspace; the fixtures read the copy that travels with the
-             test output, because CI runs these tests on a runner that never restores. -->
+             bundled into a staged ApiSchema workspace. The fixtures read the staged copy, which keeps
+             them self-contained in the test output rather than dependent on the NuGet packages folder. -->
         <PackageReference Include="EdFi.DataStandard61.ApiSchema" ExcludeAssets="all" />
     </ItemGroup>
     <ItemGroup>
