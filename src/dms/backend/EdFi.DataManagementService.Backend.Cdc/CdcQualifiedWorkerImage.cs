@@ -26,11 +26,18 @@ public static class CdcQualifiedWorkerImage
         new[] { Digest }.ToFrozenSet(StringComparer.Ordinal);
 
     internal static bool CanServe(CdcDeploymentRequest request) =>
+        CanServe(request, Qualification.MssqlNativeDocumentCache, Digest);
+
+    internal static bool CanServe(
+        CdcDeploymentRequest request,
+        bool mssqlNativeDocumentCache,
+        string qualifiedDigest
+    ) =>
         request.ProviderConnectionProperties.Provider != CdcProvider.SqlServer
         || !request.ProviderSetup.ExpectedSourceInventory.Any(
             CdcConnectorTemplateSharedRules.IsNativeSqlServerDocumentCache
         )
-        || (Qualification.MssqlNativeDocumentCache && request.WorkerPolicy.QualifiedImageDigest == Digest);
+        || (mssqlNativeDocumentCache && request.WorkerPolicy.QualifiedImageDigest == qualifiedDigest);
 
     internal static async Task<CdcDeploymentDiagnostic> DiagnoseNativeRefusalAsync(
         CdcDeploymentRequest request,

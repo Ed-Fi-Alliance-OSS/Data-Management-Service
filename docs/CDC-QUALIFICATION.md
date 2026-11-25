@@ -79,6 +79,43 @@ require the exact shipped Kafka image; overriding it can start the candidate bro
 but then return authorization `Unavailable`. The qualification runner always selects
 the shipped pin.
 
+### Preparing the native SQL Server worker cutover
+
+The DMS SQL Server template already renders the column-specific native JSON converter.
+The companion worker must contain that converter and a SQL Server JDBC driver that
+discovers the native column. Until the exact replacement image is qualified, leave
+`mssqlNativeDocumentCache` false and retain the current fail-closed admission behavior.
+The local candidate is not a substitute for a published, qualified worker.
+
+When the companion change is ready, use the Kafka Connect repository's
+[`Docker build and publish` workflow](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-Kafka-Connect/actions/workflows/docker-publish.yml)
+with an immutable DMS fixture commit to produce a candidate and record its image digest,
+companion commit, DMS commit, and workflow evidence. Its packaging and telemetry checks
+alone do not establish native `DocumentJson` compatibility.
+
+For pre-release qualification, use a disposable, isolated checkout of the intended DMS
+revision and an exclusively owned test environment. In that checkout only, update the
+embedded `CdcQualifiedWorkerImage.json` and the Connect Compose default to the exact
+candidate digest, and set `mssqlNativeDocumentCache` to true so the production admission
+path and full SQL Server qualification matrix exercise the candidate. Build all DMS and
+SchemaTools artifacts from that checkout; do not use this temporary qualification change
+as evidence that the image is already approved for production. Use the same digest as
+`CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE`, the pinned Kafka image, and the normal provider
+prerequisites in this guide.
+
+Run the full SQL Server qualification, including managed initial admission, lifecycle,
+recovery, record-size, telemetry, history, message-contract and API E2E suites. Require
+the native `DocumentCache` snapshot and live messages to retain the required Connect
+`STRING` field and the existing downstream contract; exercise the legacy text control
+and PostgreSQL compatibility as well. Record the exact image digest, source revisions,
+engine and driver versions, test results, and any skips or failures. A smoke test, a
+temporarily enabled flag, or telemetry-only evidence is not sufficient qualification.
+
+After the required checks pass, update the real DMS worker record and Connect Compose pin
+together to that same published digest, set the capability to true, and rerun the release
+qualification from the intended DMS revision. Until then, native SQL Server managed CDC
+remains unavailable; do not remove the refusal guard or claim this dependency is closed.
+
 The live Admission and Lifecycle wrappers also require `CDC_RUNBOOK_OWNED_STACK=1` and a disposable, exclusively owned
 local/published Compose environment with no retained containers, volumes or bootstrap
 workspace. The shared live runbook fixture requires two PostgreSQL setup cases and
