@@ -59,11 +59,12 @@ public class Given_Same_Build_Pairs_Within_Threshold
     }
 
     [Test]
-    public void It_emits_a_calibration_block_with_thresholds_derived_from_the_spread()
+    public void It_emits_a_calibration_block_with_thresholds_derived_from_the_median_deviation()
     {
         _result.Calibration.Should().NotBeNull();
-        _result.Calibration!.Spreads[ComparisonBuilder.ZeroSmall].Should().Be(0.03m);
-        _result.Calibration.DerivedThresholds[ComparisonBuilder.ZeroSmall].Should().Be(0.06m);
+        _result.Calibration!.MedianDeviations[ComparisonBuilder.ZeroSmall].Should().Be(0.02m);
+        _result.Calibration.Spreads[ComparisonBuilder.ZeroSmall].Should().Be(0.03m);
+        _result.Calibration.DerivedThresholds[ComparisonBuilder.ZeroSmall].Should().Be(0.05m);
         _result.Calibration.DerivedThresholds[ComparisonBuilder.Write].Should().Be(0.05m);
     }
 
@@ -71,7 +72,7 @@ public class Given_Same_Build_Pairs_Within_Threshold
     public void It_rounds_a_derived_threshold_up_to_a_whole_percent()
     {
         ComparisonBuilder builder = new() { Purpose = PerfBenchmarkComparison.Calibration };
-        builder.CandidateRatios[ComparisonBuilder.Write] = [1.031m, 1m, 1m, 1m, 1m];
+        builder.CandidateRatios[ComparisonBuilder.Write] = [1.031m, 0.969m, 1.031m, 1m, 1m];
 
         builder.Compare().Calibration!.DerivedThresholds[ComparisonBuilder.Write].Should().Be(0.07m);
     }
@@ -81,6 +82,34 @@ public class Given_Same_Build_Pairs_Within_Threshold
     {
         _result.Calibration!.Fingerprint.CpuModel.Should().Be("Example CPU");
         _result.Labels.Should().Contain(PerfBenchmarkComparisonResult.UncalibratedLabel);
+    }
+}
+
+/// <summary>
+/// The per-pair p50 ratios of the round-4 calibration runs (DMS-1019 evidence archive). The
+/// verdict flags the median of these ratios, so one disturbed pair must not set the threshold;
+/// when a majority of pairs move, the median moves and the threshold follows.
+/// </summary>
+[TestFixture]
+public class Given_A_Calibration_Whose_Spread_Comes_From_Disturbed_Pairs
+{
+    // PostgreSQL offset-zero/25: one pair at 1.106. The worst-pair rule derived 22%.
+    [TestCase(new[] { 1.001, 1.012, 1.006, 1.024, 1.106 }, 0.05)]
+    // SQL Server offset-zero/25: one pair at 1.097. The worst-pair rule derived 20%.
+    [TestCase(new[] { 1.097, 0.959, 1.020, 1.005, 1.029 }, 0.06)]
+    // PostgreSQL write: two pairs at 1.304 and 1.189 and one at 0.86, so the median moves.
+    // The worst-pair rule derived 61%.
+    [TestCase(new[] { 0.86, 0.988, 0.977, 1.304, 1.189 }, 0.28)]
+    public void It_derives_the_threshold_from_the_median_deviation(double[] ratios, double expected)
+    {
+        ComparisonBuilder builder = new() { Purpose = PerfBenchmarkComparison.Calibration };
+        builder.CandidateRatios[ComparisonBuilder.ZeroSmall] = [.. ratios.Select(ratio => (decimal)ratio)];
+
+        builder
+            .Compare()
+            .Calibration!.DerivedThresholds[ComparisonBuilder.ZeroSmall]
+            .Should()
+            .Be((decimal)expected);
     }
 }
 

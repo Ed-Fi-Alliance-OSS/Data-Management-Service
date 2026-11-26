@@ -289,13 +289,17 @@ public static class PerfBenchmarkComparisonWriter
         md.Append("\n## Calibration\n\n");
         md.Append(
             "Same-build, not injected, every required value satisfied. Derived threshold = "
-                + "max(5%, 2 × spread), rounded up to a whole percent.\n\n"
+                + "max(5%, 2 × median deviation), rounded up to a whole percent. The median deviation "
+                + "is the median of the per-pair |p50 ratio − 1|; the spread (the largest) is descriptive.\n\n"
         );
-        md.Append("| Scenario | Spread | Derived threshold |\n| --- | --- | --- |\n");
+        md.Append(
+            "| Scenario | Median deviation | Spread | Derived threshold |\n| --- | --- | --- | --- |\n"
+        );
         foreach ((string scenario, decimal threshold) in calibration.DerivedThresholds)
         {
             md.Append(
-                $"| {Cell(scenario)} | {Percent(calibration.Spreads.GetValueOrDefault(scenario))} | {Percent(threshold)} |\n"
+                $"| {Cell(scenario)} | {Percent(calibration.MedianDeviations.GetValueOrDefault(scenario))} "
+                    + $"| {Percent(calibration.Spreads.GetValueOrDefault(scenario))} | {Percent(threshold)} |\n"
             );
         }
 

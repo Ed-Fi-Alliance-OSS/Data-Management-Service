@@ -412,13 +412,13 @@ public class Given_A_Calibration_Comparison
             PerfBenchmarkComparisonWriter.RenderMarkdown(input.Plan, result),
             "Calibration"
         );
-        calibration.Should().Contain($"| {ComparisonBuilder.ZeroSmall} | 3.0% | 6.0% |");
-        calibration.Should().Contain($"| {ComparisonBuilder.Write} | 0.0% | 5.0% |");
+        calibration.Should().Contain($"| {ComparisonBuilder.ZeroSmall} | 2.0% | 3.0% | 5.0% |");
+        calibration.Should().Contain($"| {ComparisonBuilder.Write} | 0.0% | 0.0% | 5.0% |");
         calibration.Should().Contain("| osFamily | \"Windows\" |");
         ComparisonReport.Json(result)["calibration"]!["derivedThresholds"]![ComparisonBuilder.ZeroSmall]!
             .GetValue<decimal>()
             .Should()
-            .Be(0.06m);
+            .Be(0.05m);
     }
 }
 

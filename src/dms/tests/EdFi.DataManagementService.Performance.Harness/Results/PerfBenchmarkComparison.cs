@@ -277,11 +277,16 @@ public sealed record PerfBenchmarkScenarioComparison(
 );
 
 /// <summary>
-/// Same-build calibration: each scenario's derived threshold, max(5%, 2 × spread) rounded up
-/// to a whole percent, and the observed environment fingerprint.
+/// Same-build calibration: each scenario's derived threshold, max(5%, 2 × median deviation)
+/// rounded up to a whole percent, and the observed environment fingerprint. The median
+/// deviation is the median of the per-pair |p50 ratio − 1|. The verdict flags the median of the
+/// per-pair ratios, which moves only when a majority of pairs move, so the threshold is derived
+/// from the same statistic: one disturbed pair cannot raise it. <see cref="Spreads" /> (the
+/// largest |pair ratio − 1|) stays descriptive.
 /// </summary>
 public sealed record PerfBenchmarkCalibration(
     IReadOnlyDictionary<string, decimal> DerivedThresholds,
+    IReadOnlyDictionary<string, decimal> MedianDeviations,
     IReadOnlyDictionary<string, decimal> Spreads,
     PerfBenchmarkEnvironmentFingerprint Fingerprint
 );
@@ -1375,15 +1380,22 @@ public static class PerfBenchmarkComparison
     private static PerfBenchmarkCalibration CalibrationOf(
         IReadOnlyList<PerfBenchmarkScenarioComparison> scenarios,
         PerfBenchmarkEnvironmentFingerprint fingerprint
-    ) =>
-        new(
-            scenarios.ToDictionary(
-                scenario => scenario.ScenarioId,
-                scenario => Math.Ceiling(Math.Max(MinimumDerivedThreshold, 2 * scenario.Spread) * 100) / 100
+    )
+    {
+        Dictionary<string, decimal> medianDeviations = scenarios.ToDictionary(
+            scenario => scenario.ScenarioId,
+            scenario => Median(scenario.Pairs.Select(pair => Math.Abs(pair.P50Ratio - 1)))
+        );
+        return new(
+            medianDeviations.ToDictionary(
+                entry => entry.Key,
+                entry => Math.Ceiling(Math.Max(MinimumDerivedThreshold, 2 * entry.Value) * 100) / 100
             ),
+            medianDeviations,
             scenarios.ToDictionary(scenario => scenario.ScenarioId, scenario => scenario.Spread),
             fingerprint
         );
+    }
 
     private static PerfBenchmarkDetection DetectionOf(
         IReadOnlyList<PerfBenchmarkScenarioComparison> scenarios,
