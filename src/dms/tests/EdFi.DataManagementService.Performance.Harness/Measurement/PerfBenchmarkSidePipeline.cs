@@ -232,12 +232,15 @@ public static class PerfBenchmarkSidePipeline
             steps.Clock
         );
         PerfBenchmarkSideFacts? facts = null;
+        PerfBenchmarkReadRunReference? readRun = null;
         bool writing = false;
 
         try
         {
             facts = await steps.PrepareAsync();
             string readRunDirectory = await steps.RunReadsAsync(observer);
+            // Pin the paging run now, so a side that fails during the writes still names it.
+            readRun = PerfBenchmarkReadRunReference.Of(readRunDirectory);
 
             writing = true;
             PerfBenchmarkWriteOutcome writes = await steps.RunWritesAsync(outcomes);
@@ -261,7 +264,8 @@ public static class PerfBenchmarkSidePipeline
                 facts,
                 observer,
                 writes.Result,
-                steps.AffectedRequests()
+                steps.AffectedRequests(),
+                readRun
             );
             Write(plan.SideDirectory, result);
             return new PerfBenchmarkSideOutcome(result, readRunDirectory, writes);
@@ -278,7 +282,8 @@ public static class PerfBenchmarkSidePipeline
                 facts ?? PerfBenchmarkSideFacts.Unknown,
                 observer,
                 outcomes.ToResult(),
-                steps.AffectedRequests()
+                steps.AffectedRequests(),
+                readRun
             );
 
             try
@@ -560,7 +565,8 @@ public static class PerfBenchmarkSidePipeline
         PerfBenchmarkSideFacts facts,
         PerfBenchmarkReadObserver observer,
         PerfWriteScenarioResult write,
-        IReadOnlyDictionary<string, int> affectedRequests
+        IReadOnlyDictionary<string, int> affectedRequests,
+        PerfBenchmarkReadRunReference? readRun
     ) =>
         new(
             PerfBenchmarkSideResult.CurrentSchemaVersion,
@@ -579,7 +585,8 @@ public static class PerfBenchmarkSidePipeline
             facts.EffectiveLogLevel,
             facts.OwnershipPublished,
             facts.Instrumentation,
-            new PerfBenchmarkInjection(plan.Injection.Factors, affectedRequests)
+            new PerfBenchmarkInjection(plan.Injection.Factors, affectedRequests),
+            readRun
         );
 
     /// <summary>

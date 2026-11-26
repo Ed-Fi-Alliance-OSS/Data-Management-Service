@@ -492,7 +492,9 @@ internal sealed class ComparisonBuilder
         ];
 
     /// <summary>
-    /// Writes the input as the wrapper and sides would lay it out on disk.
+    /// Writes the input as the wrapper and sides would lay it out on disk. Each side's paging run
+    /// gets its own run id, as the live timestamped ids differ, and is written before
+    /// <c>benchmark-side.json</c>, which names it and pins its results.
     /// </summary>
     public static void WriteDirectory(string directory, PerfBenchmarkComparisonInput input)
     {
@@ -511,7 +513,12 @@ internal sealed class ComparisonBuilder
             Directory.CreateDirectory(sideDirectory);
             File.WriteAllText(
                 Path.Combine(sideDirectory, PerfBenchmarkSideResult.FileName),
-                PerfBenchmarkSideResults.Serialize(side.Side)
+                PerfBenchmarkSideResults.Serialize(
+                    side.Side with
+                    {
+                        ReadRun = WriteReadRun(sideDirectory, side),
+                    }
+                )
             );
             File.WriteAllText(
                 Path.Combine(sideDirectory, PerfBenchmarkEnvironment.FileName),
@@ -522,51 +529,53 @@ internal sealed class ComparisonBuilder
                 ToCsv(side.Samples),
                 new UTF8Encoding(false)
             );
-            if (side.Reads is not { } reads)
-            {
-                continue;
-            }
-
-            string runDirectory = Path.Combine(sideDirectory, $"{reads.Provider}-run");
-            Directory.CreateDirectory(runDirectory);
-            PerfRunManifest manifest = PerfRunManifest.Create(
-                new PerfRunIdentity("paging-run", "2026-11-23T12:00:00Z", reads.Provider),
-                new PerfCommitIdentity(reads.RunnerCommit, reads.SubjectCommit, []),
-                new PerfManifestFixture(reads.FixtureId, 500_000, reads.DeepOffset),
-                new PerfIterationPlan(
-                    reads.WarmupIterations,
-                    reads.MeasuredIterations,
-                    reads.CellExecutionOrder
-                ),
-                PerfEnvironmentIdentity.Create(reads.Server, reads.Host, [new PerfSetting("Npgsql", "8.0.4")])
-            );
-            PerfResultsDocument results = PerfResultsDocument.Create(
-                reads.Cells.Select(cell => new PerfScenarioResult(
-                    reads.Provider,
-                    cell.ScenarioId,
-                    cell.PageSize,
-                    cell.Offset,
-                    cell.PageSize,
-                    cell.CommandCountPerRequest,
-                    cell.WarmupIterations,
-                    cell.MeasuredIterations,
-                    cell.LatencyMs,
-                    cell.DriverExecuteMs,
-                    new PerfDatabaseMetrics(1, 0, 1.0, null, null, null, null),
-                    "plans/plan.json",
-                    new string('a', 64),
-                    reads.RunnerCommit,
-                    reads.SubjectCommit
-                ))
-            );
-            File.WriteAllText(
-                Path.Combine(runDirectory, "run-manifest.json"),
-                PerfArtifactJson.Serialize(manifest)
-            );
-            File.WriteAllText(
-                Path.Combine(runDirectory, "results.json"),
-                PerfArtifactJson.Serialize(results)
-            );
         }
+    }
+
+    private static PerfBenchmarkReadRunReference? WriteReadRun(
+        string sideDirectory,
+        PerfBenchmarkSideEvidence side
+    )
+    {
+        if (side.Reads is not { } reads)
+        {
+            return null;
+        }
+
+        string runId = $"{reads.Provider}-pair{side.Side.Pair:D2}-{side.Side.Role}";
+        string runDirectory = Path.Combine(sideDirectory, runId);
+        Directory.CreateDirectory(runDirectory);
+        PerfRunManifest manifest = PerfRunManifest.Create(
+            new PerfRunIdentity(runId, "2026-11-23T12:00:00Z", reads.Provider),
+            new PerfCommitIdentity(reads.RunnerCommit, reads.SubjectCommit, []),
+            new PerfManifestFixture(reads.FixtureId, 500_000, reads.DeepOffset),
+            new PerfIterationPlan(reads.WarmupIterations, reads.MeasuredIterations, reads.CellExecutionOrder),
+            PerfEnvironmentIdentity.Create(reads.Server, reads.Host, [new PerfSetting("Npgsql", "8.0.4")])
+        );
+        PerfResultsDocument results = PerfResultsDocument.Create(
+            reads.Cells.Select(cell => new PerfScenarioResult(
+                reads.Provider,
+                cell.ScenarioId,
+                cell.PageSize,
+                cell.Offset,
+                cell.PageSize,
+                cell.CommandCountPerRequest,
+                cell.WarmupIterations,
+                cell.MeasuredIterations,
+                cell.LatencyMs,
+                cell.DriverExecuteMs,
+                new PerfDatabaseMetrics(1, 0, 1.0, null, null, null, null),
+                "plans/plan.json",
+                new string('a', 64),
+                reads.RunnerCommit,
+                reads.SubjectCommit
+            ))
+        );
+        File.WriteAllText(
+            Path.Combine(runDirectory, "run-manifest.json"),
+            PerfArtifactJson.Serialize(manifest)
+        );
+        File.WriteAllText(Path.Combine(runDirectory, "results.json"), PerfArtifactJson.Serialize(results));
+        return PerfBenchmarkReadRunReference.Of(runDirectory);
     }
 }

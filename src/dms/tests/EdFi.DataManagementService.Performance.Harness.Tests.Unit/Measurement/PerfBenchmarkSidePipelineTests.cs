@@ -38,6 +38,14 @@ public sealed class FakeSideSteps
 
     public bool WritesRan { get; private set; }
 
+    /// <summary>
+    /// The paging run the fake reads write beside the side result, as the live paging pipeline
+    /// does.
+    /// </summary>
+    public const string ReadRunId = "postgresql-smoke-10k-20261123120000";
+
+    public const string ReadResultsJson = """{"schemaVersion":"1.3.0","results":[]}""";
+
     public static PerfBenchmarkSidePlan Plan(string sideDirectory) =>
         new(
             PerfProvider.Postgresql,
@@ -92,7 +100,18 @@ public sealed class FakeSideSteps
                     }
                 }
 
-                return ReadFailureAfterAllReads is null ? "read-run" : throw ReadFailureAfterAllReads;
+                if (ReadFailureAfterAllReads is not null)
+                {
+                    throw ReadFailureAfterAllReads;
+                }
+
+                string runDirectory = Path.Combine(plan.SideDirectory, ReadRunId);
+                Directory.CreateDirectory(runDirectory);
+                await File.WriteAllTextAsync(
+                    Path.Combine(runDirectory, PerfBenchmarkReadRunReference.ResultsFileName),
+                    ReadResultsJson
+                );
+                return runDirectory;
             },
             outcomes =>
             {
@@ -188,6 +207,23 @@ public class Given_A_Side_That_Completes : SidePipelineFixture
         Written.Write.MeasuredWindow.Should().NotBeNull();
         Written.ReadCells.Should().AllSatisfy(cell => cell.MeasuredWindow.Should().NotBeNull());
     }
+
+    [Test]
+    public void It_names_its_paging_run_and_pins_the_results_it_measured()
+    {
+        Written
+            .ReadRun.Should()
+            .Be(
+                new PerfBenchmarkReadRunReference(
+                    FakeSideSteps.ReadRunId,
+                    Convert.ToHexStringLower(
+                        System.Security.Cryptography.SHA256.HashData(
+                            System.Text.Encoding.UTF8.GetBytes(FakeSideSteps.ReadResultsJson)
+                        )
+                    )
+                )
+            );
+    }
 }
 
 [TestFixture]
@@ -241,6 +277,12 @@ public class Given_A_Plan_Replay_Failure_After_Successful_Reads : SidePipelineFi
         Written.Write.WarmupAttempted.Should().Be(0);
         Written.Write.MeasuredAttempted.Should().Be(0);
     }
+
+    [Test]
+    public void It_names_no_paging_run_because_the_read_step_never_returned_one()
+    {
+        Written.ReadRun.Should().BeNull();
+    }
 }
 
 [TestFixture]
@@ -289,6 +331,12 @@ public class Given_A_Write_That_Throws : SidePipelineFixture
         Written.Write.MeasuredCompleted.Should().Be(7);
         Written.Write.Failed.Should().Be(1);
         Written.Write.LatencyMs.Should().BeNull();
+    }
+
+    [Test]
+    public void It_still_names_the_paging_run_its_reads_produced()
+    {
+        Written.ReadRun!.RunId.Should().Be(FakeSideSteps.ReadRunId);
     }
 }
 

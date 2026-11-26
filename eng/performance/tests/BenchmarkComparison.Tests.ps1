@@ -502,3 +502,17 @@ Describe 'Get-BenchmarkStorageMountType' {
         Get-BenchmarkStorageMountType -Mounts $mounts -Tmpfs $null -DataPath '/var/opt/mssql' | Should -Be 'container'
     }
 }
+
+Describe 'Get-BenchmarkDatabaseCpuLimit' {
+    # Shaped like `docker inspect --format '{{json .HostConfig}}'` on an 8-CPU Docker VM.
+    It 'Given <Name>, it records <Expected> CPUs' -ForEach @(
+        @{ Name = 'an unrestricted container'; HostConfig = '{"NanoCpus":0,"CpuQuota":0,"CpuPeriod":0,"CpusetCpus":""}'; Expected = 8 }
+        @{ Name = '--cpus 2'; HostConfig = '{"NanoCpus":2000000000,"CpuQuota":0,"CpuPeriod":0,"CpusetCpus":""}'; Expected = 2 }
+        @{ Name = 'a 50 ms quota per 100 ms pinned to one CPU'; HostConfig = '{"NanoCpus":0,"CpuQuota":50000,"CpuPeriod":100000,"CpusetCpus":"0"}'; Expected = 0.5 }
+        @{ Name = 'a quota with the default period'; HostConfig = '{"NanoCpus":0,"CpuQuota":300000,"CpuPeriod":0,"CpusetCpus":""}'; Expected = 3 }
+        @{ Name = '--cpuset-cpus 0-3,6'; HostConfig = '{"NanoCpus":0,"CpuQuota":0,"CpuPeriod":0,"CpusetCpus":"0-3,6"}'; Expected = 5 }
+    ) {
+        $config = $HostConfig | ConvertFrom-Json
+        Get-BenchmarkDatabaseCpuLimit -HostConfig $config -VmCpus 8 | Should -Be ([decimal]$Expected)
+    }
+}

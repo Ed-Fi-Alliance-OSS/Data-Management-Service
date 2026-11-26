@@ -407,6 +407,11 @@ Two different fingerprints are compared:
   harness commit, so editing the profile does not invalidate it. When it is null, the result
   is labelled `uncalibrated`.
 
+The database container's CPU limit is the smallest of its `--cpus`, its CFS quota
+(`--cpu-quota` / `--cpu-period`), the number of CPUs its `--cpuset-cpus` allows, and the Docker
+VM's CPUs, so a quota or a CPU pinning changes the fingerprint even though Docker records them
+apart from `--cpus`.
+
 Required values are asserted on every side directly, not only compared between sides: Serilog
 `Warning`, ownership published, connection settings equal to `workload.connection.<provider>`,
 Windows, x64, AC power online, and a volume mount. Two sides that agree on a disallowed value
@@ -492,6 +497,14 @@ The invocation directory holds:
 - `pairs/NN/<role>/` for each side: `benchmark-side.json`, `environment.json`, `samples.csv`,
   `side.log`, and the side's paging run directory with its unchanged schema 1.3.0 artifacts,
   including the plan evidence under `plans/`.
+
+`benchmark-side.json` names its paging run (`readRun.runId`, the directory's name) and records
+the SHA-256 of that run's `results.json`, where the read latencies come from. The report reads
+only that run and rejects the side when the run's manifest or results are not the ones the side
+measured. In a same-build run the commits cannot tell the sides apart, so this is what keeps one
+side's timings from passing as another's. The other side files are already tied to their side:
+`benchmark-side.json` and `environment.json` by run, pair and role, and `samples.csv` by the
+measured-window coverage rule.
 
 Build logs (`build-<commit12>.log`) stay in the results directory.
 

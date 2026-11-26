@@ -1702,8 +1702,8 @@ public static class PerfBenchmarkComparison
 
 /// <summary>
 /// Reads a comparison directory: <c>run-plan.json</c>, then <c>pairs/NN/&lt;role&gt;/</c> holding
-/// <c>benchmark-side.json</c>, <c>environment.json</c>, <c>samples.csv</c> and the paging run's
-/// directory. A side whose artifacts cannot be read becomes a load error (and a missing side),
+/// <c>benchmark-side.json</c>, <c>environment.json</c>, <c>samples.csv</c> and the paging run
+/// that <c>benchmark-side.json</c> names. A side whose artifacts cannot be read becomes a load error (and a missing side),
 /// never an exception; only an unreadable run plan stops the report.
 /// </summary>
 public static class PerfBenchmarkComparisonLoader
@@ -1758,35 +1758,47 @@ public static class PerfBenchmarkComparisonLoader
             File.ReadLines(Path.Combine(directory, PerfBenchmarkMetrics.SamplesFileName))
         );
 
-        // The paging run writes one directory holding run-manifest.json; a side that failed
-        // before its artifacts has none.
-        string[] runDirectories =
-        [
-            .. Directory
-                .GetDirectories(directory)
-                .Where(candidate => File.Exists(Path.Combine(candidate, "run-manifest.json"))),
-        ];
+        // Only the paging run the side named is read; a side that failed before its reads
+        // produced one has none.
         PerfBenchmarkReadRun? reads = null;
-        if (runDirectories.Length == 1)
+        if (side.ReadRun is { } readRun)
         {
+            string runDirectory = Path.Combine(directory, readRun.RunId);
             PerfRunManifest manifest = PerfArtifactJson.Deserialize<PerfRunManifest>(
-                File.ReadAllText(Path.Combine(runDirectories[0], "run-manifest.json"))
+                File.ReadAllText(Path.Combine(runDirectory, "run-manifest.json"))
             );
             PerfResultsDocument results = PerfArtifactJson.Deserialize<PerfResultsDocument>(
-                File.ReadAllText(Path.Combine(runDirectories[0], "results.json"))
+                File.ReadAllText(Path.Combine(runDirectory, PerfBenchmarkReadRunReference.ResultsFileName))
             );
 
             // The projection keeps the manifest's identities and the rows' latencies, so the
             // pair must be internally consistent: rows from the manifest's build, summaries
             // the raw samples explain.
             PerfArtifactValidator.EnsureValid(manifest, results);
+
+            // Commits cannot tell apart the sides of one build, so the side's own record binds
+            // the paging run: its manifest and the exact results the side measured.
+            List<string> errors = [];
+            if (manifest.Run.RunId != readRun.RunId)
+            {
+                errors.Add(
+                    $"{runDirectory}: run-manifest.json is run {manifest.Run.RunId}, not the side's paging run {readRun.RunId}."
+                );
+            }
+
+            if (PerfBenchmarkReadRunReference.ResultsSha256Of(runDirectory) != readRun.ResultsSha256)
+            {
+                errors.Add(
+                    $"{runDirectory}: results.json is not the one the side measured (SHA-256 differs from benchmark-side.json)."
+                );
+            }
+
+            if (errors.Count > 0)
+            {
+                throw new PerfArtifactValidationException(errors);
+            }
+
             reads = PerfBenchmarkReadRun.From(manifest, results);
-        }
-        else if (runDirectories.Length > 1)
-        {
-            throw new PerfArtifactValidationException([
-                $"{directory} holds {runDirectories.Length} paging runs; expected one.",
-            ]);
         }
 
         return new PerfBenchmarkSideEvidence(side, environment, reads, samples);

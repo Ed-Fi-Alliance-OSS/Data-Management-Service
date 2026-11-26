@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -90,8 +91,28 @@ public sealed record PerfBenchmarkInjection(
 );
 
 /// <summary>
+/// The paging run a side's reads produced: its run id, which names its directory beside
+/// <c>benchmark-side.json</c>, and the SHA-256 of its <c>results.json</c>. The read latencies
+/// come from that file, so the side pins it; the report rejects a paging run that is not the
+/// one the side measured, including one copied from another side of the same build.
+/// </summary>
+public sealed record PerfBenchmarkReadRunReference(string RunId, string ResultsSha256)
+{
+    public const string ResultsFileName = "results.json";
+
+    public static PerfBenchmarkReadRunReference Of(string runDirectory) =>
+        new(Path.GetFileName(Path.TrimEndingDirectorySeparator(runDirectory)), ResultsSha256Of(runDirectory));
+
+    public static string ResultsSha256Of(string runDirectory) =>
+        Convert.ToHexStringLower(
+            SHA256.HashData(File.ReadAllBytes(Path.Combine(runDirectory, ResultsFileName)))
+        );
+}
+
+/// <summary>
 /// <c>benchmark-side.json</c>: one side of one pair, written whether the side completed or
-/// failed.
+/// failed. <see cref="ReadRun" /> is set once the reads produced their paging run; a completed
+/// side always has it.
 /// </summary>
 public sealed record PerfBenchmarkSideResult(
     string SchemaVersion,
@@ -110,7 +131,8 @@ public sealed record PerfBenchmarkSideResult(
     string EffectiveLogLevel,
     bool OwnershipPublished,
     PerfBenchmarkInstrumentation Instrumentation,
-    PerfBenchmarkInjection Injection
+    PerfBenchmarkInjection Injection,
+    PerfBenchmarkReadRunReference? ReadRun = null
 )
 {
     public const string CurrentSchemaVersion = "benchmark-side 1.0.0";
@@ -215,6 +237,7 @@ public static partial class PerfBenchmarkSideResults
         }
 
         ValidateStatus(result.Status, errors);
+        ValidateReadRun(result, errors);
         ValidateReadCells(result, errors);
         ValidateWrite(result, errors);
         ValidateInjection(result.Injection, errors);
@@ -251,6 +274,33 @@ public static partial class PerfBenchmarkSideResults
             default:
                 errors.Add($"status.state must be 'completed' or 'failed'; got '{status.State}'.");
                 break;
+        }
+    }
+
+    private static void ValidateReadRun(PerfBenchmarkSideResult result, List<string> errors)
+    {
+        if (result.ReadRun is not { } readRun)
+        {
+            if (result.Status.State == PerfBenchmarkSideStatus.Completed)
+            {
+                errors.Add("readRun: a completed side must name its paging run.");
+            }
+
+            return;
+        }
+
+        // The run id names a directory beside benchmark-side.json, so it must be one plain
+        // path segment.
+        if (!RunDirectoryName().IsMatch(readRun.RunId))
+        {
+            errors.Add($"readRun.runId must be a plain directory name; got '{readRun.RunId}'.");
+        }
+
+        if (!Sha256().IsMatch(readRun.ResultsSha256))
+        {
+            errors.Add(
+                $"readRun.resultsSha256 must be 64 lowercase hex characters; got '{readRun.ResultsSha256}'."
+            );
         }
     }
 
@@ -375,4 +425,7 @@ public static partial class PerfBenchmarkSideResults
 
     [GeneratedRegex("^[0-9a-f]{64}$")]
     private static partial Regex Sha256();
+
+    [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]*$")]
+    private static partial Regex RunDirectoryName();
 }

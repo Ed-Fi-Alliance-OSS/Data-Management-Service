@@ -63,7 +63,8 @@ internal static class SideResultSamples
             new PerfBenchmarkInjection(
                 new Dictionary<string, decimal>(),
                 PerfBenchmarkScenarios.AllIds.ToDictionary(id => id, _ => 0)
-            )
+            ),
+            new PerfBenchmarkReadRunReference("postgresql-smoke-10k-20261123120000", new string('b', 64))
         );
 
     /// <summary>
@@ -77,6 +78,7 @@ internal static class SideResultSamples
                 PerfBenchmarkSideStatus.ReadsPhase,
                 "traditional-offset-zero/25 iteration 12: item 0 must be student perf-000000001"
             ),
+            ReadRun = null,
             ReadCells =
             [
                 new PerfReadCellCounts(ReadCellIds[0], 5, 5, 0, 8, 7, 1),
@@ -315,6 +317,34 @@ public class Given_A_Side_Result
             )
             .Should()
             .HaveCount(4);
+    }
+
+    [Test]
+    public void It_requires_a_completed_side_to_name_its_paging_run()
+    {
+        SideResultSamples
+            .Errors(SideResultSamples.Completed() with { ReadRun = null })
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be("readRun: a completed side must name its paging run.");
+    }
+
+    [Test]
+    public void It_rejects_a_paging_run_outside_the_side_directory_or_without_a_digest()
+    {
+        SideResultSamples
+            .Errors(
+                SideResultSamples.Completed() with
+                {
+                    ReadRun = new PerfBenchmarkReadRunReference("../pairs/01/baseline/run", "abc"),
+                }
+            )
+            .Should()
+            .Equal(
+                "readRun.runId must be a plain directory name; got '../pairs/01/baseline/run'.",
+                "readRun.resultsSha256 must be 64 lowercase hex characters; got 'abc'."
+            );
     }
 
     [Test]

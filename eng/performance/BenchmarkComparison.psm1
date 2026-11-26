@@ -153,8 +153,6 @@ function Get-BenchmarkHostFact {
     $info = (Invoke-BenchmarkDocker -ArgumentList @('info', '--format', '{{.NCPU}} {{.MemTotal}}')).Output -join ''
     $vmCpus, $vmMemory = $info.Trim() -split '\s+'
     $dockerVersion = ((Invoke-BenchmarkDocker -ArgumentList @('version', '--format', '{{.Server.Version}}')).Output -join '').Trim()
-    $limits = ((Invoke-BenchmarkDocker -ArgumentList @('inspect', $ContainerName, '--format', '{{.HostConfig.NanoCpus}} {{.HostConfig.Memory}}')).Output -join '').Trim()
-    $nanoCpus, $memoryLimit = $limits -split '\s+'
     $mounts = ((Invoke-BenchmarkDocker -ArgumentList @('inspect', $ContainerName, '--format', '{{json .Mounts}}')).Output -join '') | ConvertFrom-Json
     # HostConfig.Tmpfs is absent (not null) when no tmpfs is configured.
     $hostConfig = ((Invoke-BenchmarkDocker -ArgumentList @('inspect', $ContainerName, '--format', '{{json .HostConfig}}')).Output -join '') | ConvertFrom-Json
@@ -172,9 +170,9 @@ function Get-BenchmarkHostFact {
         dockerVersion                 = $dockerVersion
         dockerVmCpus                  = [int]$vmCpus
         dockerVmMemoryBytes           = [long]$vmMemory
+        databaseCpuLimit              = Get-BenchmarkDatabaseCpuLimit -HostConfig $hostConfig -VmCpus ([int]$vmCpus)
         # Unlimited (0) containers get the VM's allocation, which is what they can use.
-        databaseCpuLimit              = [long]$nanoCpus -gt 0 ? [decimal]$nanoCpus / 1000000000 : [decimal]$vmCpus
-        databaseMemoryLimitBytes      = [long]$memoryLimit -gt 0 ? [long]$memoryLimit : [long]$vmMemory
+        databaseMemoryLimitBytes      = [long]$hostConfig.Memory -gt 0 ? [long]$hostConfig.Memory : [long]$vmMemory
         storageMountType              = Get-BenchmarkStorageMountType -Mounts $mounts -Tmpfs $tmpfs -DataPath $DataPath
         competingHarnessProcess       = $competing
         otherProviderContainerRunning = -not [string]::IsNullOrWhiteSpace($other)
@@ -390,6 +388,35 @@ function Get-BenchmarkStorageMountType {
     if ($matching.Count -eq 0) { return 'container' }
     if (@($matching | Where-Object Type -EQ 'tmpfs').Count -gt 0) { return 'tmpfs' }
     return $matching[0].Type
+}
+
+function Get-BenchmarkDatabaseCpuLimit {
+    <#
+    .SYNOPSIS
+        The CPUs the database container can use: the smallest of its --cpus (NanoCpus), its CFS
+        quota (CpuQuota / CpuPeriod), the CPUs its --cpuset-cpus list allows, and the VM's CPUs.
+        Docker sets these independently, so reading only NanoCpus would record a quota-capped or
+        pinned container as unrestricted. A CpuPeriod of 0 is Docker's default of 100000 us.
+    #>
+    param([Parameter(Mandatory)] $HostConfig, [Parameter(Mandatory)][int] $VmCpus)
+    $limits = [Collections.Generic.List[decimal]]::new()
+    $limits.Add([decimal]$VmCpus)
+    if ([long]$HostConfig.NanoCpus -gt 0) {
+        $limits.Add([decimal]$HostConfig.NanoCpus / 1000000000)
+    }
+    if ([long]$HostConfig.CpuQuota -gt 0) {
+        $period = [long]$HostConfig.CpuPeriod -gt 0 ? [long]$HostConfig.CpuPeriod : 100000
+        $limits.Add([decimal]$HostConfig.CpuQuota / $period)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($HostConfig.CpusetCpus)) {
+        $count = 0
+        foreach ($range in $HostConfig.CpusetCpus.Split(',')) {
+            $first, $last = $range.Trim().Split('-')
+            $count += $null -eq $last ? 1 : [int]$last - [int]$first + 1
+        }
+        $limits.Add([decimal]$count)
+    }
+    return ($limits | Sort-Object)[0]
 }
 
 function Read-BenchmarkProfile {
@@ -955,5 +982,6 @@ function Invoke-BenchmarkComparison {
 Export-ModuleMember -Function @(
     'Invoke-BenchmarkComparison',
     'Wait-BenchmarkCollectorTrailingSample',
-    'Get-BenchmarkStorageMountType'
+    'Get-BenchmarkStorageMountType',
+    'Get-BenchmarkDatabaseCpuLimit'
 )

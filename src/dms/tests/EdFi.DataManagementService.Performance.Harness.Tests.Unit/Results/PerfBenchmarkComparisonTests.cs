@@ -1862,3 +1862,91 @@ public class Given_A_Comparison_Directory
             .ShouldBeInvalidBecause("pair 3 candidate: the planned side is missing");
     }
 }
+
+/// <summary>
+/// Every file the report reads from a side directory must be bound to the side that produced
+/// it. In a same-build run the commits cannot tell the sides apart, so a file copied from one
+/// side to another must still make the comparison invalid.
+/// </summary>
+[TestFixture]
+public class Given_A_Same_Build_Directory_With_A_File_Copied_From_Another_Side
+{
+    private string _directory = null!;
+    private PerfBenchmarkComparisonInput _input = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _directory = Path.Combine(Path.GetTempPath(), "dms-comparison-tests", Guid.NewGuid().ToString("N"));
+
+        // A repeatability run whose candidate sides measured 1.5x on offset-zero/25: a
+        // repeatability failure the copied baseline results would hide.
+        ComparisonBuilder builder = new() { Purpose = PerfBenchmarkComparison.Repeatability };
+        builder.CandidateRatios[ComparisonBuilder.ZeroSmall] = [1.5m, 1.5m, 1.5m, 1.5m, 1.5m];
+        _input = builder.Build();
+        ComparisonBuilder.WriteDirectory(_directory, _input);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        Directory.Delete(_directory, recursive: true);
+    }
+
+    private void CopyFromBaseline(int pair, string fileName)
+    {
+        static string Find(string sideDirectory, string fileName) =>
+            Directory.GetFiles(sideDirectory, fileName, SearchOption.AllDirectories).Single();
+
+        File.Copy(
+            Find(PerfBenchmarkComparisonLoader.SideDirectory(_directory, pair, "baseline"), fileName),
+            Find(PerfBenchmarkComparisonLoader.SideDirectory(_directory, pair, "candidate"), fileName),
+            overwrite: true
+        );
+    }
+
+    [Test]
+    public void It_flags_the_repeatability_failure_before_any_copy()
+    {
+        PerfBenchmarkComparisonResult result = PerfBenchmarkComparison.Compare(
+            PerfBenchmarkComparisonLoader.Load(_directory, _input.Profile)
+        );
+
+        result.ShouldBeValid();
+        result.Scenario(ComparisonBuilder.ZeroSmall).MedianP50Ratio.Should().Be(1.5m);
+        result.Result.Should().Be(PerfBenchmarkComparisonResult.SuspectedRegression);
+    }
+
+    [Test]
+    public void It_rejects_every_baseline_results_json_copied_over_its_candidate()
+    {
+        for (int pair = 1; pair <= 5; pair++)
+        {
+            CopyFromBaseline(pair, "results.json");
+        }
+
+        PerfBenchmarkComparisonInput loaded = PerfBenchmarkComparisonLoader.Load(_directory, _input.Profile);
+
+        loaded.LoadErrors.Should().HaveCount(5);
+        loaded
+            .LoadErrors.Should()
+            .AllSatisfy(error => error.Should().Contain("results.json is not the one the side measured"));
+        PerfBenchmarkComparison
+            .Compare(loaded)
+            .ShouldBeInvalidBecause("pair 1 candidate: the planned side is missing");
+    }
+
+    [TestCase("results.json")]
+    [TestCase("run-manifest.json")]
+    [TestCase(PerfBenchmarkSideResult.FileName)]
+    [TestCase(PerfBenchmarkEnvironment.FileName)]
+    [TestCase(PerfBenchmarkMetrics.SamplesFileName)]
+    public void It_is_invalid(string fileName)
+    {
+        CopyFromBaseline(1, fileName);
+
+        PerfBenchmarkComparison
+            .Compare(PerfBenchmarkComparisonLoader.Load(_directory, _input.Profile))
+            .ShouldBeInvalidBecause("pair 1 candidate");
+    }
+}
