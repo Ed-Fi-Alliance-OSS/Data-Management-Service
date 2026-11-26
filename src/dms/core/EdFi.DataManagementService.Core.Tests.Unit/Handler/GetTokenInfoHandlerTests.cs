@@ -435,6 +435,56 @@ public class Given_GetTokenInfoHandler
         requestInfo.FrontendResponse.Headers["Cache-Control"].Should().Be("no-store");
     }
 
+    public enum BodyTokenInput
+    {
+        Json,
+        Form,
+    }
+
+    [Test]
+    public async Task It_returns_the_missing_token_400_without_validating_a_blank_body_token(
+        [Values] BodyTokenInput input,
+        [Values("", " ", "\t\r\n ")] string blankToken
+    )
+    {
+        RequestInfo requestInfo = CreateBodyTokenRequestInfo(input, blankToken);
+
+        await Execute(requestInfo);
+
+        AssertMissingTokenResponse(requestInfo);
+        A.CallTo(_jwtValidationService).MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_the_missing_token_400_without_validating_when_the_token_is_absent(
+        [Values] BodyTokenInput input
+    )
+    {
+        RequestInfo requestInfo = CreateBodyTokenRequestInfo(input, token: null);
+
+        await Execute(requestInfo);
+
+        AssertMissingTokenResponse(requestInfo);
+        A.CallTo(_jwtValidationService).MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_validates_a_nonblank_body_token_exactly_as_sent([Values] BodyTokenInput input)
+    {
+        const string PaddedToken = " body-token\t";
+        RequestInfo requestInfo = CreateBodyTokenRequestInfo(input, PaddedToken);
+
+        await Execute(requestInfo);
+
+        A.CallTo(() =>
+                _jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
+                    PaddedToken,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
     [Test]
     public async Task It_resolves_mapping_set_for_relational_lookup()
     {
@@ -860,6 +910,61 @@ public class Given_GetTokenInfoHandler
             ApiSchemaDocuments = apiSchemaDocuments,
             ClientAuthorizations = clientAuthorizations,
         };
+    }
+
+    private static RequestInfo CreateBodyTokenRequestInfo(BodyTokenInput input, string? token)
+    {
+        string? body = null;
+        Dictionary<string, string>? form = null;
+
+        if (input == BodyTokenInput.Json)
+        {
+            var json = new JsonObject();
+            if (token is not null)
+            {
+                json["Token"] = token;
+            }
+            body = json.ToJsonString();
+        }
+        else
+        {
+            form = token is null ? [] : new Dictionary<string, string> { ["Token"] = token };
+        }
+
+        return new RequestInfo(
+            new FrontendRequest(
+                Path: "/oauth/token_info",
+                Body: body,
+                Form: form,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("trace-id"),
+                RouteQualifiers: []
+            ),
+            RequestMethod.POST,
+            CreateScopedServiceProvider(relationalLookup: null),
+            CancellationToken.None
+        )
+        {
+            ApiSchemaDocuments = CreateDefaultApiSchemaDocuments(),
+            ClientAuthorizations = CreateClientAuthorizations([]),
+        };
+    }
+
+    private static void AssertMissingTokenResponse(RequestInfo requestInfo)
+    {
+        requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        JsonNode body = requestInfo.FrontendResponse.Body!;
+        body["detail"]!.GetValue<string>().Should().Be("An invalid token was provided");
+        body["title"]!.GetValue<string>().Should().Be("Bad Request");
+        body["status"]!.GetValue<int>().Should().Be(400);
+        body["correlationId"]!.GetValue<string>().Should().Be("trace-id");
+        body["validationErrors"]!.AsObject().Should().BeEmpty();
+        body["errors"]!
+            .AsArray()
+            .Select(error => error!.GetValue<string>())
+            .Should()
+            .Equal("The token was not present, or was not processable.");
     }
 
     private static ApiSchemaDocuments CreateDefaultApiSchemaDocuments()

@@ -252,7 +252,8 @@ internal class JwtValidationService(
 
     /// <summary>
     /// Whether an exception from token parsing describes the token itself. ArgumentNullException is
-    /// excluded: the header parser never hands over an empty token, so a null argument is a defect.
+    /// excluded: callers must pass a nonblank token (the authorization header parser and the token
+    /// info handler both reject a blank one first), so a null argument is a caller defect.
     /// </summary>
     private static bool IsMalformedTokenException(Exception exception) =>
         exception is FormatException
