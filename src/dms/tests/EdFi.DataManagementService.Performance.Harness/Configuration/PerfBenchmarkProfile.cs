@@ -147,11 +147,13 @@ public sealed record PerfBenchmarkEnvironmentRules(
 /// <summary>
 /// A provider's qualified environment: host, platform, allocation and database facts only.
 /// It never holds the profile hash or the harness commit, so freezing the profile cannot
-/// invalidate it.
+/// invalidate it. <see cref="DotnetRuntime" /> is the runtime's major.minor (e.g. <c>10.0</c>):
+/// a patch release is routine servicing, a new major is a new platform.
 /// </summary>
 public sealed record PerfBenchmarkEnvironmentFingerprint(
     string OsFamily,
     string Architecture,
+    string DotnetRuntime,
     string MachineFingerprint,
     string CpuModel,
     int LogicalCores,
@@ -584,6 +586,7 @@ public static partial class PerfBenchmarkProfileLoader
             {
                 ("osFamily", fingerprint.OsFamily),
                 ("architecture", fingerprint.Architecture),
+                ("dotnetRuntime", fingerprint.DotnetRuntime),
                 ("machineFingerprint", fingerprint.MachineFingerprint),
                 ("cpuModel", fingerprint.CpuModel),
                 ("powerPlan", fingerprint.PowerPlan),

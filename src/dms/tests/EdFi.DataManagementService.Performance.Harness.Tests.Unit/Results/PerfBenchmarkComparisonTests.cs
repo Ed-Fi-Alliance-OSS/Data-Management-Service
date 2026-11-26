@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Performance.Harness.Configuration;
 using EdFi.DataManagementService.Performance.Harness.Measurement;
 using EdFi.DataManagementService.Performance.Harness.Results;
@@ -980,6 +981,14 @@ public class Given_A_Mismatch
             side => side with { Environment = side.Environment with { Architecture = "arm64" } }
         );
         yield return Fingerprint(
+            "dotnetRuntime",
+            side =>
+                side with
+                {
+                    Reads = side.Reads! with { Host = side.Reads.Host with { DotnetVersion = "11.0.0" } },
+                }
+        );
+        yield return Fingerprint(
             "machineFingerprint",
             side =>
                 side with
@@ -1338,6 +1347,48 @@ public class Given_A_Different_Environment
         );
 
         builder.Compare().ShouldBeInvalidBecause("qualifiedEnvironments.postgresql in connection");
+    }
+
+    private static ComparisonBuilder OnDotnet(ComparisonBuilder builder, string dotnetVersion)
+    {
+        builder.Profile = ComparisonProfiles.FrozenFor(builder);
+        return builder.EditSides(side =>
+            side with
+            {
+                Reads = side.Reads! with { Host = side.Reads.Host with { DotnetVersion = dotnetVersion } },
+            }
+        );
+    }
+
+    [Test]
+    public void It_is_invalid_on_another_dotnet_major()
+    {
+        OnDotnet(new ComparisonBuilder(), "11.0.0")
+            .Compare()
+            .ShouldBeInvalidBecause("differs from qualifiedEnvironments.postgresql in dotnetRuntime");
+    }
+
+    [Test]
+    public void It_keeps_the_qualification_across_a_dotnet_patch()
+    {
+        PerfBenchmarkComparisonResult result = OnDotnet(new ComparisonBuilder(), "10.0.16").Compare();
+
+        result.ShouldBeValid();
+        result.Labels.Should().NotContain(PerfBenchmarkComparisonResult.UncalibratedLabel);
+    }
+
+    [Test]
+    public void It_lets_a_calibration_on_another_dotnet_major_derive_the_replacement_fingerprint()
+    {
+        PerfBenchmarkComparisonResult result = OnDotnet(
+                new ComparisonBuilder { Purpose = PerfBenchmarkComparison.Calibration },
+                "11.0.0"
+            )
+            .Compare();
+
+        result.ShouldBeValid();
+        result.Labels.Should().Contain(PerfBenchmarkComparisonResult.UncalibratedLabel);
+        result.Calibration!.Fingerprint.DotnetRuntime.Should().Be("11.0");
     }
 
     private static ComparisonBuilder OnOtherCpu(ComparisonBuilder builder)
@@ -1889,6 +1940,43 @@ public class Given_A_Comparison_Directory
         PerfBenchmarkComparison
             .Compare(loaded)
             .ShouldBeInvalidBecause("pair 3 candidate: the planned side is missing");
+    }
+
+    [Test]
+    public void It_rejects_a_write_summary_its_retained_samples_do_not_reproduce()
+    {
+        // Every write sample is 10 ms on both sides. Each candidate's stored summary claims 30 ms
+        // while staying ordered, so before the summary was recomputed on load this read as a
+        // suspected regression at exit 0.
+        PerfBenchmarkComparisonInput input = new ComparisonBuilder().Build();
+        ComparisonBuilder.WriteDirectory(_directory, input);
+        for (int pair = 1; pair <= input.Plan.PairCount; pair++)
+        {
+            string side = Path.Combine(
+                PerfBenchmarkComparisonLoader.SideDirectory(_directory, pair, "candidate"),
+                PerfBenchmarkSideResult.FileName
+            );
+            JsonNode json = JsonNode.Parse(File.ReadAllText(side))!;
+            JsonNode latency = json["write"]!["latencyMs"]!;
+            foreach (string statistic in new[] { "p50Ms", "p95Ms", "meanMs", "maxMs" })
+            {
+                latency[statistic] = 30.0;
+            }
+
+            File.WriteAllText(side, json.ToJsonString());
+        }
+
+        PerfBenchmarkComparisonInput loaded = PerfBenchmarkComparisonLoader.Load(_directory, input.Profile);
+
+        loaded.LoadErrors.Should().HaveCount(input.Plan.PairCount);
+        loaded
+            .LoadErrors.Should()
+            .AllSatisfy(error =>
+                error.Should().Contain("write: latency p50 30 must match 10 recomputed from the samples")
+            );
+        PerfBenchmarkComparison
+            .Compare(loaded)
+            .ShouldBeInvalidBecause("pair 1 candidate: the planned side is missing");
     }
 }
 

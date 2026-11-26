@@ -269,7 +269,36 @@ public class Given_A_Side_Result
             .Should()
             .ContainSingle()
             .Which.Should()
-            .Contain("write.latencyMs must hold exactly 20 samples; got 2");
+            .Contain("write: latency sample count 2 must equal measured iterations 20");
+    }
+
+    [TestCase("min")]
+    [TestCase("max")]
+    [TestCase("p50")]
+    [TestCase("p95")]
+    [TestCase("mean")]
+    public void It_requires_the_write_summary_to_be_recomputable_from_its_samples(string statistic)
+    {
+        PerfBenchmarkSideResult result = SideResultSamples.Completed();
+        PerfLatencySummary latency = result.Write.LatencyMs!;
+
+        // Each edit keeps min <= p50 <= p95 <= max, so only the recompute check can reject it.
+        PerfLatencySummary edited = statistic switch
+        {
+            "min" => latency with { MinMs = latency.MinMs - 0.5 },
+            "max" => latency with { MaxMs = latency.MaxMs + 0.5 },
+            "p50" => latency with { P50Ms = latency.P50Ms + 0.5 },
+            "p95" => latency with { P95Ms = latency.P95Ms + 0.5 },
+            _ => latency with { MeanMs = latency.MeanMs + 0.5 },
+        };
+
+        SideResultSamples
+            .Errors(result with { Write = result.Write with { LatencyMs = edited } })
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain($"write: latency {statistic}")
+            .And.Contain("recomputed from the samples");
     }
 
     [Test]

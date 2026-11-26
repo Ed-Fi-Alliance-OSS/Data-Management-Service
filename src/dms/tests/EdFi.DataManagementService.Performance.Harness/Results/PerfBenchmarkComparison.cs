@@ -467,7 +467,8 @@ public static class PerfBenchmarkComparison
     /// <summary>
     /// The qualified-environment fingerprint of one side: host, platform, allocation and
     /// database facts plus the effective connection settings, never the profile hash or the
-    /// harness commit.
+    /// harness commit. Because every fingerprint field must agree between the sides, the .NET
+    /// major.minor must too, and only a patch difference is left to be listed as permitted.
     /// </summary>
     public static PerfBenchmarkEnvironmentFingerprint FingerprintOf(PerfBenchmarkSideEvidence side)
     {
@@ -476,6 +477,7 @@ public static class PerfBenchmarkComparison
         return new PerfBenchmarkEnvironmentFingerprint(
             environment.OsFamily,
             environment.Architecture,
+            reads is null ? string.Empty : DotnetRuntimeOf(reads.Host.DotnetVersion),
             reads?.Host.MachineFingerprint ?? string.Empty,
             reads?.Host.CpuModel ?? string.Empty,
             reads?.Host.LogicalCores ?? 0,
@@ -493,6 +495,15 @@ public static class PerfBenchmarkComparison
             side.Side.EffectiveConnection
         );
     }
+
+    /// <summary>
+    /// The major.minor of a recorded <c>Environment.Version</c> (<c>10.0.15</c> is <c>10.0</c>);
+    /// an unparseable value is kept whole, so it can only ever match itself.
+    /// </summary>
+    public static string DotnetRuntimeOf(string dotnetVersion) =>
+        Version.TryParse(dotnetVersion, out Version? version)
+            ? string.Create(CultureInfo.InvariantCulture, $"{version.Major}.{version.Minor}")
+            : dotnetVersion;
 
     /// <summary>
     /// Each fingerprint field as canonical JSON text, so two fingerprints compare field by field

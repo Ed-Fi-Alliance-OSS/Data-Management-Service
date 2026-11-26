@@ -49,6 +49,7 @@ internal static class ProfileTestValues
         {
             ["osFamily"] = "Windows",
             ["architecture"] = "x64",
+            ["dotnetRuntime"] = "10.0",
             ["machineFingerprint"] = "0f1e2d3c4b5a",
             ["cpuModel"] = "Example CPU",
             ["logicalCores"] = 16,

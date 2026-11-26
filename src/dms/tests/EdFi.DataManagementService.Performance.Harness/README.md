@@ -302,7 +302,7 @@ One execution platform is supported, and every comparison checks it:
 
 | Parameter | Meaning |
 | --- | --- |
-| `-Provider` | `postgresql` or `mssql`; one provider per invocation |
+| `-Provider` | `postgresql` (alias `pgsql`) or `mssql`; one provider per invocation. Provider and purpose are case-insensitive; the run records the canonical spelling |
 | `-BaselineCommit` | Mandatory; must be the profile's `approvedReferenceCommit` |
 | `-CandidateCommit` | The build under test; defaults to the baseline |
 | `-Pairs` | Comparison pairs; defaults to the profile's `comparison.pairs` (5) |
@@ -398,14 +398,20 @@ Two different fingerprints are compared:
   the fixture, the log level, the ownership flag, the effective connection settings, the
   instrumentation, and every environment-fingerprint field. Permitted to differ, and listed in
   the report: the subject commit, `EffectiveSchemaHash`, the OS build, the .NET patch version,
-  and the Docker version.
+  and the Docker version. The .NET major.minor is a fingerprint field, so only the patch can
+  differ.
 - **Against qualification**, when the profile sets `qualifiedEnvironments.<provider>`, every
-  side's fingerprint must equal it: OS family and architecture, machine fingerprint, CPU model
-  and cores, host memory, power plan and AC state, Docker VM CPUs and memory, the database
-  container's CPU and memory limits, image digest, server version, database settings, storage
-  mount type, and effective connection settings. It never includes the profile hash or the
-  harness commit, so editing the profile does not invalidate it. When it is null, the result
-  is labelled `uncalibrated`.
+  side's fingerprint must equal it: OS family and architecture, the .NET runtime (major.minor,
+  `dotnetRuntime`), machine fingerprint, CPU model and cores, host memory, power plan and AC
+  state, Docker VM CPUs and memory, the database container's CPU and memory limits, image
+  digest, server version, database settings, storage mount type, and effective connection
+  settings. It never includes the profile hash or the harness commit, so editing the profile
+  does not invalidate it. When it is null, the result is labelled `uncalibrated`.
+
+The OS build, the Docker version and the .NET patch are recorded and listed, but they never
+invalidate a qualification: they change with routine servicing of the workstation, and pinning
+them would force a recalibration after every update. A new .NET major is a new platform, so it
+does.
 
 The database container's CPU limit is the smallest of its `--cpus`, its CFS quota
 (`--cpu-quota` / `--cpu-period`), the number of CPUs its `--cpuset-cpus` allows, and the Docker
@@ -467,7 +473,8 @@ are supporting evidence only.
 ### Environment changes and recalibration
 
 A comparison whose sides differ from the frozen `qualifiedEnvironments.<provider>` fingerprint
-is invalid. After a host, Docker, image, database-setting or connection change, recalibrate
+is invalid. After a change to any fingerprint field (the host, the Docker VM allocation, the
+image, a database setting, the connection settings, or the .NET runtime), recalibrate
 that provider (see [calibration, sizing and qualification](#calibration-sizing-and-qualification)),
 then update its thresholds, fingerprint, and factors in the profile through a pull request.
 `Calibration` and `Sizing` runs do not check the frozen fingerprint, so they can derive those
@@ -492,7 +499,8 @@ provider is compared only with its own baseline.
 The invocation directory holds:
 
 - `run-plan.json`: run id, purpose, commits, profile hash, injection, and order;
-- `wrapper.log`;
+- `wrapper.log`, the entry script's transcript (a setup failure has no invocation directory and
+  leaves it in the results directory as `wrapper-<yyyyMMddTHHmmssZ>-<id>.log`);
 - `comparison.json`, `.csv`, `.md`, and `.log`;
 - `pairs/NN/<role>/` for each side: `benchmark-side.json`, `environment.json`, `samples.csv`,
   `side.log`, and the side's paging run directory with its unchanged schema 1.3.0 artifacts,

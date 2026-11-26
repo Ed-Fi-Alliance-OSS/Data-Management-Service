@@ -377,13 +377,15 @@ public static partial class PerfBenchmarkSideResults
             errors.Add("write: a completed side must complete every planned write with a measured window.");
         }
 
-        if (write.LatencyMs?.SamplesMs.Count != planned.MeasuredIterations)
-        {
-            errors.Add(
-                $"write.latencyMs must hold exactly {planned.MeasuredIterations} samples; "
-                    + $"got {write.LatencyMs?.SamplesMs.Count ?? 0}."
-            );
-        }
+        // The report reads this summary's p50, p95 and mean directly, so it must be the one the
+        // retained samples reproduce, as the paging rows' summaries must.
+        PerfArtifactValidator.ValidateLatency(
+            "write",
+            "latency",
+            write.LatencyMs,
+            planned.MeasuredIterations,
+            errors
+        );
     }
 
     private static void ValidateInjection(PerfBenchmarkInjection injection, List<string> errors)

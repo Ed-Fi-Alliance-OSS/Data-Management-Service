@@ -25,8 +25,9 @@ BeforeAll {
     $env:ConnectionStrings__DatabaseConnection = 'Host=elsewhere;Port=1;Username=u;Password=p;Database=d'
     $env:ConnectionStrings__MssqlAdmin = 'Server=elsewhere,1;User Id=sa;Password=p'
 
+    # Returns the exit code, or with -Outcome the whole { ExitCode; InvocationDirectory } object.
     function script:Invoke-Comparison {
-        param([hashtable] $Parameters = @{})
+        param([hashtable] $Parameters = @{}, [switch] $Outcome)
         $arguments = @{
             BaselineCommit   = $script:Reference
             Provider         = 'postgresql'
@@ -37,7 +38,8 @@ BeforeAll {
             Purpose          = 'Calibration'
         }
         foreach ($key in $Parameters.Keys) { $arguments[$key] = $Parameters[$key] }
-        return Invoke-BenchmarkComparison @arguments
+        $result = Invoke-BenchmarkComparison @arguments
+        return $Outcome ? $result : $result.ExitCode
     }
 
     function script:Get-SideCall {
@@ -173,7 +175,10 @@ Describe 'Invoke-BenchmarkComparison' {
         It 'Given the host lock is held' {
             Mock -ModuleName BenchmarkComparison Open-BenchmarkHostLock { throw 'Another benchmark comparison holds the host lock.' }
 
-            Invoke-Comparison | Should -Be 1
+            $result = Invoke-Comparison -Outcome
+            $result.ExitCode | Should -Be 1
+            # No directory of its own, so the entry script leaves its transcript where it is.
+            $result.InvocationDirectory | Should -BeNullOrEmpty
             $script:DotnetCalls | Should -BeNullOrEmpty
         }
 
@@ -384,10 +389,12 @@ Describe 'Invoke-BenchmarkComparison' {
         It 'Given a valid comparison with a suspected regression' {
             $script:ComparisonResult = 'suspected-regression'
 
-            $result = Invoke-Comparison
-            $result | Should -Be 0
-            $result | Should -BeOfType [int]
+            $result = Invoke-Comparison -Outcome
             @($result).Count | Should -Be 1
+            $result.ExitCode | Should -Be 0
+            $result.ExitCode | Should -BeOfType [int]
+            $plan = Get-ChildItem -Path $script:Results -Recurse -Filter 'run-plan.json'
+            $result.InvocationDirectory | Should -Be $plan.DirectoryName
         }
 
         It 'Given an invalid comparison' {
@@ -444,6 +451,32 @@ Describe 'Invoke-BenchmarkComparison' {
         }
     }
 
+    Context 'Provider and purpose spelling' {
+        # The report accepts only the canonical tokens, so the plan must never carry the
+        # spelling the run was invoked with.
+        It 'Given -Provider <Provider> -Purpose <Purpose>, the run uses <Expected>' -ForEach @(
+            @{ Provider = 'pgsql'; Purpose = 'Calibration'; Expected = 'postgresql Calibration' }
+            @{ Provider = 'PostgreSQL'; Purpose = 'calibration'; Expected = 'postgresql Calibration' }
+            @{ Provider = 'PGSQL'; Purpose = 'CALIBRATION'; Expected = 'postgresql Calibration' }
+        ) {
+            Invoke-Comparison @{ Provider = $Provider; Purpose = $Purpose } | Should -Be 0
+
+            $plan = Get-RunPlan
+            "$($plan.provider) $($plan.purpose)" | Should -BeExactly $Expected
+            (Get-ChildItem -LiteralPath $script:Results -Directory).Name | Should -BeLikeExactly 'postgresql-Calibration-*'
+        }
+
+        It 'Given the entry script, its Provider and Purpose accept exactly what the module accepts' {
+            $script = Get-Command (Join-Path $PSScriptRoot '../invoke-benchmark-comparison.ps1')
+            $module = Get-Command Invoke-BenchmarkComparison
+            $accepted = { param($command, $name) @($command.Parameters[$name].Attributes | Where-Object { $_ -is [ValidateSet] }).ValidValues }
+            foreach ($name in 'Provider', 'Purpose') {
+                & $accepted $script $name | Should -Be (& $accepted $module $name)
+            }
+            & $accepted $script 'Provider' | Should -Contain 'pgsql'
+        }
+    }
+
     Context 'Trailing samples' {
         It 'Given the side exits before the next collector sample, the collector stops only once every metric has one' {
             Mock -ModuleName BenchmarkComparison Get-BenchmarkCollectorSample {
@@ -478,6 +511,61 @@ Describe 'Invoke-BenchmarkComparison' {
             $environment.trailingSampleTimeout | Should -BeTrue
             @($environment.missingTrailingMetrics) | Should -Be @('db-cpu-percent', 'db-memory-percent', 'db-block-io-bytes')
         }
+    }
+}
+
+Describe 'invoke-benchmark-comparison.ps1' {
+    # The committed entry script runs in a child pwsh beside a stub module, so only its own
+    # transcript handling is under test.
+    BeforeEach {
+        $script:Entry = Join-Path $TestDrive "entry-$([guid]::NewGuid().ToString('N'))"
+        $script:EntryResults = Join-Path $TestDrive "results-$([guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $script:Entry | Out-Null
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../invoke-benchmark-comparison.ps1') -Destination $script:Entry
+    }
+
+    It 'Given another comparison holds the host lock and writes its plan meanwhile, the rejected transcript stays out of its directory' {
+        # The stub is the rejected invocation: while it fails setup, the lock holder writes its
+        # run plan, after this invocation's transcript started.
+        Set-Content -LiteralPath (Join-Path $script:Entry 'BenchmarkComparison.psm1') -Value @'
+function Invoke-BenchmarkComparison {
+    param($ResultsDirectory)
+    $other = New-Item -ItemType Directory -Force -Path (Join-Path $ResultsDirectory 'postgresql-Calibration-other')
+    Set-Content -LiteralPath (Join-Path $other.FullName 'run-plan.json') -Value '{}'
+    Write-Host 'Setup failed; no side ran: Another benchmark comparison holds the host lock.'
+    [pscustomobject]@{ ExitCode = 1; InvocationDirectory = $null }
+}
+'@
+
+        & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File (Join-Path $script:Entry 'invoke-benchmark-comparison.ps1') `
+            -BaselineCommit ('a' * 40) -Provider postgresql -ResultsDirectory $script:EntryResults | Out-Null
+
+        $LASTEXITCODE | Should -Be 1
+        Join-Path $script:EntryResults 'postgresql-Calibration-other/wrapper.log' | Should -Not -Exist
+        $transcripts = @(Get-ChildItem -LiteralPath $script:EntryResults -Filter 'wrapper-*.log')
+        $transcripts.Count | Should -Be 1
+        $transcripts[0].Name | Should -Match '^wrapper-\d{8}T\d{6}Z-[0-9a-f]{8}\.log$'
+        Get-Content -Raw -LiteralPath $transcripts[0].FullName | Should -Match 'holds the host lock'
+    }
+
+    It 'Given -Provider pgsql and a run that named its directory, the transcript becomes its wrapper.log' {
+        Set-Content -LiteralPath (Join-Path $script:Entry 'BenchmarkComparison.psm1') -Value @'
+function Invoke-BenchmarkComparison {
+    param($ResultsDirectory, $Provider)
+    $own = New-Item -ItemType Directory -Force -Path (Join-Path $ResultsDirectory 'postgresql-Calibration-own')
+    Write-Host "Ran provider $Provider"
+    [pscustomobject]@{ ExitCode = 2; InvocationDirectory = $own.FullName }
+}
+'@
+
+        & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File (Join-Path $script:Entry 'invoke-benchmark-comparison.ps1') `
+            -BaselineCommit ('a' * 40) -Provider pgsql -ResultsDirectory $script:EntryResults | Out-Null
+
+        $LASTEXITCODE | Should -Be 2
+        $log = Join-Path $script:EntryResults 'postgresql-Calibration-own/wrapper.log'
+        $log | Should -Exist
+        Get-Content -Raw -LiteralPath $log | Should -Match 'Ran provider pgsql'
+        Get-ChildItem -LiteralPath $script:EntryResults -Filter 'wrapper-*.log' | Should -BeNullOrEmpty
     }
 }
 

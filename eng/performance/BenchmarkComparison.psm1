@@ -15,7 +15,8 @@
     the collector, the clock, host facts and the host lock) so the orchestration can be tested
     with Pester mocks. Those are the only Windows-only calls; the module imports anywhere.
 
-    Exit-code contract of Invoke-BenchmarkComparison:
+    Invoke-BenchmarkComparison returns { ExitCode; InvocationDirectory }. InvocationDirectory is
+    the directory setup created, or $null when setup failed before creating it. ExitCode:
       1  setup failed (no side ran), or the comparison report could not be produced or read;
       otherwise the exitCode recorded in comparison.json (0 acceptable or suspected regression,
       2 invalid).
@@ -898,15 +899,17 @@ function Initialize-BenchmarkComparison {
 function Invoke-BenchmarkComparison {
     <#
     .SYNOPSIS
-        Runs one benchmark comparison and returns its exit code (see the module description).
+        Runs one benchmark comparison and returns its exit code and invocation directory (see
+        the module description). Provider and purpose are matched case-insensitively, pgsql is
+        an alias of postgresql, and the run uses the canonical spelling throughout.
     #>
     [CmdletBinding()]
-    [OutputType([int])]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Benchmark tooling intentionally writes operator progress and the comparison report to the console; the function returns the exit code, so Write-Output would corrupt the pipeline result.')]
+    [OutputType([pscustomobject])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Benchmark tooling intentionally writes operator progress and the comparison report to the console; the function returns its outcome object, so Write-Output would corrupt the pipeline result.')]
     param(
         [Parameter(Mandatory)][string] $BaselineCommit,
         [string] $CandidateCommit,
-        [Parameter(Mandatory)][ValidateSet('postgresql', 'mssql')][string] $Provider,
+        [Parameter(Mandatory)][ValidateSet('postgresql', 'pgsql', 'mssql')][string] $Provider,
         [Parameter(Mandatory)][string] $ResultsDirectory,
         [ValidateRange(0, 99)][int] $Pairs = 0,
         [string] $WorktreeRoot,
@@ -923,6 +926,10 @@ function Invoke-BenchmarkComparison {
     if (-not $WorktreeRoot) {
         $WorktreeRoot = Join-Path (Split-Path $SourceRoot -Parent) 'dms-bench'
     }
+    # ValidateSet ignores case, but the report accepts only the canonical tokens, so a run
+    # must never carry the spelling it was invoked with.
+    $Provider = $Provider -eq 'pgsql' ? 'postgresql' : $Provider.ToLowerInvariant()
+    $Purpose = $script:Purposes | Where-Object { $_ -eq $Purpose }
     $options = @{
         BaselineCommit = $BaselineCommit; CandidateCommit = $CandidateCommit; Provider = $Provider
         ResultsDirectory = $ResultsDirectory; Pairs = $Pairs; WorktreeRoot = $WorktreeRoot; Smoke = [bool]$Smoke
@@ -940,9 +947,10 @@ function Invoke-BenchmarkComparison {
         }
         catch {
             Write-Host "Setup failed; no side ran: $_"
-            return 1
+            return [pscustomobject]@{ ExitCode = 1; InvocationDirectory = $null }
         }
 
+        $outcome = { param([int] $ExitCode) [pscustomobject]@{ ExitCode = $ExitCode; InvocationDirectory = $context.InvocationDirectory } }
         Write-Host "Run $($context.RunId): $Provider $Purpose, $($context.Plan.order.Count / 2) pairs, injection '$($context.InjectionText)' -> $($context.InvocationDirectory)"
         foreach ($side in $context.Plan.order) {
             if (-not (Invoke-BenchmarkSide -Context $context -Side $side)) {
@@ -957,7 +965,7 @@ function Invoke-BenchmarkComparison {
             '--filter', 'FullyQualifiedName~Given_BenchmarkComparisonRun')
         if ($reportExit -ne 0) {
             Write-Host "The comparison report could not be produced (exit code $reportExit); see comparison.log."
-            return 1
+            return & $outcome 1
         }
         try {
             $comparison = Get-Content -Raw -LiteralPath (Join-Path $context.InvocationDirectory 'comparison.json') -ErrorAction Stop | ConvertFrom-Json
@@ -965,14 +973,14 @@ function Invoke-BenchmarkComparison {
         }
         catch {
             Write-Host "comparison.json is missing or unreadable: $_"
-            return 1
+            return & $outcome 1
         }
         $markdown = Join-Path $context.InvocationDirectory 'comparison.md'
         if (Test-Path -LiteralPath $markdown) {
             Write-Host (Get-Content -Raw -LiteralPath $markdown)
         }
         Write-Host "Comparison $($comparison.result), exit code ${exitCode}: $($context.InvocationDirectory)"
-        return $exitCode
+        return & $outcome $exitCode
     }
     finally {
         if ($null -ne $lock) { $lock.Dispose() }
