@@ -408,6 +408,26 @@ Two different fingerprints are compared:
   connection settings. It never includes the profile hash or the harness commit, so editing the
   profile does not invalidate it. When it is null, the result is labelled `uncalibrated`.
 
+The database settings are an explicit list, read as each setting's effective value for the
+session, so a change through `ALTER SYSTEM`, a `-c` flag, `ALTER DATABASE` or `ALTER ROLE` is
+captured too:
+
+- PostgreSQL memory, JIT and timing: `shared_buffers`, `work_mem`, `jit`, `track_io_timing`,
+  `max_parallel_workers_per_gather`, `plan_cache_mode`;
+- PostgreSQL commit and WAL path: `fsync`, `synchronous_commit`, `full_page_writes`,
+  `wal_sync_method`, `wal_level`, `wal_compression`, `commit_delay`;
+- PostgreSQL checkpoint timing: `checkpoint_timeout`, `max_wal_size`;
+- PostgreSQL planner: `random_page_cost`, `seq_page_cost`, `effective_cache_size`,
+  `effective_io_concurrency`, and `enable_seqscan`, `enable_indexscan`, `enable_indexonlyscan`,
+  `enable_bitmapscan`, `enable_hashjoin`, `enable_mergejoin`, `enable_nestloop`, `enable_sort`;
+- SQL Server: the edition, `max degree of parallelism`, `cost threshold for parallelism`,
+  `max server memory (MB)`, and the database's read-committed snapshot, snapshot isolation and
+  delayed durability options.
+
+A setting off the list is not fingerprinted, so adding one is a deliberate change to this
+contract. Settings are never captured by their source, because an override such as
+`primary_conninfo` can carry credentials and these values are written to the evidence.
+
 The OS build, the Docker version and the .NET patch are recorded and listed, but they never
 invalidate a qualification: they change with routine servicing of the workstation, and pinning
 them would force a recalibration after every update. A new .NET major is a new platform, so it
@@ -432,6 +452,13 @@ The collector writes `samples.csv` (`timestampUtc,phase,metric,value`):
   cumulative block I/O bytes), at a nominal 2 s interval. A Docker sample is stamped when its
   poll completes.
 
+Every value must be a finite, non-negative number, or the side's artifacts are unreadable. The
+rules never read the `phase` column: a sample belongs to the phase whose recorded window,
+start inclusive and end exclusive, contains its timestamp. `environment.json` must record the
+`settle`, `idle` and `side` windows once each, back to back, each ending after it starts, and
+an idle window of at least `idleSeconds` less one host sample interval; otherwise the side is
+invalid.
+
 `Get-Counter` fires about every 1.01 s and one Docker poll takes 1 to 2 s, so two host
 samplers run offset by half an interval and three Docker pollers run on a fixed schedule
 offset by a third. Samples therefore arrive about every half interval.
@@ -440,11 +467,11 @@ These rules make a comparison invalid, with the reason:
 
 | Rule | Threshold |
 | --- | --- |
-| Idle host CPU, mean over the `idle` phase | at most 15% |
-| Idle database CPU, mean over the `idle` phase | at most 5% |
+| Idle host CPU, mean over the samples stamped inside the `idle` window | at most 15% |
+| Idle database CPU, mean over the samples stamped inside the `idle` window | at most 5% |
 | Host available memory, any sample | at least 2048 MB |
 | Database memory, any sample | at most 90% of its limit |
-| Completeness, for each metric and each phase | at least 90% of the phase duration divided by the metric's nominal interval |
+| Completeness, for each metric and each phase window | samples stamped inside it: at least 90% of its duration divided by the metric's nominal interval |
 | Measured-window coverage, for each scenario's measured window and each metric (`i` = its nominal interval) | a sample in `[start − i, start]`, one in `[end, end + i]`, and no gap over `2 × i` across `[start − i, end + i]` |
 | Competing harness process, the other provider's container running, tmpfs storage | none |
 

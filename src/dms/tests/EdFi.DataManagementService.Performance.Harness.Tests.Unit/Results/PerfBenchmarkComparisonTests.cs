@@ -1641,7 +1641,138 @@ public class Given_A_Rule_Violated
                 },
             "environment.json records no settle phase"
         );
+        // The rules judge a sample by its timestamp, never its phase label: a busy idle window
+        // relabelled settle, with quiet settle samples relabelled idle, used to pass.
+        yield return Case(
+            "Busy_Idle_Window_Hidden_By_Labels",
+            side =>
+            {
+                PerfBenchmarkPhaseWindow idle = Window(side, PerfBenchmarkMetrics.IdlePhase);
+                return WithSamples(
+                    side,
+                    sample =>
+                    {
+                        if (idle.Contains(sample.TimestampUtc))
+                        {
+                            return sample with
+                            {
+                                Phase = PerfBenchmarkMetrics.SettlePhase,
+                                Value =
+                                    sample.Metric == PerfBenchmarkMetrics.HostCpuPercent ? 90 : sample.Value,
+                            };
+                        }
+
+                        return
+                            sample.TimestampUtc >= idle.StartUtc.AddSeconds(-10)
+                            && sample.TimestampUtc < idle.StartUtc
+                            ? sample with
+                            {
+                                Phase = PerfBenchmarkMetrics.IdlePhase,
+                            }
+                            : sample;
+                    }
+                );
+            },
+            "idle host-cpu-percent averaged 90%"
+        );
+        yield return Case(
+            "Idle_Samples_Stamped_Outside_The_Idle_Window",
+            side =>
+            {
+                PerfBenchmarkPhaseWindow idle = Window(side, PerfBenchmarkMetrics.IdlePhase);
+                return WithSamples(
+                    side,
+                    sample =>
+                        idle.Contains(sample.TimestampUtc)
+                            ? sample with
+                            {
+                                TimestampUtc = sample.TimestampUtc.AddSeconds(-20),
+                            }
+                            : sample
+                );
+            },
+            "incomplete samples for host-cpu-percent in the idle phase: 0 of 10 expected"
+        );
+        // A zero-length idle window expected no samples, so it passed with none.
+        yield return Case(
+            "Zero_Length_Idle_Window",
+            WithPhases(phase =>
+                phase.Name == PerfBenchmarkMetrics.IdlePhase ? phase with { EndUtc = phase.StartUtc } : phase
+            ),
+            "the idle phase window does not end after it starts"
+        );
+        yield return Case(
+            "Duplicated_Idle_Window",
+            side =>
+                side with
+                {
+                    Environment = side.Environment with
+                    {
+                        Phases = [.. side.Environment.Phases, Window(side, PerfBenchmarkMetrics.IdlePhase)],
+                    },
+                },
+            "environment.json records the idle phase 2 times"
+        );
+        yield return Case(
+            "Windows_Not_Back_To_Back",
+            WithPhases(phase =>
+                phase.Name == PerfBenchmarkMetrics.SidePhase
+                    ? phase with
+                    {
+                        StartUtc = phase.StartUtc.AddSeconds(1),
+                    }
+                    : phase
+            ),
+            "the settle, idle and side phase windows are not back to back"
+        );
+        yield return Case("Short_Idle_Window", ResizeIdle(8), "the idle phase lasted 8 s (minimum 9 s");
     }
+
+    [Test]
+    public void It_accepts_an_idle_window_one_host_interval_short_of_idle_seconds()
+    {
+        // idleSeconds 10 less one 1 s host interval: clock and sleep granularity, not a defect.
+        new ComparisonBuilder()
+            .EditSide(3, "baseline", ResizeIdle(9))
+            .Compare()
+            .ShouldBeValid();
+    }
+
+    private static PerfBenchmarkPhaseWindow Window(PerfBenchmarkSideEvidence side, string phase) =>
+        side.Environment.Phases.Single(window => window.Name == phase);
+
+    private static PerfBenchmarkSideEvidence WithSamples(
+        PerfBenchmarkSideEvidence side,
+        Func<PerfBenchmarkSample, PerfBenchmarkSample> edit
+    ) => side with { Samples = [.. side.Samples.Select(edit)] };
+
+    private static Func<PerfBenchmarkSideEvidence, PerfBenchmarkSideEvidence> WithPhases(
+        Func<PerfBenchmarkPhaseWindow, PerfBenchmarkPhaseWindow> edit
+    ) =>
+        side =>
+            side with
+            {
+                Environment = side.Environment with { Phases = [.. side.Environment.Phases.Select(edit)] },
+            };
+
+    /// <summary>
+    /// Shortens the idle window to <paramref name="seconds" />, moving the side window's start
+    /// with it so the windows stay back to back.
+    /// </summary>
+    private static Func<PerfBenchmarkSideEvidence, PerfBenchmarkSideEvidence> ResizeIdle(int seconds) =>
+        side =>
+        {
+            DateTimeOffset boundary = Window(side, PerfBenchmarkMetrics.IdlePhase)
+                .StartUtc.AddSeconds(seconds);
+            return WithPhases(phase =>
+                phase.Name switch
+                {
+                    PerfBenchmarkMetrics.IdlePhase => phase with { EndUtc = boundary },
+                    PerfBenchmarkMetrics.SidePhase => phase with { StartUtc = boundary },
+                    _ => phase,
+                }
+            )(side);
+        };
 
     private static TestCaseData Case(
         string name,
@@ -1973,6 +2104,30 @@ public class Given_A_Comparison_Directory
         loaded.ShouldBeValid();
         loaded.Result.Should().Be(PerfBenchmarkComparisonResult.SuspectedRegression);
         loaded.Scenario(ComparisonBuilder.DeepLarge).MedianP50Ratio.Should().Be(1.29m);
+    }
+
+    // NaN fails every threshold comparison, so an idle mean of NaN passed the idle CPU rule
+    // and a NaN made Min() hide a low available-memory sample; a negative value drags a mean down.
+    [TestCase(double.NaN)]
+    [TestCase(double.PositiveInfinity)]
+    [TestCase(-1d)]
+    public void It_rejects_a_sample_value_that_is_not_a_finite_non_negative_number(double value)
+    {
+        ComparisonBuilder builder = new ComparisonBuilder().EditSide(
+            3,
+            "baseline",
+            ComparisonBuilder.SetSamples(PerfBenchmarkMetrics.HostCpuPercent, value, second => second == 35)
+        );
+        ComparisonBuilder.WriteDirectory(_directory, builder.Build());
+
+        PerfBenchmarkComparisonResult loaded = PerfBenchmarkComparison.Compare(
+            PerfBenchmarkComparisonLoader.Load(_directory, builder.Profile)
+        );
+
+        loaded.ShouldBeInvalidBecause("pair 3 baseline: unreadable artifacts");
+        loaded.ShouldBeInvalidBecause(
+            "samples.csv line 126: the value must be a finite, non-negative number."
+        );
     }
 
     [TestCase(PerfBenchmarkComparison.Candidate)]

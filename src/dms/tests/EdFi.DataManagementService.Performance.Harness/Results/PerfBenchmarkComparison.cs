@@ -38,9 +38,14 @@ public sealed record PerfBenchmarkRunPlan(
 }
 
 /// <summary>
-/// A collector phase (<c>settle</c>, <c>idle</c>, <c>side</c>) as the wrapper marked it.
+/// A collector phase (<c>settle</c>, <c>idle</c>, <c>side</c>) as the wrapper marked it. A
+/// sample belongs to the phase whose window contains its timestamp, start inclusive and end
+/// exclusive; the sample's <c>phase</c> label is never used for that.
 /// </summary>
-public sealed record PerfBenchmarkPhaseWindow(string Name, DateTimeOffset StartUtc, DateTimeOffset EndUtc);
+public sealed record PerfBenchmarkPhaseWindow(string Name, DateTimeOffset StartUtc, DateTimeOffset EndUtc)
+{
+    public bool Contains(DateTimeOffset time) => time >= StartUtc && time < EndUtc;
+}
 
 /// <summary>
 /// <c>environment.json</c>: the host, Docker and database-container facts of one side, and
@@ -157,6 +162,15 @@ public static class PerfBenchmarkMetrics
             )
             {
                 throw new PerfArtifactValidationException([$"{SamplesFileName} line {number} is malformed."]);
+            }
+
+            // Every metric is a percentage, a byte count or a megabyte count: NaN slips past
+            // every threshold comparison, and a negative value drags a mean down.
+            if (!double.IsFinite(value) || value < 0)
+            {
+                throw new PerfArtifactValidationException([
+                    $"{SamplesFileName} line {number}: the value must be a finite, non-negative number.",
+                ]);
             }
 
             samples.Add(new PerfBenchmarkSample(timestamp.ToUniversalTime(), fields[1], fields[2], value));
@@ -950,14 +964,32 @@ public static class PerfBenchmarkComparison
             invalid.Add($"{at}: rule: the database ran on tmpfs.");
         }
 
-        CheckIdleCpu(at, samples, PerfBenchmarkMetrics.HostCpuPercent, rules.MaxIdleHostCpuPercent, invalid);
-        CheckIdleCpu(
+        IReadOnlyDictionary<string, PerfBenchmarkPhaseWindow>? windows = PhaseWindowsOf(
             at,
-            samples,
-            PerfBenchmarkMetrics.DatabaseCpuPercent,
-            rules.MaxIdleDatabaseCpuPercent,
+            environment,
+            rules,
             invalid
         );
+        if (windows is not null)
+        {
+            PerfBenchmarkPhaseWindow idle = windows[PerfBenchmarkMetrics.IdlePhase];
+            CheckIdleCpu(
+                at,
+                samples,
+                idle,
+                PerfBenchmarkMetrics.HostCpuPercent,
+                rules.MaxIdleHostCpuPercent,
+                invalid
+            );
+            CheckIdleCpu(
+                at,
+                samples,
+                idle,
+                PerfBenchmarkMetrics.DatabaseCpuPercent,
+                rules.MaxIdleDatabaseCpuPercent,
+                invalid
+            );
+        }
 
         double[] available = [.. Values(samples, PerfBenchmarkMetrics.HostAvailableMb)];
         if (available.Length > 0 && available.Min() < rules.MinHostAvailableMemoryMb)
@@ -981,19 +1013,92 @@ public static class PerfBenchmarkComparison
             );
         }
 
-        CheckCompleteness(at, environment, samples, rules, invalid);
+        if (windows is not null)
+        {
+            CheckCompleteness(at, windows, samples, rules, invalid);
+        }
+
         CheckCoverage(at, side, rules, invalid);
+    }
+
+    /// <summary>
+    /// The phase windows, keyed by phase, when they have the shape the wrapper writes: one
+    /// window per phase, each ending after it starts, settle then idle then side back to back
+    /// (each boundary is a single clock reading), and an idle phase at least the profile's
+    /// <c>idleSeconds</c> less one host sample interval (clock and sleep granularity).
+    /// Otherwise null, with the reasons added: a rule judged over windows the wrapper could not
+    /// have written would prove nothing, and a zero-length idle window expects no samples.
+    /// </summary>
+    private static IReadOnlyDictionary<string, PerfBenchmarkPhaseWindow>? PhaseWindowsOf(
+        string at,
+        PerfBenchmarkEnvironment environment,
+        PerfBenchmarkEnvironmentRules rules,
+        List<string> invalid
+    )
+    {
+        int before = invalid.Count;
+        Dictionary<string, PerfBenchmarkPhaseWindow> windows = [];
+        foreach (string phase in PerfBenchmarkMetrics.Phases)
+        {
+            PerfBenchmarkPhaseWindow[] matching = [.. environment.Phases.Where(entry => entry.Name == phase)];
+            if (matching.Length == 0)
+            {
+                invalid.Add($"{at}: rule: environment.json records no {phase} phase.");
+            }
+            else if (matching.Length > 1)
+            {
+                invalid.Add(
+                    $"{at}: rule: environment.json records the {phase} phase {matching.Length} times."
+                );
+            }
+            else if (matching[0].EndUtc <= matching[0].StartUtc)
+            {
+                invalid.Add($"{at}: rule: the {phase} phase window does not end after it starts.");
+            }
+            else
+            {
+                windows[phase] = matching[0];
+            }
+        }
+
+        if (invalid.Count > before)
+        {
+            return null;
+        }
+
+        PerfBenchmarkPhaseWindow settle = windows[PerfBenchmarkMetrics.SettlePhase];
+        PerfBenchmarkPhaseWindow idle = windows[PerfBenchmarkMetrics.IdlePhase];
+        PerfBenchmarkPhaseWindow side = windows[PerfBenchmarkMetrics.SidePhase];
+        if (settle.EndUtc != idle.StartUtc || idle.EndUtc != side.StartUtc)
+        {
+            invalid.Add($"{at}: rule: the settle, idle and side phase windows are not back to back.");
+        }
+
+        double idleSeconds = (idle.EndUtc - idle.StartUtc).TotalSeconds;
+        int minimumIdleSeconds = rules.IdleSeconds - rules.HostSampleIntervalSeconds;
+        if (idleSeconds < minimumIdleSeconds)
+        {
+            invalid.Add(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{at}: rule: the idle phase lasted {idleSeconds:0.###} s (minimum {minimumIdleSeconds} s: idleSeconds {rules.IdleSeconds} less one host sample interval)."
+                )
+            );
+        }
+
+        return invalid.Count > before ? null : windows;
     }
 
     private static void CheckIdleCpu(
         string at,
         IReadOnlyList<PerfBenchmarkSample> samples,
+        PerfBenchmarkPhaseWindow idleWindow,
         string metric,
         decimal maximum,
         List<string> invalid
     )
     {
-        double[] idle = [.. Values(samples, metric, PerfBenchmarkMetrics.IdlePhase)];
+        double[] idle = [.. Values(samples, metric, idleWindow)];
         if (idle.Length > 0 && idle.Average() > (double)maximum)
         {
             invalid.Add(
@@ -1006,12 +1111,12 @@ public static class PerfBenchmarkComparison
     }
 
     /// <summary>
-    /// Completeness for every metric and phase: samples ≥ the minimum percentage of the phase
-    /// duration divided by that metric's nominal interval.
+    /// Completeness for every metric and phase: samples stamped inside the phase window ≥ the
+    /// minimum percentage of the window's duration divided by that metric's nominal interval.
     /// </summary>
     private static void CheckCompleteness(
         string at,
-        PerfBenchmarkEnvironment environment,
+        IReadOnlyDictionary<string, PerfBenchmarkPhaseWindow> windows,
         IReadOnlyList<PerfBenchmarkSample> samples,
         PerfBenchmarkEnvironmentRules rules,
         List<string> invalid
@@ -1019,20 +1124,14 @@ public static class PerfBenchmarkComparison
     {
         foreach (string phase in PerfBenchmarkMetrics.Phases)
         {
-            PerfBenchmarkPhaseWindow? window = environment.Phases.FirstOrDefault(entry =>
-                entry.Name == phase
-            );
-            if (window is null)
-            {
-                invalid.Add($"{at}: rule: environment.json records no {phase} phase.");
-                continue;
-            }
-
+            PerfBenchmarkPhaseWindow window = windows[phase];
             double seconds = (window.EndUtc - window.StartUtc).TotalSeconds;
             foreach (string metric in PerfBenchmarkMetrics.All)
             {
                 double expected = seconds / IntervalOf(metric, rules).TotalSeconds;
-                int observed = samples.Count(sample => sample.Metric == metric && sample.Phase == phase);
+                int observed = samples.Count(sample =>
+                    sample.Metric == metric && window.Contains(sample.TimestampUtc)
+                );
                 if (observed < expected * (double)rules.MinCompletenessPercent / 100)
                 {
                     invalid.Add(
@@ -1671,10 +1770,12 @@ public static class PerfBenchmarkComparison
     private static IEnumerable<double> Values(
         IReadOnlyList<PerfBenchmarkSample> samples,
         string metric,
-        string? phase = null
+        PerfBenchmarkPhaseWindow? window = null
     ) =>
         samples
-            .Where(sample => sample.Metric == metric && (phase is null || sample.Phase == phase))
+            .Where(sample =>
+                sample.Metric == metric && (window is null || window.Contains(sample.TimestampUtc))
+            )
             .Select(sample => sample.Value);
 
     private static TimeSpan IntervalOf(string metric, PerfBenchmarkEnvironmentRules rules) =>
