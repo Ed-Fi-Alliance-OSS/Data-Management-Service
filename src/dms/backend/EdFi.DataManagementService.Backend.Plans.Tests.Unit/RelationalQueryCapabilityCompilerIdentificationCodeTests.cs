@@ -161,8 +161,14 @@ public class Given_The_Authoritative_Ds52_And_Sample_Identification_Code_Query_C
         capability
             .Support.Should()
             .BeOfType<RelationalQuerySupport.Omitted>()
-            .Which.Omission.Kind.Should()
-            .Be(RelationalQueryCapabilityOmissionKind.UnsupportedQueryFields);
+            .Which.Omission.Should()
+            .Be(
+                new RelationalQueryCapabilityOmission(
+                    RelationalQueryCapabilityOmissionKind.UnsupportedQueryFields,
+                    "queryFieldMapping contains unsupported relational GET-many fields: "
+                        + "gradeLevelDescriptor: crosses an array scope and cannot compile to a root-table predicate."
+                )
+            );
         capability
             .UnsupportedFieldsByQueryField.Values.Select(static field =>
                 (field.QueryFieldName, field.FailureKind)
@@ -211,9 +217,13 @@ public class Given_The_Authoritative_Ds52_And_Sample_Identification_Code_Query_C
         capability
             .Support.Should()
             .BeOfType<RelationalQuerySupport.Omitted>()
-            .Which.Omission.Reason.Should()
-            .Contain(
-                "identificationCode: did not resolve to one stored column of one identification-code collection table"
+            .Which.Omission.Should()
+            .Be(
+                new RelationalQueryCapabilityOmission(
+                    RelationalQueryCapabilityOmissionKind.UnsupportedQueryFields,
+                    "Resource has unsupported relational GET-many query fields: "
+                        + "identificationCode: did not resolve to one stored column of one identification-code collection table."
+                )
             );
         capability
             .UnsupportedFieldsByQueryField["identificationCode"]

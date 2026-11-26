@@ -550,10 +550,18 @@ internal sealed class RelationalQueryCapabilityCompiler
                 .Select(static field => $"{field.QueryFieldName}: {DescribeFailureKind(field.FailureKind)}")
         );
 
+        // Derived identification-code fields do not come from queryFieldMapping, so a failure among them
+        // gets a prefix that names no source.
+        var reasonPrefix = unsupportedFieldsByQueryField.Values.Any(static field =>
+            field.FailureKind is RelationalQueryFieldFailureKind.IdentificationCodeCollectionUnresolved
+        )
+            ? "Resource has unsupported relational GET-many query fields"
+            : "queryFieldMapping contains unsupported relational GET-many fields";
+
         return new RelationalQuerySupport.Omitted(
             new RelationalQueryCapabilityOmission(
                 RelationalQueryCapabilityOmissionKind.UnsupportedQueryFields,
-                $"queryFieldMapping contains unsupported relational GET-many fields: {unsupportedFieldSummary}."
+                $"{reasonPrefix}: {unsupportedFieldSummary}."
             )
         );
     }
