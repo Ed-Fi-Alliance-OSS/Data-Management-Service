@@ -3333,6 +3333,24 @@
                 }
               },
               {
+                "query_field_name": "assessmentIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].assessmentIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "AssessmentIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "AssessmentIdentificationCode"
+                  },
+                  "root_locator_column": "Assessment_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "AssessmentIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "assessmentIdentifier",
                 "json_path": "$.assessmentIdentifier",
                 "api_schema_type": "string",
@@ -3360,6 +3378,21 @@
                 }
               },
               {
+                "query_field_name": "assigningOrganizationIdentificationCode",
+                "json_path": "$.identificationCodes[*].assigningOrganizationIdentificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "AssigningOrganizationIdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "AssessmentIdentificationCode"
+                  },
+                  "root_locator_column": "Assessment_DocumentId",
+                  "descriptor_resource": null
+                }
+              },
+              {
                 "query_field_name": "educationOrganizationId",
                 "json_path": "$.educationOrganizationReference.educationOrganizationId",
                 "api_schema_type": "number",
@@ -3375,6 +3408,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "AssessmentIdentificationCode"
+                  },
+                  "root_locator_column": "Assessment_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -12311,12 +12359,45 @@
                 }
               },
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CommunityOrganizationIdentificationCode"
+                  },
+                  "root_locator_column": "CommunityOrganization_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "id",
                 "json_path": "$.id",
                 "api_schema_type": "string",
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CommunityOrganizationIdentificationCode"
+                  },
+                  "root_locator_column": "CommunityOrganization_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -13970,12 +14051,45 @@
                 }
               },
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CommunityProviderIdentificationCode"
+                  },
+                  "root_locator_column": "CommunityProvider_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "id",
                 "json_path": "$.id",
                 "api_schema_type": "string",
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CommunityProviderIdentificationCode"
+                  },
+                  "root_locator_column": "CommunityProvider_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -18320,6 +18434,21 @@
             },
             "supported_fields_in_query_field_order": [
               {
+                "query_field_name": "assigningOrganizationIdentificationCode",
+                "json_path": "$.identificationCodes[*].assigningOrganizationIdentificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "AssigningOrganizationIdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CourseIdentificationCode"
+                  },
+                  "root_locator_column": "Course_DocumentId",
+                  "descriptor_resource": null
+                }
+              },
+              {
                 "query_field_name": "careerPathwayDescriptor",
                 "json_path": "$.careerPathwayDescriptor",
                 "api_schema_type": "string",
@@ -18330,6 +18459,21 @@
                     "project_name": "Ed-Fi",
                     "resource_name": "CareerPathwayDescriptor"
                   }
+                }
+              },
+              {
+                "query_field_name": "courseCatalogURL",
+                "json_path": "$.identificationCodes[*].courseCatalogURL",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "CourseCatalogURL",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CourseIdentificationCode"
+                  },
+                  "root_locator_column": "Course_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -18377,6 +18521,24 @@
                 }
               },
               {
+                "query_field_name": "courseIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].courseIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "CourseIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CourseIdentificationCode"
+                  },
+                  "root_locator_column": "Course_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "CourseIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "courseTitle",
                 "json_path": "$.courseTitle",
                 "api_schema_type": "string",
@@ -18419,6 +18581,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CourseIdentificationCode"
+                  },
+                  "root_locator_column": "Course_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -21438,6 +21615,24 @@
                 }
               },
               {
+                "query_field_name": "courseIdentificationSystemDescriptor",
+                "json_path": "$.alternativeCourseIdentificationCodes[*].courseIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "CourseIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CourseTranscriptAlternativeCourseIdentificationCode"
+                  },
+                  "root_locator_column": "CourseTranscript_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "CourseIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "courseRepeatCodeDescriptor",
                 "json_path": "$.courseRepeatCodeDescriptor",
                 "api_schema_type": "string",
@@ -21542,6 +21737,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.alternativeCourseIdentificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "AlternativeIdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CourseTranscriptAlternativeCourseIdentificationCode"
+                  },
+                  "root_locator_column": "CourseTranscript_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -29009,6 +29219,24 @@
             },
             "supported_fields_in_query_field_order": [
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "EducationOrganizationNetworkIdentificationCode"
+                  },
+                  "root_locator_column": "EducationOrganizationNetwork_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "educationOrganizationNetworkId",
                 "json_path": "$.educationOrganizationNetworkId",
                 "api_schema_type": "number",
@@ -29024,6 +29252,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "EducationOrganizationNetworkIdentificationCode"
+                  },
+                  "root_locator_column": "EducationOrganizationNetwork_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -31062,6 +31305,24 @@
             },
             "supported_fields_in_query_field_order": [
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "EducationServiceCenterIdentificationCode"
+                  },
+                  "root_locator_column": "EducationServiceCenter_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "educationServiceCenterId",
                 "json_path": "$.educationServiceCenterId",
                 "api_schema_type": "number",
@@ -31077,6 +31338,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "EducationServiceCenterIdentificationCode"
+                  },
+                  "root_locator_column": "EducationServiceCenter_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -43245,6 +43521,21 @@
             },
             "supported_fields_in_query_field_order": [
               {
+                "query_field_name": "contentStandardName",
+                "json_path": "$.identificationCodes[*].contentStandardName",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "ContentStandardName",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "LearningStandardIdentificationCode"
+                  },
+                  "root_locator_column": "LearningStandard_DocumentId",
+                  "descriptor_resource": null
+                }
+              },
+              {
                 "query_field_name": "courseTitle",
                 "json_path": "$.courseTitle",
                 "api_schema_type": "string",
@@ -43269,6 +43560,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "LearningStandardIdentificationCode"
+                  },
+                  "root_locator_column": "LearningStandard_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -47539,6 +47845,24 @@
                 }
               },
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "LocalEducationAgencyIdentificationCode"
+                  },
+                  "root_locator_column": "LocalEducationAgency_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "educationServiceCenterId",
                 "json_path": "$.educationServiceCenterReference.educationServiceCenterId",
                 "api_schema_type": "number",
@@ -47554,6 +47878,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "LocalEducationAgencyIdentificationCode"
+                  },
+                  "root_locator_column": "LocalEducationAgency_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -53182,12 +53521,45 @@
                 }
               },
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "OrganizationDepartmentIdentificationCode"
+                  },
+                  "root_locator_column": "OrganizationDepartment_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "id",
                 "json_path": "$.id",
                 "api_schema_type": "string",
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "OrganizationDepartmentIdentificationCode"
+                  },
+                  "root_locator_column": "OrganizationDepartment_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -55946,12 +56318,45 @@
                 }
               },
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "PostSecondaryInstitutionIdentificationCode"
+                  },
+                  "root_locator_column": "PostSecondaryInstitution_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "id",
                 "json_path": "$.id",
                 "api_schema_type": "string",
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "PostSecondaryInstitutionIdentificationCode"
+                  },
+                  "root_locator_column": "PostSecondaryInstitution_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -65557,12 +65962,45 @@
                 }
               },
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "SchoolIdentificationCode"
+                  },
+                  "root_locator_column": "School_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "id",
                 "json_path": "$.id",
                 "api_schema_type": "string",
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "SchoolIdentificationCode"
+                  },
+                  "root_locator_column": "School_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -73020,6 +73458,21 @@
             },
             "supported_fields_in_query_field_order": [
               {
+                "query_field_name": "assigningOrganizationIdentificationCode",
+                "json_path": "$.identificationCodes[*].assigningOrganizationIdentificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "AssigningOrganizationIdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StaffIdentificationCode"
+                  },
+                  "root_locator_column": "Staff_DocumentId",
+                  "descriptor_resource": null
+                }
+              },
+              {
                 "query_field_name": "birthDate",
                 "json_path": "$.birthDate",
                 "api_schema_type": "date",
@@ -73106,6 +73559,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StaffIdentificationCode"
+                  },
+                  "root_locator_column": "Staff_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -73203,6 +73671,24 @@
                   "descriptor_resource": {
                     "project_name": "Ed-Fi",
                     "resource_name": "SourceSystemDescriptor"
+                  }
+                }
+              },
+              {
+                "query_field_name": "staffIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].staffIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "StaffIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StaffIdentificationCode"
+                  },
+                  "root_locator_column": "Staff_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "StaffIdentificationSystemDescriptor"
                   }
                 }
               },
@@ -79648,12 +80134,45 @@
             },
             "supported_fields_in_query_field_order": [
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StateEducationAgencyIdentificationCode"
+                  },
+                  "root_locator_column": "StateEducationAgency_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "id",
                 "json_path": "$.id",
                 "api_schema_type": "string",
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StateEducationAgencyIdentificationCode"
+                  },
+                  "root_locator_column": "StateEducationAgency_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -93877,6 +94396,21 @@
             },
             "supported_fields_in_query_field_order": [
               {
+                "query_field_name": "assigningOrganizationIdentificationCode",
+                "json_path": "$.studentIdentificationCodes[*].assigningOrganizationIdentificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "AssigningOrganizationIdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StudentEducationOrganizationAssociationStudentIdentificationCode"
+                  },
+                  "root_locator_column": "StudentEducationOrganizationAssociation_DocumentId",
+                  "descriptor_resource": null
+                }
+              },
+              {
                 "query_field_name": "barrierToInternetAccessInResidenceDescriptor",
                 "json_path": "$.barrierToInternetAccessInResidenceDescriptor",
                 "api_schema_type": "string",
@@ -93923,6 +94457,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.studentIdentificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StudentEducationOrganizationAssociationStudentIdentificationCode"
+                  },
+                  "root_locator_column": "StudentEducationOrganizationAssociation_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -94040,6 +94589,24 @@
                   "descriptor_resource": {
                     "project_name": "Ed-Fi",
                     "resource_name": "SexDescriptor"
+                  }
+                }
+              },
+              {
+                "query_field_name": "studentIdentificationSystemDescriptor",
+                "json_path": "$.studentIdentificationCodes[*].studentIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "StudentIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StudentEducationOrganizationAssociationStudentIdentificationCode"
+                  },
+                  "root_locator_column": "StudentEducationOrganizationAssociation_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "StudentIdentificationSystemDescriptor"
                   }
                 }
               },
@@ -120691,6 +121258,24 @@
                 }
               },
               {
+                "query_field_name": "assessmentIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].assessmentIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "AssessmentIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "AssessmentIdentificationCode"
+                  },
+                  "root_locator_column": "Assessment_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "AssessmentIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "assessmentIdentifier",
                 "json_path": "$.assessmentIdentifier",
                 "api_schema_type": "string",
@@ -120718,6 +121303,21 @@
                 }
               },
               {
+                "query_field_name": "assigningOrganizationIdentificationCode",
+                "json_path": "$.identificationCodes[*].assigningOrganizationIdentificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "AssigningOrganizationIdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "AssessmentIdentificationCode"
+                  },
+                  "root_locator_column": "Assessment_DocumentId",
+                  "descriptor_resource": null
+                }
+              },
+              {
                 "query_field_name": "educationOrganizationId",
                 "json_path": "$.educationOrganizationReference.educationOrganizationId",
                 "api_schema_type": "number",
@@ -120733,6 +121333,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "AssessmentIdentificationCode"
+                  },
+                  "root_locator_column": "Assessment_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -129669,12 +130284,45 @@
                 }
               },
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CommunityOrganizationIdentificationCode"
+                  },
+                  "root_locator_column": "CommunityOrganization_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "id",
                 "json_path": "$.id",
                 "api_schema_type": "string",
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CommunityOrganizationIdentificationCode"
+                  },
+                  "root_locator_column": "CommunityOrganization_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -131328,12 +131976,45 @@
                 }
               },
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CommunityProviderIdentificationCode"
+                  },
+                  "root_locator_column": "CommunityProvider_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "id",
                 "json_path": "$.id",
                 "api_schema_type": "string",
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CommunityProviderIdentificationCode"
+                  },
+                  "root_locator_column": "CommunityProvider_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -135678,6 +136359,21 @@
             },
             "supported_fields_in_query_field_order": [
               {
+                "query_field_name": "assigningOrganizationIdentificationCode",
+                "json_path": "$.identificationCodes[*].assigningOrganizationIdentificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "AssigningOrganizationIdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CourseIdentificationCode"
+                  },
+                  "root_locator_column": "Course_DocumentId",
+                  "descriptor_resource": null
+                }
+              },
+              {
                 "query_field_name": "careerPathwayDescriptor",
                 "json_path": "$.careerPathwayDescriptor",
                 "api_schema_type": "string",
@@ -135688,6 +136384,21 @@
                     "project_name": "Ed-Fi",
                     "resource_name": "CareerPathwayDescriptor"
                   }
+                }
+              },
+              {
+                "query_field_name": "courseCatalogURL",
+                "json_path": "$.identificationCodes[*].courseCatalogURL",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "CourseCatalogURL",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CourseIdentificationCode"
+                  },
+                  "root_locator_column": "Course_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -135735,6 +136446,24 @@
                 }
               },
               {
+                "query_field_name": "courseIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].courseIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "CourseIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CourseIdentificationCode"
+                  },
+                  "root_locator_column": "Course_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "CourseIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "courseTitle",
                 "json_path": "$.courseTitle",
                 "api_schema_type": "string",
@@ -135777,6 +136506,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CourseIdentificationCode"
+                  },
+                  "root_locator_column": "Course_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -138796,6 +139540,24 @@
                 }
               },
               {
+                "query_field_name": "courseIdentificationSystemDescriptor",
+                "json_path": "$.alternativeCourseIdentificationCodes[*].courseIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "CourseIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CourseTranscriptAlternativeCourseIdentificationCode"
+                  },
+                  "root_locator_column": "CourseTranscript_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "CourseIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "courseRepeatCodeDescriptor",
                 "json_path": "$.courseRepeatCodeDescriptor",
                 "api_schema_type": "string",
@@ -138900,6 +139662,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.alternativeCourseIdentificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "AlternativeIdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "CourseTranscriptAlternativeCourseIdentificationCode"
+                  },
+                  "root_locator_column": "CourseTranscript_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -146367,6 +147144,24 @@
             },
             "supported_fields_in_query_field_order": [
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "EducationOrganizationNetworkIdentificationCode"
+                  },
+                  "root_locator_column": "EducationOrganizationNetwork_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "educationOrganizationNetworkId",
                 "json_path": "$.educationOrganizationNetworkId",
                 "api_schema_type": "number",
@@ -146382,6 +147177,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "EducationOrganizationNetworkIdentificationCode"
+                  },
+                  "root_locator_column": "EducationOrganizationNetwork_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -148420,6 +149230,24 @@
             },
             "supported_fields_in_query_field_order": [
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "EducationServiceCenterIdentificationCode"
+                  },
+                  "root_locator_column": "EducationServiceCenter_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "educationServiceCenterId",
                 "json_path": "$.educationServiceCenterId",
                 "api_schema_type": "number",
@@ -148435,6 +149263,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "EducationServiceCenterIdentificationCode"
+                  },
+                  "root_locator_column": "EducationServiceCenter_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -160603,6 +161446,21 @@
             },
             "supported_fields_in_query_field_order": [
               {
+                "query_field_name": "contentStandardName",
+                "json_path": "$.identificationCodes[*].contentStandardName",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "ContentStandardName",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "LearningStandardIdentificationCode"
+                  },
+                  "root_locator_column": "LearningStandard_DocumentId",
+                  "descriptor_resource": null
+                }
+              },
+              {
                 "query_field_name": "courseTitle",
                 "json_path": "$.courseTitle",
                 "api_schema_type": "string",
@@ -160627,6 +161485,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "LearningStandardIdentificationCode"
+                  },
+                  "root_locator_column": "LearningStandard_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -164897,6 +165770,24 @@
                 }
               },
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "LocalEducationAgencyIdentificationCode"
+                  },
+                  "root_locator_column": "LocalEducationAgency_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "educationServiceCenterId",
                 "json_path": "$.educationServiceCenterReference.educationServiceCenterId",
                 "api_schema_type": "number",
@@ -164912,6 +165803,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "LocalEducationAgencyIdentificationCode"
+                  },
+                  "root_locator_column": "LocalEducationAgency_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -170540,12 +171446,45 @@
                 }
               },
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "OrganizationDepartmentIdentificationCode"
+                  },
+                  "root_locator_column": "OrganizationDepartment_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "id",
                 "json_path": "$.id",
                 "api_schema_type": "string",
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "OrganizationDepartmentIdentificationCode"
+                  },
+                  "root_locator_column": "OrganizationDepartment_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -173304,12 +174243,45 @@
                 }
               },
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "PostSecondaryInstitutionIdentificationCode"
+                  },
+                  "root_locator_column": "PostSecondaryInstitution_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "id",
                 "json_path": "$.id",
                 "api_schema_type": "string",
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "PostSecondaryInstitutionIdentificationCode"
+                  },
+                  "root_locator_column": "PostSecondaryInstitution_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -182915,12 +183887,45 @@
                 }
               },
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "SchoolIdentificationCode"
+                  },
+                  "root_locator_column": "School_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "id",
                 "json_path": "$.id",
                 "api_schema_type": "string",
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "SchoolIdentificationCode"
+                  },
+                  "root_locator_column": "School_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -190378,6 +191383,21 @@
             },
             "supported_fields_in_query_field_order": [
               {
+                "query_field_name": "assigningOrganizationIdentificationCode",
+                "json_path": "$.identificationCodes[*].assigningOrganizationIdentificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "AssigningOrganizationIdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StaffIdentificationCode"
+                  },
+                  "root_locator_column": "Staff_DocumentId",
+                  "descriptor_resource": null
+                }
+              },
+              {
                 "query_field_name": "birthDate",
                 "json_path": "$.birthDate",
                 "api_schema_type": "date",
@@ -190464,6 +191484,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StaffIdentificationCode"
+                  },
+                  "root_locator_column": "Staff_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -190561,6 +191596,24 @@
                   "descriptor_resource": {
                     "project_name": "Ed-Fi",
                     "resource_name": "SourceSystemDescriptor"
+                  }
+                }
+              },
+              {
+                "query_field_name": "staffIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].staffIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "StaffIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StaffIdentificationCode"
+                  },
+                  "root_locator_column": "Staff_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "StaffIdentificationSystemDescriptor"
                   }
                 }
               },
@@ -197006,12 +198059,45 @@
             },
             "supported_fields_in_query_field_order": [
               {
+                "query_field_name": "educationOrganizationIdentificationSystemDescriptor",
+                "json_path": "$.identificationCodes[*].educationOrganizationIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StateEducationAgencyIdentificationCode"
+                  },
+                  "root_locator_column": "StateEducationAgency_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
+                  }
+                }
+              },
+              {
                 "query_field_name": "id",
                 "json_path": "$.id",
                 "api_schema_type": "string",
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.identificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StateEducationAgencyIdentificationCode"
+                  },
+                  "root_locator_column": "StateEducationAgency_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -211235,6 +212321,21 @@
             },
             "supported_fields_in_query_field_order": [
               {
+                "query_field_name": "assigningOrganizationIdentificationCode",
+                "json_path": "$.studentIdentificationCodes[*].assigningOrganizationIdentificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "AssigningOrganizationIdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StudentEducationOrganizationAssociationStudentIdenti_c15030660d"
+                  },
+                  "root_locator_column": "StudentEducationOrganizationAssociation_DocumentId",
+                  "descriptor_resource": null
+                }
+              },
+              {
                 "query_field_name": "barrierToInternetAccessInResidenceDescriptor",
                 "json_path": "$.barrierToInternetAccessInResidenceDescriptor",
                 "api_schema_type": "string",
@@ -211281,6 +212382,21 @@
                 "target": {
                   "kind": "document_uuid",
                   "column_name": null
+                }
+              },
+              {
+                "query_field_name": "identificationCode",
+                "json_path": "$.studentIdentificationCodes[*].identificationCode",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "IdentificationCode",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StudentEducationOrganizationAssociationStudentIdenti_c15030660d"
+                  },
+                  "root_locator_column": "StudentEducationOrganizationAssociation_DocumentId",
+                  "descriptor_resource": null
                 }
               },
               {
@@ -211398,6 +212514,24 @@
                   "descriptor_resource": {
                     "project_name": "Ed-Fi",
                     "resource_name": "SexDescriptor"
+                  }
+                }
+              },
+              {
+                "query_field_name": "studentIdentificationSystemDescriptor",
+                "json_path": "$.studentIdentificationCodes[*].studentIdentificationSystemDescriptor",
+                "api_schema_type": "string",
+                "target": {
+                  "kind": "collection_column",
+                  "column_name": "StudentIdentificationSystemDescriptor_DescriptorId",
+                  "table": {
+                    "schema": "edfi",
+                    "name": "StudentEducationOrganizationAssociationStudentIdenti_c15030660d"
+                  },
+                  "root_locator_column": "StudentEducationOrganizationAssociation_DocumentId",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "StudentIdentificationSystemDescriptor"
                   }
                 }
               },

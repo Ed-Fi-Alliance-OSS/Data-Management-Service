@@ -23,11 +23,27 @@ public sealed record RelationalQueryFieldMapping(
 public sealed record RelationalQueryFieldPath(JsonPathExpression Path, string Type);
 
 /// <summary>
+/// One query field a resource offers over a scalar property of its identification-code collection,
+/// derived from the resource schema rather than read from <c>queryFieldMapping</c>.
+/// </summary>
+/// <param name="QueryFieldName">The public query parameter name.</param>
+/// <param name="CollectionPath">The canonical JSON path of the collection's items.</param>
+/// <param name="ItemPath">The canonical JSON path of the property within an item.</param>
+/// <param name="Type">The ApiSchema scalar type label.</param>
+public sealed record RelationalIdentificationCodeQueryFieldMapping(
+    string QueryFieldName,
+    JsonPathExpression CollectionPath,
+    JsonPathExpression ItemPath,
+    string Type
+);
+
+/// <summary>
 /// Compiled relational GET-many query metadata for one resource.
 /// </summary>
 /// <param name="Support">Whether relational GET-many is supported for the resource or intentionally omitted.</param>
 /// <param name="SupportedFieldsByQueryField">
-/// Query fields that can compile directly to deterministic root-table predicates.
+/// Query fields that can compile directly to deterministic root-table predicates, or to an
+/// identification-code collection-table predicate.
 /// </param>
 /// <param name="UnsupportedFieldsByQueryField">
 /// Query fields identified at compile time as unsupported for root-table relational GET-many.
@@ -136,6 +152,12 @@ public enum RelationalQueryFieldFailureKind
     /// The query path resolved to more than one possible root-table predicate target.
     /// </summary>
     AmbiguousRootTarget,
+
+    /// <summary>
+    /// An identification-code query field did not resolve to exactly one stored column of exactly one
+    /// collection table.
+    /// </summary>
+    IdentificationCodeCollectionUnresolved,
 }
 
 /// <summary>
@@ -163,4 +185,24 @@ public abstract record RelationalQueryFieldTarget
     /// <param name="DescriptorResource">The descriptor resource type expected at the query path.</param>
     public sealed record DescriptorIdColumn(DbColumnName Column, QualifiedResourceName DescriptorResource)
         : RelationalQueryFieldTarget;
+
+    /// <summary>
+    /// An identification-code query field that matches a resource when one row of its collection table
+    /// satisfies the predicate.
+    /// </summary>
+    /// <param name="CollectionTable">The identification-code collection table.</param>
+    /// <param name="RootLocatorColumn">
+    /// The collection-table column holding the owning root row's <c>DocumentId</c>.
+    /// </param>
+    /// <param name="Column">The collection-table column the predicate compares.</param>
+    /// <param name="DescriptorResource">
+    /// The descriptor resource type when <paramref name="Column"/> is a descriptor FK, so the value is a
+    /// descriptor URI resolved to a <c>DescriptorId</c>; null for a scalar column.
+    /// </param>
+    public sealed record CollectionColumn(
+        DbTableName CollectionTable,
+        DbColumnName RootLocatorColumn,
+        DbColumnName Column,
+        QualifiedResourceName? DescriptorResource
+    ) : RelationalQueryFieldTarget;
 }

@@ -553,8 +553,9 @@ Authorization integration:
 - The authorization filter shape depends on the configured strategies and the token-derived authorization context; see [auth.md](auth.md) for the query patterns and batching guidance.
 
 Contract/clarification:
-- `queryFieldMapping` is constrained in ApiSchema to **root-table** paths (no JSON paths that cross an array boundary like `[*]`). This constraint is enforced by **MetaEd**, so query compilation does not need child-table `EXISTS (...)` / join predicate support.
+- `queryFieldMapping` is constrained in ApiSchema to **root-table** paths (no JSON paths that cross an array boundary like `[*]`). This constraint is enforced by **MetaEd**, so `queryFieldMapping` itself never needs child-table predicates.
 - Backend model compilation should still fail fast if any `queryFieldMapping` path cannot be mapped to a root-table column.
+- The one child-table exception is not part of `queryFieldMapping`: query fields over a resource's identification-code collection are derived from the resource schema and compile to one correlated `EXISTS (...)` per collection table. See [identification-code-queries.md](identification-code-queries.md).
 
 Ordering/paging contract:
 - Collection GET results are ordered by the **resource root table’s** `DocumentId` (ascending).
@@ -572,6 +573,10 @@ Query compilation patterns:
   or alias), e.g.:
   - `r.Student_StudentUniqueId = @StudentUniqueId`
   - `r.School_SchoolId = @SchoolId`
+- **Identification-code collection fields**: every supplied field on one collection table goes into a
+  single `EXISTS (SELECT 1 FROM <collection> ci WHERE ci.<RootLocator> = r.DocumentId AND ...)`, so
+  all of them must match the same element and a resource is selected once however many elements
+  match. See [identification-code-queries.md](identification-code-queries.md).
 
 Indexing:
 - Ensure a supporting index exists for every foreign key (including composite parent/child FKs and composite reference

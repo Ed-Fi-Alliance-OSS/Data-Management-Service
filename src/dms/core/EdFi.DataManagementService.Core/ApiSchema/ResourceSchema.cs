@@ -307,6 +307,18 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
             );
         JsonNode? jsonSchemaForInsert = _resourceSchemaNode["jsonSchemaForInsert"];
 
+        // Each identification-code query field filters through one collection item path. The rule never
+        // offers a name a queryFieldMapping field already has, so the mapped fields keep their meaning.
+        QueryField[] identificationCodeQueryFields =
+        [
+            .. IdentificationCodeQueryFieldRule
+                .Derive(_resourceSchemaNode)
+                .Select(static field => new QueryField(
+                    field.QueryFieldName,
+                    [new JsonPathAndType(field.ItemPath.Value, field.Type, field.MaxLength)]
+                )),
+        ];
+
         return queryFieldMapping
             .AsObject()
             .AsEnumerable()
@@ -329,7 +341,8 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
                     ?? throw new InvalidOperationException(
                         "Expected queryField to be on queryFieldMapping, invalid ApiSchema"
                     )
-            ));
+            ))
+            .Concat(identificationCodeQueryFields);
     });
 
     /// <summary>
@@ -373,6 +386,10 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// <summary>
     /// The list of QueryFields for this resource. A QueryField is a mapping of a valid query field
     /// along with a list of document paths that query field should be applied to by a query handler.
+    /// The queryFieldMapping fields come first, followed by the identification-code fields
+    /// <see cref="IdentificationCodeQueryFieldRule" /> derives from the insert schema. Deriving them reads
+    /// the resource schema without changing it, so the effective schema hash, which is computed from the
+    /// raw schema, is unaffected.
     /// </summary>
     public IEnumerable<QueryField> QueryFields
     {

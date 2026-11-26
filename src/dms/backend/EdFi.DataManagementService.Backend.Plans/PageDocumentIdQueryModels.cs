@@ -57,6 +57,42 @@ public sealed record QueryValuePredicate(
 }
 
 /// <summary>
+/// A filter that a resource matches when at least one row of one of its collection tables satisfies every
+/// value predicate. Because all predicates test the same row, they must all hold for one collection
+/// element, and a resource matched by several elements is still selected once.
+/// </summary>
+/// <param name="CollectionTable">The collection table searched for a matching row.</param>
+/// <param name="RootLocatorColumn">
+/// The collection-table column holding the owning root row's <c>DocumentId</c>.
+/// </param>
+/// <param name="Predicates">
+/// Value predicates over collection-table columns, treated as an unordered, non-empty set; the compiler
+/// emits them in deterministic sorted order.
+/// </param>
+public sealed record QueryCollectionExistsPredicate(
+    DbTableName CollectionTable,
+    DbColumnName RootLocatorColumn,
+    IReadOnlyList<QueryCollectionValuePredicate> Predicates
+);
+
+/// <summary>
+/// A single value predicate over a collection-table column inside a
+/// <see cref="QueryCollectionExistsPredicate" />.
+/// </summary>
+/// <param name="Column">The collection-table column.</param>
+/// <param name="Operator">The value-comparison operator.</param>
+/// <param name="ParameterName">The bare SQL parameter name that supplies the value.</param>
+/// <param name="StringContract">
+/// The declared contract of the compared string column, or null when the value is not a string.
+/// </param>
+public sealed record QueryCollectionValuePredicate(
+    DbColumnName Column,
+    QueryComparisonOperator Operator,
+    string ParameterName,
+    QuerySqlStringContract? StringContract = null
+);
+
+/// <summary>
 /// One authorization subject used by page-<c>DocumentId</c> relationship authorization.
 /// </summary>
 /// <param name="Table">The table owning the authorization subject column.</param>
@@ -410,10 +446,15 @@ public static class PageCandidateModeParameters
 /// Optional DMS-1055 authorization inputs. When present, relationship predicates are applied to both page and
 /// total-count SQL.
 /// </param>
+/// <param name="CollectionExistsPredicates">
+/// Optional collection filters, at most one per collection table, each emitted as one correlated
+/// <c>EXISTS</c> after the value predicates in every mode. Null or empty emits no collection filter.
+/// </param>
 public sealed record PageDocumentIdQuerySpec(
     DbTableName RootTable,
     IReadOnlyList<QueryValuePredicate> Predicates,
     IReadOnlyDictionary<DbColumnName, ColumnStorage.UnifiedAlias> UnifiedAliasMappingsByColumn,
     PageCandidateMode? Mode = null,
-    PageDocumentIdAuthorizationSpec? Authorization = null
+    PageDocumentIdAuthorizationSpec? Authorization = null,
+    IReadOnlyList<QueryCollectionExistsPredicate>? CollectionExistsPredicates = null
 );

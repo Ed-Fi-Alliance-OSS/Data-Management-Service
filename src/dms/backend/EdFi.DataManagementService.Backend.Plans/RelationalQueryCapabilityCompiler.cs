@@ -97,6 +97,21 @@ internal sealed class RelationalQueryCapabilityCompiler
             );
         }
 
+        foreach (
+            var queryFieldMapping in concreteResourceModel.IdentificationCodeQueryFieldMappingsByQueryField.Values.OrderBy(
+                static queryFieldMapping => queryFieldMapping.QueryFieldName,
+                StringComparer.Ordinal
+            )
+        )
+        {
+            CompileIdentificationCodeQueryField(
+                queryFieldMapping,
+                resourceModel,
+                supportedFieldsByQueryField,
+                unsupportedFieldsByQueryField
+            );
+        }
+
         return new RelationalQueryCapability(
             CreateSupport(unsupportedFieldsByQueryField),
             supportedFieldsByQueryField.ToFrozenDictionary(QueryFieldNameComparer),
@@ -111,6 +126,11 @@ internal sealed class RelationalQueryCapabilityCompiler
         string[][] collidingQueryFieldGroups = concreteResourceModel
             .QueryFieldMappingsByQueryField.Values.Select(static queryFieldMapping =>
                 queryFieldMapping.QueryFieldName
+            )
+            .Concat(
+                concreteResourceModel.IdentificationCodeQueryFieldMappingsByQueryField.Values.Select(
+                    static queryFieldMapping => queryFieldMapping.QueryFieldName
+                )
             )
             .OrderBy(static queryFieldName => queryFieldName, StringComparer.Ordinal)
             .GroupBy(static queryFieldName => queryFieldName, QueryFieldNameComparer)
@@ -313,6 +333,125 @@ internal sealed class RelationalQueryCapabilityCompiler
         );
     }
 
+    /// <summary>
+    /// Compiles one identification-code query field to a collection-table target: the one collection
+    /// table scoped to the field's collection, located from the root row by exactly one column, and the
+    /// one stored column bound at the item path (a descriptor FK for a descriptor-valued property).
+    /// Anything else is unsupported, which omits the resource rather than guessing a target.
+    /// </summary>
+    private static void CompileIdentificationCodeQueryField(
+        RelationalIdentificationCodeQueryFieldMapping queryFieldMapping,
+        RelationalResourceModel resourceModel,
+        IDictionary<string, SupportedRelationalQueryField> supportedFieldsByQueryField,
+        IDictionary<string, UnsupportedRelationalQueryField> unsupportedFieldsByQueryField
+    )
+    {
+        var queryPath = new RelationalQueryFieldPath(queryFieldMapping.ItemPath, queryFieldMapping.Type);
+        var target = TryResolveCollectionColumnTarget(queryFieldMapping, queryPath, resourceModel);
+
+        if (target is null)
+        {
+            unsupportedFieldsByQueryField[queryFieldMapping.QueryFieldName] =
+                new UnsupportedRelationalQueryField(
+                    queryFieldMapping.QueryFieldName,
+                    [queryPath],
+                    RelationalQueryFieldFailureKind.IdentificationCodeCollectionUnresolved
+                );
+            return;
+        }
+
+        supportedFieldsByQueryField[queryFieldMapping.QueryFieldName] = new SupportedRelationalQueryField(
+            queryFieldMapping.QueryFieldName,
+            queryPath,
+            target
+        );
+    }
+
+    private static RelationalQueryFieldTarget.CollectionColumn? TryResolveCollectionColumnTarget(
+        RelationalIdentificationCodeQueryFieldMapping queryFieldMapping,
+        RelationalQueryFieldPath queryPath,
+        RelationalResourceModel resourceModel
+    )
+    {
+        DbTableModel[] collectionTables = resourceModel
+            .TablesInDependencyOrder.Where(tableModel =>
+                tableModel.IdentityMetadata.TableKind is DbTableKind.Collection
+                && string.Equals(
+                    tableModel.JsonScope.Canonical,
+                    queryFieldMapping.CollectionPath.Canonical,
+                    StringComparison.Ordinal
+                )
+            )
+            .ToArray();
+
+        if (collectionTables is not [var collectionTable])
+        {
+            return null;
+        }
+
+        if (collectionTable.IdentityMetadata.RootScopeLocatorColumns is not [var rootLocatorColumn])
+        {
+            return null;
+        }
+
+        DescriptorEdgeSource[] descriptorEdgeSources = resourceModel
+            .DescriptorEdgeSources.Where(descriptorEdgeSource =>
+                descriptorEdgeSource.Table == collectionTable.Table
+                && string.Equals(
+                    descriptorEdgeSource.DescriptorValuePath.Canonical,
+                    queryFieldMapping.ItemPath.Canonical,
+                    StringComparison.Ordinal
+                )
+            )
+            .ToArray();
+
+        if (descriptorEdgeSources.Length > 0)
+        {
+            return
+                descriptorEdgeSources is [var descriptorEdgeSource]
+                && IsStringQueryType(queryPath)
+                && collectionTable.Columns.SingleOrDefault(column =>
+                    column.ColumnName == descriptorEdgeSource.FkColumn
+                )
+                    is { } descriptorColumn
+                && descriptorColumn.Storage is ColumnStorage.Stored
+                && descriptorColumn.Kind is ColumnKind.DescriptorFk
+                && descriptorColumn.ScalarType?.Kind is ScalarKind.Int32
+                ? new RelationalQueryFieldTarget.CollectionColumn(
+                    collectionTable.Table,
+                    rootLocatorColumn,
+                    descriptorColumn.ColumnName,
+                    descriptorEdgeSource.DescriptorResource
+                )
+                : null;
+        }
+
+        DbColumnModel[] itemColumns = collectionTable
+            .Columns.Where(column =>
+                column.Kind is ColumnKind.Scalar
+                && column.SourceJsonPath is { } sourceJsonPath
+                && string.Equals(
+                    sourceJsonPath.Canonical,
+                    queryFieldMapping.ItemPath.Canonical,
+                    StringComparison.Ordinal
+                )
+            )
+            .ToArray();
+
+        return
+            itemColumns is [var scalarColumn]
+            && scalarColumn.Storage is ColumnStorage.Stored
+            && scalarColumn.ScalarType is { } scalarType
+            && IsCompatibleScalarQueryType(queryPath, scalarType)
+            ? new RelationalQueryFieldTarget.CollectionColumn(
+                collectionTable.Table,
+                rootLocatorColumn,
+                scalarColumn.ColumnName,
+                DescriptorResource: null
+            )
+            : null;
+    }
+
     private static void AddSupportedQueryFieldOrUnsupportedType(
         RelationalQueryFieldMapping queryFieldMapping,
         RelationalQueryFieldPath queryPath,
@@ -411,10 +550,18 @@ internal sealed class RelationalQueryCapabilityCompiler
                 .Select(static field => $"{field.QueryFieldName}: {DescribeFailureKind(field.FailureKind)}")
         );
 
+        // Derived identification-code fields do not come from queryFieldMapping, so a failure among them
+        // gets a prefix that names no source.
+        var reasonPrefix = unsupportedFieldsByQueryField.Values.Any(static field =>
+            field.FailureKind is RelationalQueryFieldFailureKind.IdentificationCodeCollectionUnresolved
+        )
+            ? "Resource has unsupported relational GET-many query fields"
+            : "queryFieldMapping contains unsupported relational GET-many fields";
+
         return new RelationalQuerySupport.Omitted(
             new RelationalQueryCapabilityOmission(
                 RelationalQueryCapabilityOmissionKind.UnsupportedQueryFields,
-                $"queryFieldMapping contains unsupported relational GET-many fields: {unsupportedFieldSummary}."
+                $"{reasonPrefix}: {unsupportedFieldSummary}."
             )
         );
     }
@@ -455,6 +602,8 @@ internal sealed class RelationalQueryCapabilityCompiler
                 "did not resolve to a deterministic relational binding",
             RelationalQueryFieldFailureKind.AmbiguousRootTarget =>
                 "resolved to more than one possible root-table predicate target",
+            RelationalQueryFieldFailureKind.IdentificationCodeCollectionUnresolved =>
+                "did not resolve to one stored column of one identification-code collection table",
             _ => throw new InvalidOperationException(
                 $"Unsupported {QueryCapabilityPlanKind} failure kind '{failureKind}'."
             ),

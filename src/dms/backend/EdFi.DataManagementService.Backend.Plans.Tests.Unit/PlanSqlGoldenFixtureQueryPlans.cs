@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
@@ -59,9 +60,90 @@ internal static class PlanSqlGoldenFixtureQueryPlans
         );
     }
 
+    /// <summary>
+    /// Compiles the identification-code collection spec with total-count SQL: one root predicate and one
+    /// correlated <c>EXISTS</c> over the school's identification-code collection.
+    /// </summary>
+    public static PageDocumentIdSqlPlan CompileCollectionExistsPageDocumentIdPlan(SqlDialect dialect)
+    {
+        return Compile(
+            dialect,
+            CreateCollectionExistsQuerySpec() with
+            {
+                Mode = new PageCandidateMode.Traditional(IncludeTotalCountSql: true),
+            }
+        );
+    }
+
+    /// <summary>
+    /// Compiles the identification-code collection spec as a <c>ContentVersion</c>-anchored cursor page.
+    /// </summary>
+    public static PageDocumentIdSqlPlan CompileCollectionExistsContentVersionCursorPlan(SqlDialect dialect)
+    {
+        return Compile(
+            dialect,
+            CreateCollectionExistsQuerySpec() with
+            {
+                Mode = new PageCandidateMode.Cursor(OrderingMode: PageOrderingMode.ContentVersion),
+            }
+        );
+    }
+
+    /// <summary>
+    /// Compiles the identification-code collection spec as the unpaged candidate relation.
+    /// </summary>
+    public static PageDocumentIdSqlPlan CompileCollectionExistsUnpagedCandidatesPlan(SqlDialect dialect)
+    {
+        return Compile(
+            dialect,
+            CreateCollectionExistsQuerySpec() with
+            {
+                Mode = new PageCandidateMode.UnpagedCandidates(),
+            }
+        );
+    }
+
     private static PageDocumentIdSqlPlan Compile(SqlDialect dialect, PageDocumentIdQuerySpec querySpec)
     {
         return new PageDocumentIdSqlCompiler(dialect).Compile(querySpec);
+    }
+
+    private static PageDocumentIdQuerySpec CreateCollectionExistsQuerySpec()
+    {
+        return new PageDocumentIdQuerySpec(
+            RootTable: new DbTableName(new DbSchemaName("edfi"), "School"),
+            Predicates:
+            [
+                new QueryValuePredicate(
+                    new DbColumnName("LocalEducationAgency_LocalEducationAgencyId"),
+                    QueryComparisonOperator.Equal,
+                    "localEducationAgencyId"
+                ),
+            ],
+            UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
+            CollectionExistsPredicates:
+            [
+                new QueryCollectionExistsPredicate(
+                    new DbTableName(new DbSchemaName("edfi"), "SchoolIdentificationCode"),
+                    new DbColumnName("School_DocumentId"),
+                    [
+                        new QueryCollectionValuePredicate(
+                            new DbColumnName("IdentificationCode"),
+                            QueryComparisonOperator.Equal,
+                            "identificationCode",
+                            new QuerySqlStringContract(60)
+                        ),
+                        new QueryCollectionValuePredicate(
+                            new DbColumnName(
+                                "EducationOrganizationIdentificationSystemDescriptor_DescriptorId"
+                            ),
+                            QueryComparisonOperator.Equal,
+                            "educationOrganizationIdentificationSystemDescriptor"
+                        ),
+                    ]
+                ),
+            ]
+        );
     }
 
     private static PageDocumentIdQuerySpec CreateFoundationsQuerySpec()

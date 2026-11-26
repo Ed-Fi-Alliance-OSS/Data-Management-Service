@@ -28,6 +28,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private static readonly string _documentAlias = PlanNamingConventions.GetFixedAlias(
         PlanSqlAliasRole.Document
     );
+    private static readonly string _collectionFilterAlias = PlanNamingConventions.GetFixedAlias(
+        PlanSqlAliasRole.CollectionFilter
+    );
     private static readonly DbTableName _documentTable = new(new DbSchemaName("dms"), "Document");
     private static readonly DbColumnName _ownershipTokenColumn = new("CreatedByOwnershipTokenId");
 
@@ -71,6 +74,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             spec.Predicates,
             spec.UnifiedAliasMappingsByColumn
         );
+        var collectionExistsPredicates = NormalizeCollectionExistsPredicates(spec.CollectionExistsPredicates);
         var authorization = NormalizeAuthorization(spec.Authorization);
         var authorizationClaimParameterization = authorization?.ClaimEducationOrganizationIdParameterization;
         var namespacePrefixParameterization = authorization?.NamespacePrefixParameterization;
@@ -84,6 +88,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             || ownershipTokenParameterization is not null;
         var filterParametersInOrder = BuildFilterParametersInOrder(
             rewrittenPredicates,
+            collectionExistsPredicates,
             authorizationClaimParameterization,
             namespacePrefixParameterization,
             ownershipTokenParameterization
@@ -101,6 +106,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             spec,
             mode,
             rewrittenPredicates,
+            collectionExistsPredicates,
             authorization,
             authorizationClaimParameterization,
             requiresDocumentJoin
@@ -110,6 +116,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             ? BuildTotalCountSql(
                 spec.RootTable,
                 rewrittenPredicates,
+                collectionExistsPredicates,
                 authorization,
                 authorizationClaimParameterization,
                 requiresDocumentJoin
@@ -177,6 +184,114 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         }
 
         return rewrittenPredicates;
+    }
+
+    /// <summary>
+    /// Validates collection filters and puts them, and the value predicates inside each, in deterministic
+    /// order. A null or empty input yields no filter, so a spec without one compiles exactly as before.
+    /// </summary>
+    private static IReadOnlyList<QueryCollectionExistsPredicate> NormalizeCollectionExistsPredicates(
+        IReadOnlyList<QueryCollectionExistsPredicate>? collectionExistsPredicates
+    )
+    {
+        if (collectionExistsPredicates is null || collectionExistsPredicates.Count == 0)
+        {
+            return [];
+        }
+
+        var specPropertyName = nameof(PageDocumentIdQuerySpec.CollectionExistsPredicates);
+
+        if (collectionExistsPredicates.Any(static collectionFilter => collectionFilter is null))
+        {
+            throw BuildArgumentException(
+                $"{specPropertyName} must not contain null entries.",
+                specPropertyName
+            );
+        }
+
+        var normalized = collectionExistsPredicates
+            .Select(collectionFilter =>
+                NormalizeCollectionExistsPredicate(collectionFilter, specPropertyName)
+            )
+            .OrderBy(
+                static collectionFilter => collectionFilter.CollectionTable.Schema.Value,
+                StringComparer.Ordinal
+            )
+            .ThenBy(static collectionFilter => collectionFilter.CollectionTable.Name, StringComparer.Ordinal)
+            .ToArray();
+
+        // One filter per collection table keeps every predicate on a table testing the same row. Two
+        // filters on one table would let each match a different element, which is not what a filter means.
+        var repeatedTable = normalized
+            .GroupBy(static collectionFilter => collectionFilter.CollectionTable)
+            .FirstOrDefault(static group => group.Count() > 1);
+
+        if (repeatedTable is not null)
+        {
+            throw BuildArgumentException(
+                $"{specPropertyName} must contain at most one filter per collection table; "
+                    + $"'{repeatedTable.Key}' has {repeatedTable.Count()}.",
+                specPropertyName
+            );
+        }
+
+        return normalized;
+    }
+
+    private static QueryCollectionExistsPredicate NormalizeCollectionExistsPredicate(
+        QueryCollectionExistsPredicate collectionFilter,
+        string specPropertyName
+    )
+    {
+        if (collectionFilter.Predicates is null || collectionFilter.Predicates.Count == 0)
+        {
+            throw BuildArgumentException(
+                $"The {specPropertyName} filter on '{collectionFilter.CollectionTable}' must contain at least one value predicate.",
+                specPropertyName
+            );
+        }
+
+        if (collectionFilter.Predicates.Any(static predicate => predicate is null))
+        {
+            throw BuildArgumentException(
+                $"The {specPropertyName} filter on '{collectionFilter.CollectionTable}' must not contain null predicates.",
+                specPropertyName
+            );
+        }
+
+        foreach (var predicate in collectionFilter.Predicates)
+        {
+            PlanSqlWriterExtensions.ValidateBareParameterName(
+                predicate.ParameterName,
+                nameof(QueryCollectionValuePredicate.ParameterName)
+            );
+        }
+
+        var sortedPredicates = collectionFilter
+            .Predicates.OrderBy(static predicate => predicate.Column.Value, StringComparer.Ordinal)
+            .ThenBy(static predicate => GetOperatorSortKey(predicate.Operator), StringComparer.Ordinal)
+            .ThenBy(static predicate => predicate.ParameterName, StringComparer.Ordinal)
+            .ToArray();
+
+        for (var index = 1; index < sortedPredicates.Length; index++)
+        {
+            var previous = sortedPredicates[index - 1];
+            var current = sortedPredicates[index];
+
+            if (previous.Column == current.Column && previous.Operator == current.Operator)
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate collection predicate on '{collectionFilter.CollectionTable}' for semantic key "
+                        + $"(column='{current.Column.Value}', operator='{GetOperatorSortKey(current.Operator)}'). "
+                        + $"Colliding parameter names: [{FormatCollisionValues([previous.ParameterName, current.ParameterName])}]."
+                );
+            }
+        }
+
+        return collectionFilter with
+        {
+            Predicates = sortedPredicates,
+        };
     }
 
     /// <summary>
@@ -330,6 +445,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private static IReadOnlyList<QuerySqlParameter> BuildFilterParametersInOrder(
         IReadOnlyList<RewrittenPredicate> predicates,
+        IReadOnlyList<QueryCollectionExistsPredicate> collectionExistsPredicates,
         AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization,
         NamespacePrefixParameterization? namespacePrefixParameterization,
         OwnershipTokenParameterization? ownershipTokenParameterization
@@ -337,13 +453,14 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     {
         List<QuerySqlParameter> filterParametersInOrder =
         [
-            .. predicates.Select(static predicate => new QuerySqlParameter(
-                QuerySqlParameterRole.Filter,
-                predicate.ParameterName,
-                predicate.StringContract is { } stringContract
-                    ? QuerySqlParameterBinding.CreateString(stringContract.MaxLength)
-                    : null
-            )),
+            .. predicates.Select(static predicate =>
+                CreateFilterParameter(predicate.ParameterName, predicate.StringContract)
+            ),
+            .. collectionExistsPredicates.SelectMany(static collectionFilter =>
+                collectionFilter.Predicates.Select(static predicate =>
+                    CreateFilterParameter(predicate.ParameterName, predicate.StringContract)
+                )
+            ),
         ];
 
         if (namespacePrefixParameterization is not null)
@@ -385,6 +502,18 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
         return filterParametersInOrder;
     }
+
+    private static QuerySqlParameter CreateFilterParameter(
+        string parameterName,
+        QuerySqlStringContract? stringContract
+    ) =>
+        new(
+            QuerySqlParameterRole.Filter,
+            parameterName,
+            stringContract is not null
+                ? QuerySqlParameterBinding.CreateString(stringContract.MaxLength)
+                : null
+        );
 
     /// <summary>
     /// Builds deterministic page-query parameter metadata in canonical plan order.
@@ -567,6 +696,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         PageDocumentIdQuerySpec spec,
         PageCandidateMode mode,
         IReadOnlyList<RewrittenPredicate> predicates,
+        IReadOnlyList<QueryCollectionExistsPredicate> collectionExistsPredicates,
         PageDocumentIdAuthorizationSpec? authorization,
         AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization,
         bool requiresDocumentJoin
@@ -595,6 +725,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             writer,
             spec.RootTable,
             predicates,
+            collectionExistsPredicates,
             authorization,
             authorizationClaimParameterization,
             cursor
@@ -739,6 +870,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private string BuildTotalCountSql(
         DbTableName rootTable,
         IReadOnlyList<RewrittenPredicate> predicates,
+        IReadOnlyList<QueryCollectionExistsPredicate> collectionExistsPredicates,
         PageDocumentIdAuthorizationSpec? authorization,
         AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization,
         bool requiresDocumentJoin
@@ -757,6 +889,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             writer,
             rootTable,
             predicates,
+            collectionExistsPredicates,
             authorization,
             authorizationClaimParameterization,
             cursor: null
@@ -795,6 +928,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         SqlWriter writer,
         DbTableName rootTable,
         IReadOnlyList<RewrittenPredicate> predicates,
+        IReadOnlyList<QueryCollectionExistsPredicate> collectionExistsPredicates,
         PageDocumentIdAuthorizationSpec? authorization,
         AuthorizationClaimEducationOrganizationIdParameterization? authorizationClaimParameterization,
         PageCandidateMode.Cursor? cursor
@@ -809,7 +943,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         // Emission order is the AND-strategy execution order from auth.md: value predicates, then the
         // namespace and custom-view filters in CMS-configured order, then the ownership filter, which
         // executes last among the AND strategies whatever position CMS gave it, then the relationship OR
-        // group.
+        // group. Collection filters are value filters, so they follow the value predicates directly.
         //
         // Cursor bounds are emitted last, alongside rather than instead of every authorization
         // predicate. Appending them keeps the filter and authorization fragments byte-identical to the
@@ -818,8 +952,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         // subquery repeats the bounds so the auth-view scan is range-bounded as well (see
         // AppendPersonAuthViewMembershipSubquerySql); the candidate set is unchanged.
         var cursorBoundCount = cursor is null ? 0 : CursorBoundCount;
+        var valueFilterCount = predicates.Count + collectionExistsPredicates.Count;
         var predicateCount =
-            predicates.Count
+            valueFilterCount
             + orderedAndFilters.Count
             + ownershipFilterCount
             + relationshipGroupCount
@@ -835,7 +970,16 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                     return;
                 }
 
-                var authorizationFilterIndex = index - predicates.Count;
+                if (index < valueFilterCount)
+                {
+                    AppendCollectionExistsSql(
+                        predicateWriter,
+                        collectionExistsPredicates[index - predicates.Count]
+                    );
+                    return;
+                }
+
+                var authorizationFilterIndex = index - valueFilterCount;
 
                 if (authorizationFilterIndex < orderedAndFilters.Count)
                 {
@@ -1613,6 +1757,36 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             predicate.Operator,
             predicate.ParameterName
         );
+    }
+
+    /// <summary>
+    /// Emits one collection filter as a correlated semi-join: the root row qualifies when one row of the
+    /// collection table, owned by it, satisfies every value predicate. The subquery's own alias scopes its
+    /// columns, so they cannot be confused with root or authorization columns of the same name.
+    /// </summary>
+    private void AppendCollectionExistsSql(SqlWriter writer, QueryCollectionExistsPredicate collectionFilter)
+    {
+        writer
+            .Append("EXISTS (SELECT 1 FROM ")
+            .AppendRelation(new SqlRelationRef.PhysicalTable(collectionFilter.CollectionTable))
+            .Append($" {_collectionFilterAlias} WHERE {_collectionFilterAlias}.")
+            .AppendQuoted(collectionFilter.RootLocatorColumn.Value)
+            .Append($" = {_rootAlias}.")
+            .AppendQuoted(DocumentIdColumnName);
+
+        foreach (var predicate in collectionFilter.Predicates)
+        {
+            writer.Append(" AND ");
+            AppendComparisonSql(
+                writer,
+                _collectionFilterAlias,
+                predicate.Column,
+                predicate.Operator,
+                predicate.ParameterName
+            );
+        }
+
+        writer.Append(")");
     }
 
     /// <summary>

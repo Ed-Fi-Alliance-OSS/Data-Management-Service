@@ -85,6 +85,10 @@ public sealed class BaseTraversalAndDescriptorBindingPass : IRelationalModelSetP
                 resourceContext.ResourceSchema,
                 resourceKey
             );
+            var identificationCodeQueryFieldMappings =
+                QueryFieldMappingsExtractor.ExtractIdentificationCodeQueryFieldMappings(
+                    resourceContext.ResourceSchema
+                );
             var isSubclass = ApiSchemaNodeRequirements.TryGetOptionalBoolean(
                 resourceContext.ResourceSchema,
                 "isSubclass",
@@ -110,6 +114,7 @@ public sealed class BaseTraversalAndDescriptorBindingPass : IRelationalModelSetP
                 {
                     SecurableElements = securableElements,
                     QueryFieldMappingsByQueryField = queryFieldMappings,
+                    IdentificationCodeQueryFieldMappingsByQueryField = identificationCodeQueryFieldMappings,
                     SuperclassResource = superclassResource,
                     IdentityJsonPaths = builderContext.IdentityJsonPaths,
                 }

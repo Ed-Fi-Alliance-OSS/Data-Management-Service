@@ -1713,7 +1713,8 @@ public class OpenApiDocument(
         OpenApiDocumentType documentType,
         JsonNode targetDocument,
         bool isExtensionProject,
-        HashSet<string> eligibleCollectionPaths
+        HashSet<string> eligibleCollectionPaths,
+        Dictionary<string, IReadOnlyList<JsonObject>> identificationCodeParametersByPath
     )
     {
         ProjectSchema projectSchema = new(apiSchemas.CoreApiSchemaRootNode["projectSchema"]!, _logger);
@@ -1724,7 +1725,7 @@ public class OpenApiDocument(
             ResourceSchema resourceSchema = new(resourceSchemaNode);
 
             // Skip if this resource doesn't have OpenAPI fragments
-            if (resourceSchema.OpenApiFragments == null)
+            if (resourceSchema.OpenApiFragments is null)
             {
                 continue;
             }
@@ -1734,7 +1735,7 @@ public class OpenApiDocument(
                 documentType == OpenApiDocumentType.Resource ? "resources" : "descriptors";
 
             // Skip if this resource doesn't have fragments for this document type
-            if (fragmentsNode[documentTypeKey] == null)
+            if (fragmentsNode[documentTypeKey] is null)
             {
                 continue;
             }
@@ -1761,6 +1762,11 @@ public class OpenApiDocument(
                     CursorPagingOpenApiAugmenter.CollectEligibleCollectionPaths(
                         fragmentPaths,
                         eligibleCollectionPaths
+                    );
+                    IdentificationCodeQueryOpenApiAugmenter.CollectParameters(
+                        resourceSchemaNode,
+                        fragmentPaths,
+                        identificationCodeParametersByPath
                     );
                 }
             }
@@ -1839,13 +1845,20 @@ public class OpenApiDocument(
         // resource schemas whose fragments are merged below.
         HashSet<string> eligibleCollectionPaths = new(StringComparer.Ordinal);
 
+        // The identification-code query parameters each endpoint-owning resource offers, keyed by the
+        // collection paths its fragment declares.
+        Dictionary<string, IReadOnlyList<JsonObject>> identificationCodeParametersByPath = new(
+            StringComparer.Ordinal
+        );
+
         // Collect fragments from core project resource schemas
         CollectFragmentsFromResourceSchemas(
             apiSchemas,
             openApiDocumentType,
             openApiSpecification,
             false,
-            eligibleCollectionPaths
+            eligibleCollectionPaths,
+            identificationCodeParametersByPath
         );
 
         // Collect abstract resource fragments (only for resources document)
@@ -1896,6 +1909,11 @@ public class OpenApiDocument(
                                 CursorPagingOpenApiAugmenter.CollectEligibleCollectionPaths(
                                     paths,
                                     eligibleCollectionPaths
+                                );
+                                IdentificationCodeQueryOpenApiAugmenter.CollectParameters(
+                                    resourceSchemaNode,
+                                    paths,
+                                    identificationCodeParametersByPath
                                 );
                             }
                         }
@@ -1966,6 +1984,13 @@ public class OpenApiDocument(
                 }
             }
         }
+
+        // Publish the identification-code query parameters before the cursor-paging contract, which copies a
+        // collection's inline query parameters onto its partitions operation.
+        IdentificationCodeQueryOpenApiAugmenter.Augment(
+            openApiSpecification,
+            identificationCodeParametersByPath
+        );
 
         // Publish the cursor-paging contract after every fragment is merged and before domain filtering, so
         // a generated partitions path is filtered by the same domain rules as its collection.

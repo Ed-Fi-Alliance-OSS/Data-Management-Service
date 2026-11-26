@@ -161,7 +161,7 @@ internal static class CursorPagingOpenApiAugmenter
     /// beside it in the same fragment, and excludes derived siblings such as a change-query or partitions
     /// path, which carry a third segment.
     /// </summary>
-    private static bool IsCollectionPath(string pathKey)
+    internal static bool IsCollectionPath(string pathKey)
     {
         if (pathKey.Contains('{') || pathKey.Contains('}'))
         {

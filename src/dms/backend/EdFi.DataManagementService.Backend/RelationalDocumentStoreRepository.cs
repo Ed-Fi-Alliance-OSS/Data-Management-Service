@@ -1512,7 +1512,8 @@ public sealed class RelationalDocumentStoreRepository(
                     out _,
                     authorization: pageQueryAuthorization,
                     changeVersionRange: queryRequest.ChangeVersionRange,
-                    orderingMode: orderingMode
+                    orderingMode: orderingMode,
+                    resourceTables: readPlan.Model.TablesInDependencyOrder
                 ) || plannedQuery is null
             )
             {
@@ -1829,7 +1830,8 @@ public sealed class RelationalDocumentStoreRepository(
                     comparisonOperatorResolver: null,
                     authorization: partitionAuthorization,
                     changeVersionRange: partitionRequest.ChangeVersionRange,
-                    orderingMode: partitionRequest.PageOrderingMode
+                    orderingMode: partitionRequest.PageOrderingMode,
+                    resourceTables: readPlan.Model.TablesInDependencyOrder
                 ) || plannedCandidates is null
             )
             {

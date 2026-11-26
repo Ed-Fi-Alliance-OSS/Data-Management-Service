@@ -274,6 +274,47 @@ public class Given_MappingSetManifestJsonEmitter
     }
 
     [Test]
+    public void It_should_emit_collection_column_targets_and_the_unresolved_identification_code_failure_kind()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var mappingSets = BuildPermutedMappingSets(FixturePath, reverseMappingSetOrder: false)
+            .Select(mappingSet =>
+                ReplaceQueryCapability(mappingSet, resource, CreateCollectionColumnQueryCapability())
+            )
+            .ToArray();
+        var manifest = MappingSetManifestJsonEmitter.Emit(mappingSets);
+        var mappingSetObjects = ParseMappingSetObjects(manifest);
+
+        mappingSetObjects.Should().HaveCount(2);
+
+        foreach (var mappingSetObject in mappingSetObjects)
+        {
+            var queryCapability = RequireObject(
+                FindResource(mappingSetObject, "Ed-Fi", "Student")["query_capability"],
+                "query_capability"
+            );
+
+            RequireArray(
+                    queryCapability["supported_fields_in_query_field_order"],
+                    "supported_fields_in_query_field_order"
+                )
+                .Select(static field => field!["target"]!.ToJsonString())
+                .Should()
+                .Equal(
+                    """{"kind":"collection_column","column_name":"IdentificationCode","table":{"schema":"edfi","name":"StudentIdentificationCode"},"root_locator_column":"Student_DocumentId","descriptor_resource":null}""",
+                    """{"kind":"collection_column","column_name":"StudentIdentificationSystemDescriptor_DescriptorId","table":{"schema":"edfi","name":"StudentIdentificationCode"},"root_locator_column":"Student_DocumentId","descriptor_resource":{"project_name":"Ed-Fi","resource_name":"StudentIdentificationSystemDescriptor"}}"""
+                );
+            RequireArray(
+                    queryCapability["unsupported_fields_in_query_field_order"],
+                    "unsupported_fields_in_query_field_order"
+                )
+                .Select(static field => field!["failure_kind"]!.GetValue<string>())
+                .Should()
+                .Equal("identification_code_collection_unresolved");
+        }
+    }
+
+    [Test]
     public void It_should_emit_query_capability_omission_diagnostics_for_unsupported_resources()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "StudentAddressCollection");
@@ -898,6 +939,78 @@ public class Given_MappingSetManifestJsonEmitter
                 )
             ),
             new Dictionary<string, SupportedRelationalQueryField>(StringComparer.Ordinal),
+            unsupportedFields.ToDictionary(
+                static field => field.QueryFieldName,
+                static field => field,
+                StringComparer.Ordinal
+            )
+        );
+    }
+
+    private static RelationalQueryCapability CreateCollectionColumnQueryCapability()
+    {
+        var collectionTable = new DbTableName(new DbSchemaName("edfi"), "StudentIdentificationCode");
+        var rootLocatorColumn = new DbColumnName("Student_DocumentId");
+
+        SupportedRelationalQueryField[] supportedFields =
+        [
+            new(
+                "studentIdentificationSystemDescriptor",
+                new RelationalQueryFieldPath(
+                    JsonPathExpressionCompiler.Compile(
+                        "$.studentIdentificationCodes[*].studentIdentificationSystemDescriptor"
+                    ),
+                    "string"
+                ),
+                new RelationalQueryFieldTarget.CollectionColumn(
+                    collectionTable,
+                    rootLocatorColumn,
+                    new DbColumnName("StudentIdentificationSystemDescriptor_DescriptorId"),
+                    new QualifiedResourceName("Ed-Fi", "StudentIdentificationSystemDescriptor")
+                )
+            ),
+            new(
+                "identificationCode",
+                new RelationalQueryFieldPath(
+                    JsonPathExpressionCompiler.Compile("$.studentIdentificationCodes[*].identificationCode"),
+                    "string"
+                ),
+                new RelationalQueryFieldTarget.CollectionColumn(
+                    collectionTable,
+                    rootLocatorColumn,
+                    new DbColumnName("IdentificationCode"),
+                    DescriptorResource: null
+                )
+            ),
+        ];
+        UnsupportedRelationalQueryField[] unsupportedFields =
+        [
+            new(
+                "assigningOrganizationIdentificationCode",
+                [
+                    new RelationalQueryFieldPath(
+                        JsonPathExpressionCompiler.Compile(
+                            "$.studentIdentificationCodes[*].assigningOrganizationIdentificationCode"
+                        ),
+                        "string"
+                    ),
+                ],
+                RelationalQueryFieldFailureKind.IdentificationCodeCollectionUnresolved
+            ),
+        ];
+
+        return new RelationalQueryCapability(
+            new RelationalQuerySupport.Omitted(
+                new RelationalQueryCapabilityOmission(
+                    RelationalQueryCapabilityOmissionKind.UnsupportedQueryFields,
+                    "unsupported identification-code query field"
+                )
+            ),
+            supportedFields.ToDictionary(
+                static field => field.QueryFieldName,
+                static field => field,
+                StringComparer.Ordinal
+            ),
             unsupportedFields.ToDictionary(
                 static field => field.QueryFieldName,
                 static field => field,

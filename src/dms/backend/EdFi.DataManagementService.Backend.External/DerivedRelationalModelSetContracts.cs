@@ -128,6 +128,17 @@ public sealed record ConcreteResourceModel(
         RelationalQueryFieldMapping
     > QueryFieldMappingsByQueryField { get; init; } =
         new Dictionary<string, RelationalQueryFieldMapping>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Query fields over the resource's identification-code collection, derived from ApiSchema.json
+    /// by <c>IdentificationCodeQueryFieldRule</c>. Kept apart from
+    /// <see cref="QueryFieldMappingsByQueryField"/>, which holds only <c>queryFieldMapping</c> entries.
+    /// </summary>
+    public IReadOnlyDictionary<
+        string,
+        RelationalIdentificationCodeQueryFieldMapping
+    > IdentificationCodeQueryFieldMappingsByQueryField { get; init; } =
+        new Dictionary<string, RelationalIdentificationCodeQueryFieldMapping>(StringComparer.Ordinal);
 #pragma warning restore IDE0055
 
     /// <summary>
