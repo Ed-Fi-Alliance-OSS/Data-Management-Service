@@ -5,6 +5,7 @@
 
 using System.Collections.Immutable;
 using System.Data;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
@@ -382,13 +383,15 @@ internal sealed class DocumentCacheAdministrativeDrainer(
 
             if (CompletedCursorPass(startingCursor, endingCursor, drainResult))
             {
-                // Failures can outnumber the bounded suppression cache and become eligible
-                // again on every wrap. Count those unproductive passes without requiring an
-                // all-suppressed page. Acknowledgement on the wrapping page is still progress.
+                // Native JSON limit failures can outnumber the bounded suppression cache and
+                // become eligible again on every wrap. Bound those retries while preserving
+                // ordinary document failures' existing retry budget. Acknowledgement on the
+                // wrapping page is still progress.
                 if (
                     currentPass.IsUnproductivePoisonPass
                     && drainResult.ProcessedItemCount > 0
                     && drainResult.AcknowledgedOrRemovedItemCount == 0
+                    && HasNativeLimitFailure(context, drainResult.DocumentScopedFailureIds)
                 )
                 {
                     unproductivePoisonPassCount++;
@@ -607,7 +610,8 @@ internal sealed class DocumentCacheAdministrativeDrainer(
         DocumentCacheAdministrativeCommandExecutionContext context,
         ImmutableArray<long> documentIds
     ) =>
-        context
+        context.TargetContext.TargetExecutionContext.ProviderToken == RelationalProviderToken.SqlServer
+        && context
             .TargetContext.FailureBackoffState.CreateFailureDiagnosticsSnapshot()
             .DocumentDiagnostics.Any(diagnostic =>
                 diagnostic.Category
@@ -624,18 +628,29 @@ internal sealed class DocumentCacheAdministrativeDrainer(
         ImmutableArray<long> boundedDocumentIds = diagnosticDocumentIds.IsDefaultOrEmpty
             ? context.TargetContext.FailureBackoffState.CreateFailureDiagnosticsSnapshot().DocumentIds
             : diagnosticDocumentIds;
+        boundedDocumentIds = boundedDocumentIds
+            .Take(context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize)
+            .ToImmutableArray();
+        var nativeLimitDocumentIds = context
+            .TargetContext.FailureBackoffState.CreateFailureDiagnosticsSnapshot()
+            .DocumentDiagnostics.Where(diagnostic =>
+                diagnostic.Category
+                == DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+            )
+            .Select(diagnostic => diagnostic.DocumentId)
+            .ToHashSet();
 
         DocumentCacheAdministrativeCommandResult failureResult = context.Failed(
             DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
             DocumentCacheAdministrativeCommandClassification.PersistentPoison,
             DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison,
-            HasNativeLimitFailure(context, boundedDocumentIds)
+            context.TargetContext.TargetExecutionContext.ProviderToken == RelationalProviderToken.SqlServer
+            && !boundedDocumentIds.IsEmpty
+            && boundedDocumentIds.All(nativeLimitDocumentIds.Contains)
                 ? "A document exceeds SQL Server native JSON storage limits. Its projection work is still pending. Update or remove the source document before retrying."
                 : "Administrative drain observed durable work that repeatedly produced only document-scoped failures without acknowledgement or removal.",
             retryable: true,
             affectedDocumentIds: boundedDocumentIds
-                .Take(context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize)
-                .ToImmutableArray()
         );
 
         return DocumentCacheAdministrativeDrainToEmptyResult.Failed(stats, failureResult);

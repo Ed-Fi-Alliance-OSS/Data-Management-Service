@@ -557,15 +557,24 @@ public class Given_DocumentCacheAdministrativeDrain
         var first = new DocumentProjectionWorkPage([WorkItem(101, 10)], pageSize: 1);
         var second = new DocumentProjectionWorkPage([WorkItem(102, 10)], pageSize: 1);
         var empty = new DocumentProjectionWorkPage([], pageSize: 1);
-        var pager = new RecordingWorkPager(first, second, empty, first, second, empty, first);
-        DocumentCacheProjectionTargetRuntimeContext target = RuntimeContext(pageSize: 1);
+        var pager = new RecordingWorkPager(first, second, empty, first, second, empty, first)
+        {
+            ProviderToken = RelationalProviderToken.SqlServer,
+        };
+        DocumentCacheProjectionTargetRuntimeContext target = RuntimeContext(
+            pageSize: 1,
+            providerToken: RelationalProviderToken.SqlServer
+        );
         var primitives = new RecordingAdministrativePrimitives();
         var context = CreateCommandContext(primitives, new RecordingMutexLease(), target);
         context.MarkMutated(RebuildingLifecycle);
         var scheduler = CreateRealScheduler(
             new DocumentCacheProjectionDrainPageProcessor(
                 pager,
-                new NativeLimitItemProcessor(clock),
+                new RetryingItemProcessor(
+                    clock,
+                    DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                ),
                 NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
                 clock
             )
@@ -594,6 +603,136 @@ public class Given_DocumentCacheAdministrativeDrain
         primitives.EmptinessReadCount.Should().Be(0);
     }
 
+    [TestCase(RelationalProviderToken.PostgresqlValue)]
+    [TestCase(RelationalProviderToken.SqlServerValue)]
+    public async Task It_retries_transient_failures_beyond_two_cursor_wraps_when_suppression_capacity_is_exceeded(
+        string provider
+    )
+    {
+        RelationalProviderToken providerToken =
+            provider == RelationalProviderToken.SqlServerValue
+                ? RelationalProviderToken.SqlServer
+                : RelationalProviderToken.Postgresql;
+        MutableTimeProvider clock = new(ObservedAt);
+        var first = new DocumentProjectionWorkPage([WorkItem(101, 10)], pageSize: 1);
+        var second = new DocumentProjectionWorkPage([WorkItem(102, 10)], pageSize: 1);
+        var empty = new DocumentProjectionWorkPage([], pageSize: 1);
+        var pager = new RecordingWorkPager(
+            first,
+            second,
+            empty,
+            first,
+            second,
+            empty,
+            first,
+            second,
+            empty,
+            first,
+            second,
+            empty,
+            second,
+            empty,
+            second,
+            empty,
+            empty
+        )
+        {
+            ProviderToken = providerToken,
+        };
+        var target = RuntimeContext(pageSize: 1, providerToken: providerToken);
+        var context = CreateCommandContext(
+            new RecordingAdministrativePrimitives(
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, false, "pending"),
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, true, "empty")
+            ),
+            new RecordingMutexLease(),
+            target
+        );
+        context.MarkMutated(RebuildingLifecycle);
+        var scheduler = CreateRealScheduler(
+            new DocumentCacheProjectionDrainPageProcessor(
+                pager,
+                new RetryingItemProcessor(
+                    clock,
+                    DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure,
+                    failureCount: 6
+                ),
+                NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+                clock
+            )
+        );
+
+        var delay = new RecordingDrainDelay(clock);
+        var result = await CreateDrainer(scheduler, delay, clock).DrainToEmptyAsync(context);
+
+        result.Completed.Should().BeTrue();
+        result.FailureResult.Should().BeNull();
+        result.ProcessedItemCount.Should().Be(8);
+        result.DocumentScopedFailureCount.Should().Be(6);
+        result.AcknowledgedOrRemovedItemCount.Should().Be(2);
+        target.FailureBackoffState.Count.Should().Be(0);
+        target.FailureBackoffState.EvictionCount.Should().Be(5);
+        delay.Delays.Should().Equal(TimeSpan.FromSeconds(10));
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_limits_native_json_remediation_advice_to_documents_with_native_limit_failures(
+        bool mixedFailures
+    )
+    {
+        MutableTimeProvider clock = new(ObservedAt);
+        var target = RuntimeContext(providerToken: RelationalProviderToken.SqlServer);
+        target.FailureBackoffState.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded,
+            "Native JSON storage limit exceeded.",
+            ObservedAt,
+            TimeSpan.FromSeconds(10)
+        );
+        target.FailureBackoffState.RecordFailure(
+            102,
+            mixedFailures
+                ? DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure
+                : DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded,
+            "Document failure.",
+            ObservedAt,
+            TimeSpan.FromSeconds(10)
+        );
+        var context = CreateCommandContext(
+            new RecordingAdministrativePrimitives(
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, false, "pending"),
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, false, "pending")
+            ),
+            new RecordingMutexLease(),
+            target
+        );
+        context.MarkMutated(RebuildingLifecycle);
+        var scheduler = new RecordingScheduler(
+            DocumentCacheProjectionDrainPageResult.PageProcessed(2, 0, 2, [101, 102]),
+            DocumentCacheProjectionDrainPageResult.NoEligibleWorkWithRetry(ObservedAt.AddSeconds(10)),
+            DocumentCacheProjectionDrainPageResult.PageProcessed(2, 0, 2, [101, 102]),
+            DocumentCacheProjectionDrainPageResult.NoEligibleWorkWithRetry(ObservedAt.AddSeconds(20))
+        );
+
+        var result = await CreateDrainer(scheduler, new RecordingDrainDelay(clock), clock)
+            .DrainToEmptyAsync(context);
+
+        result.Completed.Should().BeFalse();
+        var diagnostic = result.FailureResult!.PhaseDiagnostics.Single(d =>
+            d.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
+        );
+        diagnostic.AffectedDocumentIds.Should().Equal(101, 102);
+        if (mixedFailures)
+        {
+            diagnostic.Message.Should().NotContain("Update or remove");
+        }
+        else
+        {
+            diagnostic.Message.Should().Contain("Update or remove");
+        }
+    }
+
     [Test]
     public async Task It_keeps_draining_when_the_wrapping_page_acknowledges_work_after_poison_passes()
     {
@@ -610,19 +749,23 @@ public class Given_DocumentCacheAdministrativeDrain
             first,
             second,
             empty,
+            second,
+            empty,
+            second,
+            empty,
             empty
-        );
+        )
+        {
+            ProviderToken = RelationalProviderToken.SqlServer,
+        };
         MutableTimeProvider clock = new(ObservedAt);
         var scheduler = CreateRealScheduler(
             new DocumentCacheProjectionDrainPageProcessor(
                 pager,
-                new ScriptedItemProcessor(
-                    DocumentCacheProjectionItemProcessResult.DocumentScopedFailure,
-                    DocumentCacheProjectionItemProcessResult.DocumentScopedFailure,
-                    DocumentCacheProjectionItemProcessResult.DocumentScopedFailure,
-                    DocumentCacheProjectionItemProcessResult.DocumentScopedFailure,
-                    DocumentCacheProjectionItemProcessResult.AcknowledgedOrRemoved,
-                    DocumentCacheProjectionItemProcessResult.AcknowledgedOrRemoved
+                new RetryingItemProcessor(
+                    clock,
+                    DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded,
+                    failureCount: 4
                 ),
                 NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
                 clock
@@ -630,13 +773,15 @@ public class Given_DocumentCacheAdministrativeDrain
         );
         var context = CreateCommandContext(
             new RecordingAdministrativePrimitives(
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, false, "pending"),
                 new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, true, "empty")
             ),
             new RecordingMutexLease(),
-            RuntimeContext(pageSize: 1)
+            RuntimeContext(pageSize: 1, providerToken: RelationalProviderToken.SqlServer)
         );
 
-        var result = await CreateDrainer(scheduler).DrainToEmptyAsync(context);
+        var result = await CreateDrainer(scheduler, new RecordingDrainDelay(clock), clock)
+            .DrainToEmptyAsync(context);
 
         result.Completed.Should().BeTrue();
         result.ProcessedItemCount.Should().Be(6);
@@ -700,9 +845,11 @@ public class Given_DocumentCacheAdministrativeDrain
         IDocumentCacheMaterializer? materializer = null,
         IDocumentCacheWriter? writer = null,
         IDocumentCacheSessionBoundWriter? sessionBoundWriter = null,
-        int pageSize = 3
+        int pageSize = 3,
+        RelationalProviderToken? providerToken = null
     )
     {
+        providerToken ??= RelationalProviderToken.Postgresql;
         DocumentCacheTargetExecutionContext executionContext = new(
             TargetKey,
             new DocumentCacheTargetContextGeneration(1),
@@ -716,8 +863,8 @@ public class Given_DocumentCacheAdministrativeDrain
                 projectorBaselineHighWaterMark: 100,
                 administrationWorkflowTimeout: TimeSpan.FromHours(24)
             ),
-            new DocumentCacheTargetDataStoreMetadata(TargetKey.DataStoreId, "postgresql"),
-            new DocumentCacheTargetConnectionInput(RelationalProviderToken.Postgresql, "connection"),
+            new DocumentCacheTargetDataStoreMetadata(TargetKey.DataStoreId, providerToken.Value),
+            new DocumentCacheTargetConnectionInput(providerToken, "connection"),
             Fingerprint,
             RebuildingLifecycle,
             new DocumentCacheInventoryValidationResult(
@@ -734,7 +881,7 @@ public class Given_DocumentCacheAdministrativeDrain
         return new DocumentCacheProjectionTargetRuntimeContext(
             executionContext,
             new DocumentCacheProjectionTargetProviderAdapters(
-                RelationalProviderToken.Postgresql,
+                providerToken,
                 MaterializationTargetContext(),
                 materializer ?? new RecordingDocumentCacheMaterializer(),
                 writer ?? new RecordingDocumentCacheWriter()
@@ -820,7 +967,7 @@ public class Given_DocumentCacheAdministrativeDrain
     {
         private readonly Queue<DocumentProjectionWorkPage> _pages = new(pages);
 
-        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+        public RelationalProviderToken ProviderToken { get; init; } = RelationalProviderToken.Postgresql;
 
         public List<DocumentProjectionWorkPageRequest> Requests { get; } = [];
 
@@ -852,17 +999,29 @@ public class Given_DocumentCacheAdministrativeDrain
         }
     }
 
-    private sealed class NativeLimitItemProcessor(TimeProvider clock) : IDocumentCacheProjectionItemProcessor
+    private sealed class RetryingItemProcessor(
+        TimeProvider clock,
+        DocumentCacheProjectionDocumentDiagnosticCategory category,
+        int failureCount = int.MaxValue
+    ) : IDocumentCacheProjectionItemProcessor
     {
+        private int _attemptCount;
+
         public Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
             DocumentCacheProjectionItemProcessRequest request,
             CancellationToken cancellationToken = default
         )
         {
+            if (++_attemptCount > failureCount)
+            {
+                request.TargetContext.FailureBackoffState.ClearFailure(request.WorkItem.DocumentId);
+                return Task.FromResult(DocumentCacheProjectionItemProcessResult.AcknowledgedOrRemoved);
+            }
+
             request.TargetContext.FailureBackoffState.RecordFailure(
                 request.WorkItem.DocumentId,
-                DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded,
-                "Native JSON storage limit exceeded.",
+                category,
+                "Document projection failed.",
                 clock.GetUtcNow(),
                 TimeSpan.FromSeconds(10)
             );
