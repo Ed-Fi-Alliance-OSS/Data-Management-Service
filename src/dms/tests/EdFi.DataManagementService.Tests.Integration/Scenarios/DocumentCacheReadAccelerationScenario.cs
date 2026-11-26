@@ -28,6 +28,8 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
 internal static class DocumentCacheReadAccelerationScenario
 {
+    private static readonly string OversizedCacheOnlyKey = new('x', 8_000);
+
     public static void ConfigureOversizedCacheCandidate(IServiceCollection services) =>
         services.Replace(
             ServiceDescriptor.Scoped<IDocumentCacheMaterializer>(
@@ -82,7 +84,7 @@ internal static class DocumentCacheReadAccelerationScenario
 
         JsonObject response = await GetJsonObjectAsync(harness, oversizedLocation);
         response["firstName"]!.GetValue<string>().Should().Be("Relational Oversized");
-        response.ContainsKey("oversizedCacheOnlyArray").Should().BeFalse();
+        response.ContainsKey(OversizedCacheOnlyKey).Should().BeFalse();
         (await CountCacheRowsAsync(harness, oversized.DocumentId)).Should().Be(0);
         (await CountProjectionWorkRowsAsync(harness, oversized.DocumentId)).Should().Be(1);
         harness
@@ -105,9 +107,7 @@ internal static class DocumentCacheReadAccelerationScenario
                     == "cache-oversized-001"
             )
             {
-                success.Candidate.DocumentJson["oversizedCacheOnlyArray"] = new JsonArray(
-                    Enumerable.Range(0, 65_536).Select(i => (JsonNode?)JsonValue.Create(i)).ToArray()
-                );
+                success.Candidate.DocumentJson[OversizedCacheOnlyKey] = 1;
             }
 
             return result;
