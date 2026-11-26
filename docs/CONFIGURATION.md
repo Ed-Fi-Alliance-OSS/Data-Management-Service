@@ -1505,8 +1505,15 @@ queue never delays another. Partitions are chosen as follows:
   anonymous requests, invalid, expired or malformed tokens, other schemes
   such as `Basic` on `/oauth/token`, and valid tokens without a `client_id`.
   The `client_id` field of a token-request form is never used.
-- With `AppSettings:BypassAuthorization` set to `true`, every request uses
-  its address budget, and the limiter validates no tokens.
+- With `AppSettings:BypassAuthorization` set to `true`, the limiter validates
+  no tokens, so every request uses its address budget, including requests
+  that are then authenticated. Clients that share an effective address
+  therefore share one budget. Leave the flag `false` to keep a budget per
+  client. Despite its name, the flag does not turn off authentication. It
+  only skips the startup warm-up of the identity provider's metadata.
+  Protected endpoints still require a valid token, so they still need working
+  [JwtAuthentication settings](#jwtauthentication-parameters-in-appsettingsjson-dms-api-service).
+  Anonymous endpoints such as `/health` stay anonymous.
 
 A client budget and an address budget never share a bucket, even when their
 values are the same text. A budget spans every tenant, instance, route

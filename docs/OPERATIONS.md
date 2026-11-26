@@ -803,7 +803,9 @@ described below. The Configuration Service separately limits its OAuth
 gives each validated client (by its token's `client_id`) and each client
 address its own budget, per process, so one client exhausting its budget does
 not reject other clients. With `AppSettings:BypassAuthorization` set to
-`true`, every request uses its address budget. The address is taken after
+`true`, every request uses its address budget, so authenticated clients that
+share an address share one budget. The flag does not turn off authentication
+on protected endpoints. The address is taken after
 forwarded-header processing, so behind a proxy that is not configured as
 trusted, anonymous clients all share the proxy's address budget. The limiter
 does not cap total load: admitted load grows with the number of active clients
