@@ -1099,22 +1099,29 @@ public class Given_Mssql_DocumentCache_Physical_Preflight
     }
 }
 
-[TestFixture]
+[TestFixture(13)]
+[TestFixture(16)]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
-public class Given_Mssql_Provisioning_On_Sql_Server_2022
+public class Given_Mssql_Provisioning_On_An_Unsupported_Engine(int majorVersion)
 {
     private string _masterConnectionString = null!;
     private string _databaseName = null!;
     private string _ddlFile = null!;
 
     [OneTimeSetUp]
-    public void RequireSqlServer2022()
+    public void RequireUnsupportedSqlServer()
     {
-        // Point ConnectionStrings__Mssql2022Admin at a separate SQL Server 2022 instance with CREATE DATABASE rights.
-        if (DatabaseConfiguration.Mssql2022AdminConnectionString is not { } connectionString)
+        // Optional dedicated servers with CREATE DATABASE rights; never use the normal native target.
+        string? connectionString =
+            majorVersion == 13
+                ? DatabaseConfiguration.Mssql2016AdminConnectionString
+                : DatabaseConfiguration.Mssql2022AdminConnectionString;
+        if (connectionString is null)
         {
-            Assert.Ignore("Mssql2022Admin connection string is not configured.");
+            Assert.Ignore(
+                $"SQL Server major version {majorVersion} admin connection string is not configured."
+            );
             return;
         }
 
@@ -1128,7 +1135,10 @@ public class Given_Mssql_Provisioning_On_Sql_Server_2022
             "SELECT CONVERT(int, SERVERPROPERTY('ProductMajorVersion'));",
             connection
         );
-        command.ExecuteScalar().Should().Be(16, "this fixture requires SQL Server 2022");
+        command
+            .ExecuteScalar()
+            .Should()
+            .Be(majorVersion, "this fixture requires its configured engine version");
         _ddlFile = MssqlPhysicalProvisioningTestSupport.WriteMinimalDdlFile();
     }
 

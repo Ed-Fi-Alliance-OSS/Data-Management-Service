@@ -103,7 +103,7 @@ bash "$CLASSIFIER"
 
     It 'retains the unrelated PR skip for <Path>' -ForEach @(
         @{ Path = 'docs/README.md' }
-        @{ Path = 'src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Example.cs' }
+        @{ Path = 'src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Example.cs' }
         @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/Example.cs' }
         @{ Path = '' }
     ) {
@@ -118,8 +118,13 @@ bash "$CLASSIFIER"
         @{ Path = 'src/dms/Dockerfile' }
         @{ Path = 'src/dms/core/EdFi.DataManagementService.Core/Startup/EffectiveSchemaHashProvider.cs' }
         @{ Path = 'src/dms/core/EdFi.DataManagementService.Core.External/Example.cs' }
+        @{ Path = 'src/dms/core/EdFi.DataManagementService.CustomValidation/Example.cs' }
+        @{ Path = 'src/dms/core/EdFi.DataManagementService.Identity/Example.cs' }
+        @{ Path = 'src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Example.cs' }
         @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/Example.cs' }
         @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Example.cs' }
+        @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs' }
+        @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend.Plans/Example.cs' }
         @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs' }
         @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend.External/MssqlDocumentCachePhysicalSchema.cs' }
         @{ Path = 'src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/MssqlDatabaseProvisioner.cs' }

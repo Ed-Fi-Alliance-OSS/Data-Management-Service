@@ -397,7 +397,6 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                 if (
                     currentPass.IsUnproductivePoisonPass
                     && currentPass.NativeLimitFailureCount > 0
-                    && drainResult.ProcessedItemCount > 0
                     && drainResult.AcknowledgedOrRemovedItemCount == 0
                     && drainResult.DocumentScopedFailureCount == drainResult.ProcessedItemCount
                 )
@@ -405,14 +404,15 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                     observedMixedPoisonFailures |=
                         !currentPass.IsUnproductiveNativeLimitPass
                         || pageNativeLimitDocumentIds.Length != drainResult.DocumentScopedFailureCount;
-                    nativeLimitDocumentIds = nativeLimitDocumentIds
-                        .AddRange(currentPass.NativeLimitDocumentIds)
-                        .Distinct()
-                        .Take(
-                            context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize
-                        )
-                        .ToImmutableArray();
-                    unproductivePoisonPassCount++;
+                    // Use the latest completed pass, since earlier work rows can disappear
+                    // when their source documents are deleted between passes.
+                    nativeLimitDocumentIds = currentPass.NativeLimitDocumentIds;
+                    // A fully suppressed wrapping page is followed by NoEligibleWorkWithRetry.
+                    // Classify the pass now, but count that retry boundary only once below.
+                    if (drainResult.ProcessedItemCount > 0)
+                    {
+                        unproductivePoisonPassCount++;
+                    }
                     if (unproductivePoisonPassCount >= (observedMixedPoisonFailures ? 4 : 2))
                     {
                         return PersistentPoison(
@@ -426,7 +426,11 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                     // After establishing repeated native failures, give mixed work two more
                     // complete passes with backoff so ordinary failures can recover. Keep this
                     // allowance until progress, even if a later pass has only native failures.
-                    if (observedMixedPoisonFailures && unproductivePoisonPassCount >= 2)
+                    if (
+                        drainResult.ProcessedItemCount > 0
+                        && observedMixedPoisonFailures
+                        && unproductivePoisonPassCount >= 2
+                    )
                     {
                         await delay
                             .DelayAsync(
@@ -441,13 +445,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                             .ConfigureAwait(false);
                     }
                 }
-                // A scan over suppressed rows can also wrap immediately after retrying
-                // native-limit failures. Preserve that attempt count until retry is due.
-                else if (
-                    drainResult.ProcessedItemCount != 0
-                    || !currentPass.IsUnproductivePoisonPass
-                    || currentPass.NativeLimitFailureCount == 0
-                )
+                else
                 {
                     unproductivePoisonPassCount = 0;
                     observedMixedPoisonFailures = false;

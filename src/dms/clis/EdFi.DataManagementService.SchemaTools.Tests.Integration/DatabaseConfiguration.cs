@@ -55,6 +55,13 @@ public static class DatabaseConfiguration
         ?? Config().GetConnectionString("Mssql2022Admin");
 
     /// <summary>
+    /// Optional SQL Server 2016 cluster for rejection before catalog-query compilation.
+    /// </summary>
+    public static string? Mssql2016AdminConnectionString =>
+        Environment.GetEnvironmentVariable("ConnectionStrings__Mssql2016Admin")
+        ?? Config().GetConnectionString("Mssql2016Admin");
+
+    /// <summary>
     /// Returns the admin connection string for a PostgreSQL 18 cluster initialized with a non-UTF-8
     /// encoding (template1 not UTF-8), or null if not configured. CI starts this cluster beside the
     /// main one; the platform-compatibility fixtures that need it are ignored without it.

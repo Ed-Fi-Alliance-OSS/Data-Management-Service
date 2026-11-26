@@ -156,6 +156,26 @@ public class Given_FullDdlEmitter_Script_Prologue(SqlDialect dialect)
             .Count.Should()
             .Be(expected);
     }
+
+    [Test]
+    public void It_should_compile_the_engine_guard_before_the_physical_catalog_query()
+    {
+        if (dialect != SqlDialect.Mssql)
+        {
+            return;
+        }
+
+        var batches = Regex.Split(_sql, @"^GO\s*$", RegexOptions.Multiline);
+        int engineBatch = Array.FindIndex(batches, batch => batch.Contains("THROW 51128,"));
+        int catalogBatch = Array.FindIndex(batches, batch => batch.Contains("TRANSLATE("));
+        engineBatch.Should().BeGreaterOrEqualTo(0);
+        catalogBatch
+            .Should()
+            .BeGreaterThan(
+                engineBatch,
+                "SQL Server 2016 must report the engine floor before compiling TRANSLATE"
+            );
+    }
 }
 
 [TestFixture(SqlDialect.Pgsql)]

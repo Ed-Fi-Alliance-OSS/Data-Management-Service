@@ -10,10 +10,11 @@ GO
 -- Phase 0: Bounded Provisioning Guards
 -- ==========================================================
 
--- Preflight: verify the SQL Server engine and DocumentCache physical baseline
 IF ISNULL(TRY_CONVERT(int, SERVERPROPERTY(N'ProductMajorVersion')), 0) < 17
     THROW 51128, 'Native dms.DocumentCache.DocumentJson requires SQL Server 2025 (major version 17) or later. Upgrade the SQL Server engine before provisioning.', 1;
+GO
 
+-- Preflight: verify the DocumentCache physical baseline
 DECLARE @require_native_document_cache bit = 1;
 -- SPDX-License-Identifier: Apache-2.0
 -- The marker is selected dynamically so a fresh database or a wrong object type is safe.

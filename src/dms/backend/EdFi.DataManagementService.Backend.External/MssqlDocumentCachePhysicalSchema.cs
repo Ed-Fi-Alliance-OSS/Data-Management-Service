@@ -73,14 +73,13 @@ public static class MssqlDocumentCachePhysicalSchema
             """;
 
     /// <summary>
-    /// Runs before mutations in both raw DDL and the SchemaTools provider. On an admitted
+    /// Runs after the separately compiled platform guard and before mutations in both raw
+    /// DDL and the SchemaTools provider. On an admitted
     /// existing schema the marker read is held through the surrounding apply transaction.
     /// </summary>
     public static string ProvisioningGuardSql { get; } =
         $$"""
-            -- Preflight: verify the SQL Server engine and DocumentCache physical baseline
-            {{PlatformGuardSql}}
-
+            -- Preflight: verify the DocumentCache physical baseline
             {{NativeCatalogObservationSql}}
 
             IF @document_cache_physical_version = '{{LegacyVersion}}'

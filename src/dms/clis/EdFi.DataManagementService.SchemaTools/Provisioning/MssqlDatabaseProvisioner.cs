@@ -83,8 +83,11 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
         ExecutePhysicalSchemaGuard(connection, MssqlDocumentCachePhysicalSchema.PlatformGuardSql);
     }
 
-    protected override void ValidatePlatformCompatibility(DbConnection connection) =>
+    protected override void ValidatePlatformCompatibility(DbConnection connection)
+    {
+        ExecutePhysicalSchemaGuard(connection, MssqlDocumentCachePhysicalSchema.PlatformGuardSql);
         ExecutePhysicalSchemaGuard(connection, MssqlDocumentCachePhysicalSchema.ProvisioningGuardSql);
+    }
 
     private static void ExecutePhysicalSchemaGuard(DbConnection connection, string sql)
     {

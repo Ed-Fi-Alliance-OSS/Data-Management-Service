@@ -36,10 +36,14 @@ public static class FullDdlEmitter
     public static FullDdlEmission EmitWithMetadata(ISqlDialect dialect, DerivedRelationalModelSet modelSet)
     {
         var seedEmitter = new SeedDmlEmitter(dialect);
-        // The engine check must finish before SQL Server compiles any native JSON DDL.
+        // The engine check must finish before SQL Server compiles the catalog query
+        // (which uses TRANSLATE) or any native JSON DDL.
         var physicalGuard =
             dialect.Rules.Dialect == SqlDialect.Mssql
-                ? MssqlDocumentCachePhysicalSchema.ProvisioningGuardSql + "\nGO\n\n"
+                ? MssqlDocumentCachePhysicalSchema.PlatformGuardSql
+                    + "\nGO\n\n"
+                    + MssqlDocumentCachePhysicalSchema.ProvisioningGuardSql
+                    + "\nGO\n\n"
                 : "";
         string preflightDdl = WrapPhase0(
             physicalGuard + seedEmitter.EmitPreflightOnly(modelSet.EffectiveSchema.EffectiveSchemaHash)

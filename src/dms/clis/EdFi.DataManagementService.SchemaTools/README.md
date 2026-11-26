@@ -115,7 +115,9 @@ api-schema-tools ddl emit -s core/ApiSchema.json -s extensions/tpdm/ApiSchema.js
 
 All output files use Unix line endings (`\n`) for deterministic, byte-for-byte
 stable output across platforms. `ddl emit` writes standalone SQL; callers who apply the
-script manually own any desired transaction wrapper.
+script manually own any desired transaction wrapper. Apply SQL Server output with
+`sqlcmd -b -i mssql.sql` (plus connection options) so a failed phase-zero guard stops
+execution before later batches can mutate the target.
 
 ### `ddl provision` — Generate DDL and execute against a database
 
@@ -187,8 +189,10 @@ DocumentCache artifacts (`DocumentCache.Etag`, `UX_DocumentCache_DocumentUuid`, 
 enqueue-owner prerequisites, and the SQL Server DocumentCache physical-schema preflight:
 the SQL Server 2025 (major version 17) engine floor, rejection of the legacy v1
 `nvarchar(max)` `DocumentJson` shape, and, for an existing schema, the v2 physical marker,
-native `json` column type, and marker-object constraint checks. An existing SQL Server
-cache that is legacy or incompatible must be dropped and recreated. It does not migrate old cache shapes, reconcile arbitrary
+native `json` column type, and marker-object constraint checks. A legacy or incompatible
+SQL Server database requires fresh provisioning: drop and recreate the database, then
+provision the v2 baseline. Dropping only `dms.DocumentCache` leaves other boundary objects
+in place and does not make the database eligible for fresh provisioning. It does not migrate old cache shapes, reconcile arbitrary
 drift, or classify every partial database state. A completed same-hash rerun preserves
 `SourceIdentity`, projection lifecycle, `CacheAheadRecoveryRequired`, cache rows, pending
 work, and enqueue timestamps, while compatible existence checks and replaceable

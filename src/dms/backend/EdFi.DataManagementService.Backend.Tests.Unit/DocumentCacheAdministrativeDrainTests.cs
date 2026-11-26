@@ -788,30 +788,62 @@ public class Given_DocumentCacheAdministrativeDrain
         result.AcknowledgedOrRemovedItemCount.Should().Be(2);
     }
 
-    [TestCase(true)]
-    [TestCase(false)]
+    [TestCase(true, 1)]
+    [TestCase(false, 1)]
+    [TestCase(true, 2)]
+    [TestCase(false, 2)]
+    [TestCase(true, 3)]
+    [TestCase(false, 3)]
     public async Task It_bounds_mixed_failures_after_allowing_ordinary_retries_in_either_order(
-        bool nativeLimitFirst
+        bool nativeLimitFirst,
+        int pageSize
     )
     {
-        await AssertMixedFailureDrainAsync(nativeLimitFirst, ordinaryRecovers: false);
+        await AssertMixedFailureDrainAsync(nativeLimitFirst, ordinaryRecovers: false, pageSize);
     }
 
-    [TestCase(true)]
-    [TestCase(false)]
+    [TestCase(true, 1)]
+    [TestCase(false, 1)]
+    [TestCase(true, 2)]
+    [TestCase(false, 2)]
+    [TestCase(true, 3)]
+    [TestCase(false, 3)]
     public async Task It_acknowledges_a_recovering_ordinary_document_before_reporting_native_poison_in_either_order(
-        bool nativeLimitFirst
+        bool nativeLimitFirst,
+        int pageSize
     )
     {
-        await AssertMixedFailureDrainAsync(nativeLimitFirst, ordinaryRecovers: true);
+        await AssertMixedFailureDrainAsync(nativeLimitFirst, ordinaryRecovers: true, pageSize);
     }
 
-    private static async Task AssertMixedFailureDrainAsync(bool nativeLimitFirst, bool ordinaryRecovers)
+    [Test]
+    public async Task It_reports_the_remaining_native_failure_after_a_document_is_deleted_between_passes()
+    {
+        await AssertMixedFailureDrainAsync(
+            nativeLimitFirst: true,
+            ordinaryRecovers: false,
+            pageSize: 1,
+            deleteFirstNativeAfterFirstPass: true
+        );
+    }
+
+    private static async Task AssertMixedFailureDrainAsync(
+        bool nativeLimitFirst,
+        bool ordinaryRecovers,
+        int pageSize,
+        bool deleteFirstNativeAfterFirstPass = false
+    )
     {
         MutableTimeProvider clock = new(ObservedAt);
         using var attemptLimit = new CancellationTokenSource();
-        var queue = new MixedFailureWorkQueue(clock, nativeLimitFirst, ordinaryRecovers, attemptLimit);
-        var target = RuntimeContext(pageSize: 1, providerToken: RelationalProviderToken.SqlServer);
+        var queue = new MixedFailureWorkQueue(
+            clock,
+            nativeLimitFirst,
+            ordinaryRecovers,
+            attemptLimit,
+            deleteFirstNativeAfterFirstPass
+        );
+        var target = RuntimeContext(pageSize: pageSize, providerToken: RelationalProviderToken.SqlServer);
         var context = CreateCommandContext(
             new RecordingAdministrativePrimitives(
                 Enumerable
@@ -850,9 +882,18 @@ public class Given_DocumentCacheAdministrativeDrain
         var diagnostic = result.FailureResult.PhaseDiagnostics.Single(d =>
             d.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
         );
-        diagnostic.AffectedDocumentIds.Should().Equal(nativeLimitFirst ? 101L : 102L);
+        long nativeDocumentId = nativeLimitFirst ? 101L : 102L;
+        if (deleteFirstNativeAfterFirstPass)
+        {
+            nativeDocumentId = 103L;
+        }
+        diagnostic.AffectedDocumentIds.Should().Equal(nativeDocumentId);
         diagnostic.Message.Should().Contain("Update or remove");
-        queue.PendingDocumentIds.Should().Contain(nativeLimitFirst ? 101L : 102L);
+        queue.PendingDocumentIds.Should().Contain(nativeDocumentId);
+        if (deleteFirstNativeAfterFirstPass)
+        {
+            queue.PendingDocumentIds.Should().NotContain(101);
+        }
         if (ordinaryRecovers)
         {
             queue.OrdinaryAttemptCount.Should().Be(4);
@@ -865,7 +906,10 @@ public class Given_DocumentCacheAdministrativeDrain
             result.AcknowledgedOrRemovedItemCount.Should().Be(0);
             queue.PendingDocumentIds.Should().HaveCount(2);
         }
-        target.FailureBackoffState.EvictionCount.Should().BeGreaterThan(0);
+        if (pageSize == 1)
+        {
+            target.FailureBackoffState.EvictionCount.Should().BeGreaterThan(0);
+        }
         delay.Delays.Should().NotBeEmpty().And.OnlyContain(value => value == TimeSpan.FromSeconds(10));
     }
 
@@ -1108,11 +1152,15 @@ public class Given_DocumentCacheAdministrativeDrain
         TimeProvider clock,
         bool nativeLimitFirst,
         bool ordinaryRecovers,
-        CancellationTokenSource attemptLimit
+        CancellationTokenSource attemptLimit,
+        bool deleteFirstNativeAfterFirstPass = false
     ) : IDocumentProjectionWorkPager, IDocumentCacheProjectionItemProcessor
     {
         private int _attemptCount;
-        private readonly SortedSet<long> _pendingDocumentIds = [101, 102];
+        private int _passStartCount;
+        private readonly SortedSet<long> _pendingDocumentIds = deleteFirstNativeAfterFirstPass
+            ? [101, 102, 103]
+            : [101, 102];
 
         public RelationalProviderToken ProviderToken => RelationalProviderToken.SqlServer;
 
@@ -1123,8 +1171,14 @@ public class Given_DocumentCacheAdministrativeDrain
         public Task<DocumentProjectionWorkPage> ReadPageAsync(
             DocumentProjectionWorkPageRequest request,
             CancellationToken cancellationToken = default
-        ) =>
-            Task.FromResult(
+        )
+        {
+            if (!request.Cursor.HasValue && ++_passStartCount == 2 && deleteFirstNativeAfterFirstPass)
+            {
+                // Model the work-row cascade from deleting the canonical source document.
+                _pendingDocumentIds.Remove(101);
+            }
+            return Task.FromResult(
                 new DocumentProjectionWorkPage(
                     _pendingDocumentIds
                         .Where(id => !request.Cursor.HasValue || id > request.Cursor.LastDocumentId)
@@ -1133,6 +1187,7 @@ public class Given_DocumentCacheAdministrativeDrain
                     request.PageSize
                 )
             );
+        }
 
         public Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
             DocumentCacheProjectionItemProcessRequest request,
@@ -1146,7 +1201,7 @@ public class Given_DocumentCacheAdministrativeDrain
             }
 
             long id = request.WorkItem.DocumentId;
-            bool nativeLimitFailure = id == (nativeLimitFirst ? 101 : 102);
+            bool nativeLimitFailure = id == (nativeLimitFirst ? 101 : 102) || id == 103;
             if (!nativeLimitFailure && ++OrdinaryAttemptCount > 3 && ordinaryRecovers)
             {
                 _pendingDocumentIds.Remove(id);
