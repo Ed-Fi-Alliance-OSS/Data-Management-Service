@@ -44,7 +44,8 @@ public sealed record PerfBenchmarkPhaseWindow(string Name, DateTimeOffset StartU
 
 /// <summary>
 /// <c>environment.json</c>: the host, Docker and database-container facts of one side, and
-/// its phase windows, written by the wrapper.
+/// its phase windows, written by the wrapper. <see cref="SideExitCode" /> is the side process's
+/// exit code, recorded only by the rewrite after the process exits; null when it never was.
 /// </summary>
 public sealed record PerfBenchmarkEnvironment(
     string SchemaVersion,
@@ -66,7 +67,8 @@ public sealed record PerfBenchmarkEnvironment(
     bool OtherProviderContainerRunning,
     IReadOnlyList<PerfBenchmarkPhaseWindow> Phases,
     bool TrailingSampleTimeout = false,
-    IReadOnlyList<string>? MissingTrailingMetrics = null
+    IReadOnlyList<string>? MissingTrailingMetrics = null,
+    int? SideExitCode = null
 )
 {
     public const string CurrentSchemaVersion = "benchmark-environment 1.0.0";
@@ -427,7 +429,7 @@ public static class PerfBenchmarkComparison
         }
 
         CheckConsistency(sides.Values, invalid, permitted);
-        CheckQualifiedEnvironment(sides.Values, profile, plan.Provider, invalid, labels);
+        CheckQualifiedEnvironment(sides.Values, profile, plan, invalid, labels);
 
         IReadOnlyList<PerfBenchmarkScenarioComparison> scenarios = Statistics(plan, profile, sides, invalid);
         bool valid = invalid.Count == 0;
@@ -754,6 +756,15 @@ public static class PerfBenchmarkComparison
         {
             invalid.Add($"{at}: the side failed in phase {result.Status.Phase}: {result.Status.Reason}");
             return;
+        }
+
+        // The side writes its result before NUnit teardown, so a completed result does not
+        // prove the side process succeeded; the wrapper's recorded exit code does.
+        if (side.Environment.SideExitCode is not 0)
+        {
+            string code =
+                side.Environment.SideExitCode?.ToString(CultureInfo.InvariantCulture) ?? "no recorded code";
+            invalid.Add($"{at}: the side process exited with {code}; see side.log.");
         }
 
         if (
@@ -1123,16 +1134,19 @@ public static class PerfBenchmarkComparison
 
     /// <summary>
     /// Check 6: a provider with a qualified fingerprint must match it on every field; without
-    /// one the result is labelled uncalibrated.
+    /// one the result is labelled uncalibrated. Calibration and Sizing derive the replacement
+    /// thresholds, fingerprint and factors after an environment change, so a mismatch only
+    /// labels them uncalibrated; they are diagnostics and never qualification evidence.
     /// </summary>
     private static void CheckQualifiedEnvironment(
         IEnumerable<PerfBenchmarkSideEvidence> sides,
         PerfBenchmarkProfile profile,
-        string provider,
+        PerfBenchmarkRunPlan plan,
         List<string> invalid,
         List<string> labels
     )
     {
+        string provider = plan.Provider;
         PerfBenchmarkEnvironmentFingerprint? qualified =
             profile.Environment.QualifiedEnvironments.GetValueOrDefault(provider);
         if (qualified is null)
@@ -1141,6 +1155,7 @@ public static class PerfBenchmarkComparison
             return;
         }
 
+        bool recalibrating = plan.Purpose is Calibration or Sizing;
         IReadOnlyDictionary<string, string> expected = FingerprintFields(qualified);
         foreach (PerfBenchmarkSideEvidence side in sides)
         {
@@ -1149,7 +1164,14 @@ public static class PerfBenchmarkComparison
             [
                 .. expected.Keys.Where(field => observed.GetValueOrDefault(field) != expected[field]),
             ];
-            if (differing.Length > 0)
+            if (differing.Length > 0 && recalibrating)
+            {
+                if (!labels.Contains(PerfBenchmarkComparisonResult.UncalibratedLabel))
+                {
+                    labels.Add(PerfBenchmarkComparisonResult.UncalibratedLabel);
+                }
+            }
+            else if (differing.Length > 0)
             {
                 invalid.Add(
                     $"pair {side.Side.Pair} {side.Side.Role}: qualified environment: the fingerprint differs from "
@@ -1747,14 +1769,18 @@ public static class PerfBenchmarkComparisonLoader
         PerfBenchmarkReadRun? reads = null;
         if (runDirectories.Length == 1)
         {
-            reads = PerfBenchmarkReadRun.From(
-                PerfArtifactJson.Deserialize<PerfRunManifest>(
-                    File.ReadAllText(Path.Combine(runDirectories[0], "run-manifest.json"))
-                ),
-                PerfArtifactJson.Deserialize<PerfResultsDocument>(
-                    File.ReadAllText(Path.Combine(runDirectories[0], "results.json"))
-                )
+            PerfRunManifest manifest = PerfArtifactJson.Deserialize<PerfRunManifest>(
+                File.ReadAllText(Path.Combine(runDirectories[0], "run-manifest.json"))
             );
+            PerfResultsDocument results = PerfArtifactJson.Deserialize<PerfResultsDocument>(
+                File.ReadAllText(Path.Combine(runDirectories[0], "results.json"))
+            );
+
+            // The projection keeps the manifest's identities and the rows' latencies, so the
+            // pair must be internally consistent: rows from the manifest's build, summaries
+            // the raw samples explain.
+            PerfArtifactValidator.EnsureValid(manifest, results);
+            reads = PerfBenchmarkReadRun.From(manifest, results);
         }
         else if (runDirectories.Length > 1)
         {

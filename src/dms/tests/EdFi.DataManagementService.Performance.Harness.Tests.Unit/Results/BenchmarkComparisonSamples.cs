@@ -327,7 +327,8 @@ internal sealed class ComparisonBuilder
                 new(PerfBenchmarkMetrics.SettlePhase, start, start.AddSeconds(30)),
                 new(PerfBenchmarkMetrics.IdlePhase, start.AddSeconds(30), start.AddSeconds(40)),
                 new(PerfBenchmarkMetrics.SidePhase, start.AddSeconds(40), start.AddSeconds(140)),
-            ]
+            ],
+            SideExitCode: 0
         );
 
         IReadOnlyList<PerfExecutedCell> cells = PerfScenarioExecutor.CellsInExecutionOrder(
@@ -537,7 +538,7 @@ internal sealed class ComparisonBuilder
                     reads.MeasuredIterations,
                     reads.CellExecutionOrder
                 ),
-                PerfEnvironmentIdentity.Create(reads.Server, reads.Host, [])
+                PerfEnvironmentIdentity.Create(reads.Server, reads.Host, [new PerfSetting("Npgsql", "8.0.4")])
             );
             PerfResultsDocument results = PerfResultsDocument.Create(
                 reads.Cells.Select(cell => new PerfScenarioResult(

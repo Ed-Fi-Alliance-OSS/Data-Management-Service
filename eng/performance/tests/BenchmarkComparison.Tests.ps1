@@ -352,6 +352,23 @@ Describe 'Invoke-BenchmarkComparison' {
             $script:DotnetCalls[-1].Arguments | Should -Match 'Given_BenchmarkComparisonRun'
         }
 
+        It 'Given the final side process fails after writing its evidence, its environment.json records the exit code' {
+            # Two pairs run 1b, 1c, 2c, 2b: the fourth side is the last one, so no later side
+            # goes missing and only the recorded exit code lets the comparison see the failure.
+            $script:SideExits = @{ 4 = 1 }
+
+            Invoke-Comparison | Out-Null
+            @(Get-SideCall).Count | Should -Be 4
+
+            $recorded = @{}
+            foreach ($file in Get-ChildItem -Path $script:Results -Recurse -Filter 'environment.json') {
+                $environment = Get-Content -Raw -LiteralPath $file.FullName | ConvertFrom-Json
+                $recorded["$($environment.pair)$($environment.role[0])"] = $environment.sideExitCode
+            }
+            $recorded['2b'] | Should -Be 1
+            foreach ($side in @('1b', '1c', '2c')) { $recorded[$side] | Should -Be 0 }
+        }
+
         It 'Given the comparison step fails' {
             $script:ReportExit = 1
 

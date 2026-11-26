@@ -348,7 +348,10 @@ factors.
    - mark `side` and run the side in a fresh `dotnet test` process
      (`Given_<Provider>_BenchmarkSideRun`), teeing its output to `side.log`;
    - wait at most 10 s until every metric has a sample stamped after the process exited, then
-     stop the collector and rewrite `environment.json` with the phase windows.
+     stop the collector and rewrite `environment.json` with the phase windows and the side
+     process's exit code. The side writes `benchmark-side.json` before its test teardown, so a
+     side that exits nonzero, or has no recorded exit code, makes the comparison invalid even
+     when its evidence is complete.
 
    The first failed side stops the loop.
 3. **The report step** (`Given_BenchmarkComparisonRun`, no database) always runs over the
@@ -462,6 +465,9 @@ A comparison whose sides differ from the frozen `qualifiedEnvironments.<provider
 is invalid. After a host, Docker, image, database-setting or connection change, recalibrate
 that provider (see [calibration, sizing and qualification](#calibration-sizing-and-qualification)),
 then update its thresholds, fingerprint, and factors in the profile through a pull request.
+`Calibration` and `Sizing` runs do not check the frozen fingerprint, so they can derive those
+replacements on the changed environment; a mismatch only labels them `uncalibrated`. Every
+other purpose stays invalid there until the updated profile is merged.
 
 ### Results and exit codes
 
@@ -610,8 +616,9 @@ increase:
 | 3 | 0.2446 → 28.8% (adjust) | 0.2223 → 25.2% (adjust) |
 | 4 | 0.1698 → 20.8% (**in band**) | 0.1767 → 22.7% (adjust) |
 
-The SQL Server write qualified: a 13% threshold and an in-band factor of 0.1698. Its
-offset-zero/25 read did not, after four runs. PostgreSQL was not sized in round 4, because
+The SQL Server write met the freeze criteria, a 13% threshold and an in-band factor of 0.1698,
+but it is not qualified: the qualification runs need a frozen profile. Its offset-zero/25 read
+did not size into the band after four runs. PostgreSQL was not sized in round 4, because
 both of its demonstration thresholds were already over the limit.
 
 **Demonstrated sensitivity.** All four of the round-4 SQL Server sizing runs flagged both

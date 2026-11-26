@@ -624,7 +624,9 @@ function Write-BenchmarkEnvironment {
         [Parameter(Mandatory)] $Facts,
         [object[]] $Phases = @(),
         [bool] $TrailingSampleTimeout = $false,
-        [string[]] $MissingTrailingMetrics = @()
+        [string[]] $MissingTrailingMetrics = @(),
+        # The side process's exit code; null until the process has exited.
+        [Nullable[int]] $SideExitCode = $null
     )
     $environment = [ordered]@{
         schemaVersion = 'benchmark-environment 1.0.0'
@@ -636,6 +638,7 @@ function Write-BenchmarkEnvironment {
     $environment.phases = @($Phases)
     $environment.trailingSampleTimeout = $TrailingSampleTimeout
     $environment.missingTrailingMetrics = @($MissingTrailingMetrics)
+    $environment.sideExitCode = $SideExitCode
     Write-BenchmarkJson -Path (Join-Path $SideDirectory 'environment.json') -Value $environment
 }
 
@@ -706,7 +709,7 @@ function Invoke-BenchmarkSide {
             (New-BenchmarkPhase -Name 'settle' -Start $settleStart -End $idleStart),
             (New-BenchmarkPhase -Name 'idle' -Start $idleStart -End $sideStart),
             (New-BenchmarkPhase -Name 'side' -Start $sideStart -End $sideEnd)) `
-            -TrailingSampleTimeout $trailing.TimedOut -MissingTrailingMetrics $trailing.Missing
+            -TrailingSampleTimeout $trailing.TimedOut -MissingTrailingMetrics $trailing.Missing -SideExitCode $exitCode
 
         if ($exitCode -ne 0) {
             Write-Host "Pair $($Side.pair) $($Side.role): the side process exited with $exitCode; see side.log."

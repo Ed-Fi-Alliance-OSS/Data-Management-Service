@@ -1310,6 +1310,92 @@ public class Given_A_Different_Environment
 
         builder.Compare().ShouldBeInvalidBecause("qualifiedEnvironments.postgresql in connection");
     }
+
+    private static ComparisonBuilder OnOtherCpu(ComparisonBuilder builder)
+    {
+        builder.Profile = ComparisonProfiles.FrozenFor(builder);
+        return builder.EditSides(side =>
+            side with
+            {
+                Reads = side.Reads! with { Host = side.Reads.Host with { CpuModel = "Other CPU" } },
+            }
+        );
+    }
+
+    [Test]
+    public void It_lets_a_calibration_derive_the_replacement_fingerprint()
+    {
+        PerfBenchmarkComparisonResult result = OnOtherCpu(
+                new ComparisonBuilder { Purpose = PerfBenchmarkComparison.Calibration }
+            )
+            .Compare();
+
+        result.ShouldBeValid();
+        result.Labels.Should().Contain(PerfBenchmarkComparisonResult.UncalibratedLabel);
+        result.Calibration.Should().NotBeNull();
+        result.Calibration!.Fingerprint.CpuModel.Should().Be("Other CPU");
+        result.QualificationEligible.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_lets_a_sizing_run_derive_the_replacement_factors()
+    {
+        PerfBenchmarkComparisonResult result = OnOtherCpu(Given_A_Sizing_Run.Sizing(writeRatio: 1.10m))
+            .Compare();
+
+        result.ShouldBeValid();
+        result.Sizing.Should().NotBeNull();
+        result.Sizing(ComparisonBuilder.Write).SuggestedFactor.Should().Be(0.40m);
+    }
+
+    [Test]
+    public void It_keeps_a_detection_run_invalid()
+    {
+        OnOtherCpu(
+                new ComparisonBuilder
+                {
+                    Purpose = PerfBenchmarkComparison.Detection,
+                    Injection = ComparisonProfiles.FrozenInjection,
+                }
+            )
+            .Compare()
+            .ShouldBeInvalidBecause("differs from qualifiedEnvironments.postgresql in cpuModel");
+    }
+}
+
+[TestFixture]
+public class Given_A_Completed_Side_Whose_Process_Failed
+{
+    [Test]
+    public void It_is_invalid_when_the_recorded_exit_code_is_nonzero()
+    {
+        PerfBenchmarkComparisonResult result = new ComparisonBuilder
+        {
+            Purpose = PerfBenchmarkComparison.Calibration,
+        }
+            .EditSide(
+                5,
+                "candidate",
+                side => side with { Environment = side.Environment with { SideExitCode = 1 } }
+            )
+            .Compare();
+
+        result.ShouldBeInvalidBecause("pair 5 candidate: the side process exited with 1; see side.log.");
+        result.Calibration.Should().BeNull();
+    }
+
+    [Test]
+    public void It_is_invalid_when_no_exit_code_was_recorded()
+    {
+        new ComparisonBuilder()
+            .EditSide(
+                5,
+                "candidate",
+                side => side with { Environment = side.Environment with { SideExitCode = null } }
+            )
+            .Compare()
+            .ShouldBeInvalidBecause("pair 5 candidate: the side process exited with no recorded code");
+    }
 }
 
 // ---------------------------------------------------------------- rules
@@ -1744,5 +1830,35 @@ public class Given_A_Comparison_Directory
         PerfBenchmarkComparison
             .Compare(loaded)
             .ShouldBeInvalidBecause("pair 2 baseline: the planned side is missing");
+    }
+
+    [Test]
+    public void It_rejects_paging_rows_from_another_build_than_the_manifest()
+    {
+        PerfBenchmarkComparisonInput input = new ComparisonBuilder().Build();
+        ComparisonBuilder.WriteDirectory(_directory, input);
+        string results = Directory
+            .GetFiles(
+                PerfBenchmarkComparisonLoader.SideDirectory(_directory, 3, "candidate"),
+                "results.json",
+                SearchOption.AllDirectories
+            )
+            .Single();
+        File.WriteAllText(
+            results,
+            File.ReadAllText(results).Replace(ComparisonBuilder.OtherCommit, ComparisonBuilder.Reference)
+        );
+
+        PerfBenchmarkComparisonInput loaded = PerfBenchmarkComparisonLoader.Load(_directory, input.Profile);
+
+        loaded
+            .LoadErrors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("pair 3 candidate: unreadable artifacts")
+            .And.Contain("subject commit");
+        PerfBenchmarkComparison
+            .Compare(loaded)
+            .ShouldBeInvalidBecause("pair 3 candidate: the planned side is missing");
     }
 }
