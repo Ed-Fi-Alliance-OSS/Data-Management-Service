@@ -361,6 +361,15 @@ Inside a side, the harness:
 
 - leases a freshly provisioned database built from that commit's own generated DDL and loads
   the deterministic fixture;
+- on PostgreSQL, sets `synchronous_commit = off` on the leased database before the host opens
+  a connection, and fails the side unless a new session reads it back as `off`. A commit then
+  returns without waiting for the WAL flush. On this platform the flush made some fresh sides
+  about 40% slower on the write: in a same-build calibration on 2026-11-26, the write's pair
+  ratios were 0.718–1.405 with it on and 0.959–1.087 with it off, with the reads unchanged.
+  That noise hides the DMS code changes the benchmark compares. The trade-off: a change that
+  adds a commit looks cheaper than it would with a flush per commit, but the per-request
+  command counts still show it. `fsync` stays on, and SQL Server keeps full durability,
+  because its write is stable. The paging and final-gate runs keep the server's setting;
 - refreshes statistics over every fixture table (`VACUUM (ANALYZE)` on PostgreSQL,
   `UPDATE STATISTICS` on SQL Server);
 - on PostgreSQL, compacts every fixture table with `VACUUM (FULL, ANALYZE)`. The stamp
@@ -697,6 +706,7 @@ variance:
 | 2 | 0.1.0 | PostgreSQL write split per side (82%); SQL Server's fast reads too noisy for 2-pair sizing | A `CHECKPOINT` before the writes; 300 measured reads (0.2.0); 5-pair sizing |
 | 3 | 0.2.0 | The write still split. About 1 s of JIT compilation ran inside the 1.6 s write phase | 1,000 write and 50 read warmups, back to 60 measured reads (0.3.0) |
 | 4 | 0.3.0 | Host CPU per write fell from 6–8 ms to about 2 ms; the remaining spread came from single disturbed pairs | None: closed as unqualified |
+| Diagnostic | 0.3.0 | The PostgreSQL write's slow sides come from the commit flush (see below) | Benchmark sides set `synchronous_commit = off` |
 
 **Why it did not qualify:**
 
@@ -726,6 +736,21 @@ PostgreSQL write is not: two of its five pairs moved (ratios 0.860, 0.988, 0.977
 above. Applying each run's new thresholds to the provider's other same-build calibration runs
 flagged nothing except against an invalid run (host memory pressure) and a run from before the
 JIT warmup fix. The profile stays at 0.3.0 until recalibration under the new rule.
+
+**Commit-flush diagnostic**, 2026-11-26: two 5-pair PostgreSQL `Calibration` runs at the
+reference commit, harness `79633ddf`, back to back on the same container, with the server's
+`synchronous_commit` changed between them (both runs valid, every environment rule passed):
+
+| `synchronous_commit` | Write p50 per side (ms) | Write pair ratios | Write median deviation, threshold | Read thresholds |
+| --- | --- | --- | --- | --- |
+| `off` | 3.66–4.26 | 1.087, 0.991, 1.015, 0.959, 0.977 | 2.3%, **5%** | all 5% |
+| `on` | 4.40–4.67, and two sides at 6.19 and 6.29 | 1.405, 1.001, 1.001, 1.039, 0.718 | 3.9%, **8%** (spread 40.5%) | all 5% |
+
+With the flush, two of ten fresh sides ran about 40% slower on the write, as several did in
+round 4; without it, none did. The median rule tolerates one or two such pairs in a
+calibration, but a `Sizing` or `Detection` run in which most pairs contain a slow side reads
+as a different increase each time. Benchmark sides now set `synchronous_commit = off`
+themselves (see what a side does, above), so this needs no prerequisite.
 
 **Environment:**
 

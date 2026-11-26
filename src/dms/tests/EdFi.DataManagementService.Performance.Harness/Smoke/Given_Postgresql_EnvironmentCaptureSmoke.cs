@@ -57,6 +57,17 @@ public class Given_Postgresql_EnvironmentCaptureSmoke : PostgresqlApiIntegration
         (await CaptureSettingsAsync()).Should().Contain(new PerfSetting("synchronous_commit", "off"));
     }
 
+    [Test]
+    public async Task It_records_the_asynchronous_commit_a_benchmark_side_sets()
+    {
+        await PerfBenchmarkSidePipeline.CommitWithoutFlushWaitAsync(_leasedConnectionString);
+
+        IReadOnlyList<PerfSetting> settings = await CaptureSettingsAsync();
+
+        settings.Should().Contain(new PerfSetting("synchronous_commit", "off"));
+        settings.Should().Contain(new PerfSetting("fsync", "on"));
+    }
+
     /// <summary>
     /// Captures over a new physical connection: a database default set by ALTER DATABASE applies
     /// only when a session starts, so a pooled session would still report the old value.

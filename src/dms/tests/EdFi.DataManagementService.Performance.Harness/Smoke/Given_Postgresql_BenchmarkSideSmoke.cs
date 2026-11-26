@@ -40,6 +40,7 @@ public class Given_Postgresql_BenchmarkSideSmoke : PostgresqlApiIntegrationTestB
     protected override async Task<string> LeaseDatabaseAsync(FixtureContext fixture)
     {
         _leasedConnectionString = await base.LeaseDatabaseAsync(fixture);
+        await PerfBenchmarkSidePipeline.CommitWithoutFlushWaitAsync(_leasedConnectionString);
         return _leasedConnectionString;
     }
 

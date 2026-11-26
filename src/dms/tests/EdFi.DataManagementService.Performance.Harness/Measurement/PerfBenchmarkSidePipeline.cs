@@ -419,6 +419,46 @@ public static class PerfBenchmarkSidePipeline
     }
 
     /// <summary>
+    /// Makes every session on a PostgreSQL benchmark side's leased database commit without
+    /// waiting for the WAL flush (<c>synchronous_commit = off</c>). Call it at lease time, before
+    /// the host opens a connection: the database default applies only when a session starts.
+    /// On the Windows/WSL2 platform the flush made some fresh sides about 40% slower on the
+    /// write (DMS-1019 diagnostic: same-build pair ratios 0.718–1.405 with it on, 0.959–1.087
+    /// with it off), noise that hides the DMS code changes the benchmark exists to compare. It
+    /// is read back on a new physical connection, and the captured server settings record it
+    /// in every side's fingerprint.
+    /// </summary>
+    public static async Task CommitWithoutFlushWaitAsync(string leasedConnectionString)
+    {
+        NpgsqlConnectionStringBuilder unpooled = new(leasedConnectionString) { Pooling = false };
+        string database =
+            unpooled.Database
+            ?? throw new PerfObservationException("The leased connection string names no database.");
+
+        await using (NpgsqlConnection connection = new(unpooled.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await using NpgsqlCommand command = connection.CreateCommand();
+            command.CommandText =
+                $"ALTER DATABASE \"{database.Replace("\"", "\"\"", StringComparison.Ordinal)}\" SET synchronous_commit = off;";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await using NpgsqlConnection check = new(unpooled.ConnectionString);
+        await check.OpenAsync();
+        await using NpgsqlCommand show = check.CreateCommand();
+        show.CommandText = "SHOW synchronous_commit;";
+        string? effective = await show.ExecuteScalarAsync() as string;
+        if (effective != "off")
+        {
+            throw new PerfObservationException(
+                $"synchronous_commit is '{effective}' on a new session after ALTER DATABASE set it off; "
+                    + "a role-level setting overrides it."
+            );
+        }
+    }
+
+    /// <summary>
     /// Forces a checkpoint right before the PostgreSQL write phase. A checkpoint resets the
     /// server's checkpoint_timeout timer, so no timed checkpoint can start during the few
     /// seconds of writes; a running checkpoint slows every commit, which waits on its fsyncs
