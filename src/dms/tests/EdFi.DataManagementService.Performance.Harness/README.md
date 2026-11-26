@@ -571,3 +571,101 @@ The procedure, for each provider, one provider at a time:
 
 `-Smoke` runs any purpose on the small workload to rehearse the mechanics. Smoke runs are
 never evidence.
+
+### Qualification evidence
+
+The profile is **not qualified**. Calibration and sizing ran in four rounds on both providers
+(DMS-1019, November 2026), and three of the four provider and demonstration-scenario
+combinations stayed above the 13% threshold limit or never sized into the band, so the
+profile was not frozen. It stays at the provisional version 0.3.0:
+
+- comparisons are labelled `uncalibrated` and use the provisional 10% p50 threshold for every
+  provider and scenario, so their warnings are advisory only;
+- `Detection` and `BoundaryProbe` cannot start, because `detection.injectionFactors` is null;
+- a `Repeatability` run is a diagnostic, never qualification evidence.
+
+Every run is kept, including the invalid ones, in the evidence archive attached to DMS-1019.
+Each run's `run-plan.json` records its harness commit and profile hash.
+
+**Final calibration**, round 4: profile 0.3.0, 5 pairs per provider, baseline = candidate =
+`df7e2342`, each scenario's spread followed by its derived threshold:
+
+| Scenario | PostgreSQL | SQL Server |
+| --- | --- | --- |
+| `traditional-offset-zero/25` (demonstration) | 10.6% → **22%** | 9.7% → **20%** |
+| `traditional-offset-zero/500` | 5.0% → 10% | 3.1% → 7% |
+| `traditional-offset-shallow/25` | 2.5% → 5% | 10.7% → 22% |
+| `traditional-offset-shallow/500` | 7.1% → 15% | 2.8% → 6% |
+| `traditional-offset-deep/25` | 7.0% → 15% | 2.1% → 5% |
+| `traditional-offset-deep/500` | 6.0% → 13% | 2.0% → 5% |
+| `student-put-collection-update` (demonstration) | 30.4% → **61%** | 6.1% → **13%** |
+
+**Sizing history**, SQL Server, round 4, 5 pairs per run, shown as factor → observed p50
+increase:
+
+| Run | `student-put-collection-update` | `traditional-offset-zero/25` |
+| --- | --- | --- |
+| 1 | 0.20 → 23.4% (adjust) | 0.20 → 23.9% (adjust) |
+| 2 | 0.1711 → 14.0% (adjust) | 0.1675 → 15.1% (adjust) |
+| 3 | 0.2446 → 28.8% (adjust) | 0.2223 → 25.2% (adjust) |
+| 4 | 0.1698 → 20.8% (**in band**) | 0.1767 → 22.7% (adjust) |
+
+The SQL Server write qualified: a 13% threshold and an in-band factor of 0.1698. Its
+offset-zero/25 read did not, after four runs. PostgreSQL was not sized in round 4, because
+both of its demonstration thresholds were already over the limit.
+
+**Demonstrated sensitivity.** All four of the round-4 SQL Server sizing runs flagged both
+injected scenarios, with observed increases of 14–29%, and flagged no other scenario.
+Earlier 2-pair sizing runs flagged the injected scenarios whenever the observed increase
+exceeded the provisional threshold. Two of the PostgreSQL ones also flagged scenarios that
+were not injected: five in round 1, from the plan flip, and `traditional-offset-shallow/500`
+in round 2. Near-boundary probes were not run, since they need frozen
+factors. The injection is the test-only `IStartupFilter`: on candidate sides only, it
+busy-waits `factor × the request's own pipeline time` and counts the requests it affected,
+and every comparison checked those counts.
+
+**What calibration changed in the harness.** Each round exposed a source of same-build
+variance:
+
+| Round | Profile | Finding | Change |
+| --- | --- | --- | --- |
+| 1 | 0.1.0 | PostgreSQL sides of one build ran two plans for the hydration join (read thresholds up to 155%) | Benchmark sides compact the fixture with `VACUUM (FULL, ANALYZE)` |
+| 2 | 0.1.0 | PostgreSQL write split per side (82%); SQL Server's fast reads too noisy for 2-pair sizing | A `CHECKPOINT` before the writes; 300 measured reads (0.2.0); 5-pair sizing |
+| 3 | 0.2.0 | The write still split. About 1 s of JIT compilation ran inside the 1.6 s write phase | 1,000 write and 50 read warmups, back to 60 measured reads (0.3.0) |
+| 4 | 0.3.0 | Host CPU per write fell from 6–8 ms to about 2 ms; the remaining spread came from single disturbed pairs | None: closed as unqualified |
+
+**Why it did not qualify:**
+
+- The derived threshold uses the single worst pair. On PostgreSQL, the quiet pairs agreed
+  within about 2% (read ratios 1.006–1.012, write ratios 0.977–0.988), while the pairs measured
+  at 16–24% host CPU set the thresholds.
+- On the quiet SQL Server calibration, one pair of the five set the offset-zero/25 threshold:
+  its ratios were 1.097, 0.959, 1.020, 1.005 and 1.029.
+- Even with 5 pairs, the observed increase moved 4–7 pp between runs at nearly the same
+  factor, against the ±2 pp sizing band.
+- The PostgreSQL write varies 5–6.5 ms between fresh sides even when the host is quiet, with
+  identical plans and statement times. The rest of the request time is commit flush and
+  Docker networking on the Windows/WSL2 host, outside the harness.
+
+**Environment:**
+
+- Windows 11 build 26300 x64 on AC power, Balanced power plan; an Intel Family 6 Model 141
+  CPU with 16 logical cores and 32 GB of memory.
+- Docker 29.9.3 with a WSL2 VM of 16 CPUs and 16 GB.
+- PostgreSQL 18.6 (`postgres:18.6-alpine@sha256:77f58511…`) with no container limits.
+- SQL Server 2025 CU7 (`@sha256:86cc6144…`) limited to 6 GB.
+- .NET 10.0.15, Npgsql 8.0.4, Microsoft.Data.SqlClient 6.1.5.
+
+The host was a shared workstation, not a dedicated benchmark machine. One SQL Server
+calibration was invalid because host available memory fell below 2,048 MB with desktop
+applications open: start a SQL Server run with at least 12 GB available.
+
+**Limitations:**
+
+- This is pilot evidence for repeatability, not a statistical guarantee.
+- Warnings are p50-only, so a regression that only affects the tail can be missed.
+- One platform and one host were measured.
+- Fast scenarios (about 5–10 ms) vary more between fresh processes and databases than the
+  ±2 pp sizing band allows on this host.
+
+To qualify the profile, repeat the procedure above on a dedicated, idle host.
