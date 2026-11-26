@@ -56,9 +56,6 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
     private const string StateStaffSystem = "uri://ed-fi.org/StaffIdentificationSystemDescriptor#State";
     private const string DistrictStaffSystem = "uri://ed-fi.org/StaffIdentificationSystemDescriptor#District";
 
-    private const string RootCourseCatalogUrl = "https://root.example.org/catalog";
-    private const string ItemCourseCatalogUrl = "https://item.example.org/catalog";
-
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly QualifiedResourceName CourseTranscriptResource = new("Ed-Fi", "CourseTranscript");
 
@@ -71,7 +68,6 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
     private static readonly Guid FoxtrotUuid = Guid.Parse("d8100000-0000-0000-0000-000000000006");
     private static readonly Guid StaffAUuid = Guid.Parse("d8100000-0000-0000-0000-0000000000a1");
     private static readonly Guid StaffBUuid = Guid.Parse("d8100000-0000-0000-0000-0000000000b2");
-    private static readonly Guid CourseTranscriptUuid = Guid.Parse("d8100000-0000-0000-0000-0000000000c7");
 
     private static readonly (Guid Uuid, long SchoolId, string Name, string? Codes)[] _schoolSeeds =
     [
@@ -143,13 +139,13 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
 
         foreach (var (uuid, schoolId, name, codes) in _schoolSeeds)
         {
-            await UpsertAsync("School", uuid, SchoolBody(schoolId, name, codes));
+            await UpsertAsync("School", uuid, IdentificationCodeQuerySeeds.SchoolBody(schoolId, name, codes));
         }
 
         await UpsertAsync(
             "Staff",
             StaffAUuid,
-            StaffBody(
+            IdentificationCodeQuerySeeds.StaffBody(
                 "S-A",
                 $$"""[{ "identificationCode": "X", "staffIdentificationSystemDescriptor": "{{StateStaffSystem}}", "assigningOrganizationIdentificationCode": "O1" }]"""
             )
@@ -157,13 +153,13 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
         await UpsertAsync(
             "Staff",
             StaffBUuid,
-            StaffBody(
+            IdentificationCodeQuerySeeds.StaffBody(
                 "S-B",
                 $$"""[{ "identificationCode": "X", "staffIdentificationSystemDescriptor": "{{StateStaffSystem}}", "assigningOrganizationIdentificationCode": "O2" }, { "identificationCode": "Y", "staffIdentificationSystemDescriptor": "{{DistrictStaffSystem}}", "assigningOrganizationIdentificationCode": "O1" }]"""
             )
         );
 
-        await SeedCourseTranscriptAsync();
+        await IdentificationCodeQuerySeeds.SeedCourseTranscriptAsync(UpsertAsync);
     }
 
     [OneTimeTearDown]
@@ -344,10 +340,22 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
             .Target.Should()
             .BeOfType<RelationalQueryFieldTarget.RootColumn>();
 
-        (await QueryTranscriptsAsync("courseCatalogURL", "$.courseCatalogURL", RootCourseCatalogUrl))
+        (
+            await QueryTranscriptsAsync(
+                "courseCatalogURL",
+                "$.courseCatalogURL",
+                IdentificationCodeQuerySeeds.RootCourseCatalogUrl
+            )
+        )
             .Should()
-            .Equal(CourseTranscriptUuid);
-        (await QueryTranscriptsAsync("courseCatalogURL", "$.courseCatalogURL", ItemCourseCatalogUrl))
+            .Equal(IdentificationCodeQuerySeeds.CourseTranscriptUuid);
+        (
+            await QueryTranscriptsAsync(
+                "courseCatalogURL",
+                "$.courseCatalogURL",
+                IdentificationCodeQuerySeeds.ItemCourseCatalogUrl
+            )
+        )
             .Should()
             .BeEmpty("the collection element's catalog URL is not what this filter means");
         (
@@ -358,7 +366,7 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
             )
         )
             .Should()
-            .Equal(CourseTranscriptUuid);
+            .Equal(IdentificationCodeQuerySeeds.CourseTranscriptUuid);
         (
             await QueryTranscriptsAsync(
                 "assigningOrganizationIdentificationCode",
@@ -376,7 +384,7 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
             )
         )
             .Should()
-            .Equal(CourseTranscriptUuid);
+            .Equal(IdentificationCodeQuerySeeds.CourseTranscriptUuid);
     }
 
     [Test]
@@ -828,118 +836,6 @@ public class Given_A_Postgresql_Identification_Code_Query_With_The_Authoritative
 
     private static QueryElement Element(string queryFieldName, string path, string value) =>
         new(queryFieldName, [new JsonPath(path)], value, "string");
-
-    private static JsonNode SchoolBody(long schoolId, string name, string? identificationCodes)
-    {
-        var codes = identificationCodes is null ? "" : $"\"identificationCodes\": {identificationCodes},";
-
-        return JsonNode.Parse(
-            $$"""
-            {
-              "schoolId": {{schoolId}},
-              "nameOfInstitution": "{{name}}",
-              {{codes}}
-              "educationOrganizationCategories": [
-                { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School" }
-              ],
-              "gradeLevels": [{ "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" }]
-            }
-            """
-        )!;
-    }
-
-    private static JsonNode StaffBody(string staffUniqueId, string identificationCodes) =>
-        JsonNode.Parse(
-            $$"""
-            {
-              "staffUniqueId": "{{staffUniqueId}}",
-              "firstName": "{{staffUniqueId}}",
-              "lastSurname": "Staff",
-              "identificationCodes": {{identificationCodes}}
-            }
-            """
-        )!;
-
-    /// <summary>
-    /// A transcript whose root catalog URL and assigning organization differ from those of its
-    /// alternative course identification code, with the documents it references.
-    /// </summary>
-    private async Task SeedCourseTranscriptAsync()
-    {
-        await UpsertAsync(
-            "Student",
-            Guid.Parse("d8100000-0000-0000-0000-0000000000c1"),
-            JsonNode.Parse(
-                """{ "studentUniqueId": "ST-1", "firstName": "Student", "lastSurname": "One", "birthDate": "2010-01-01" }"""
-            )!
-        );
-        await UpsertAsync(
-            "SchoolYearType",
-            Guid.Parse("d8100000-0000-0000-0000-0000000000c2"),
-            JsonNode.Parse(
-                """{ "schoolYear": 2026, "currentSchoolYear": true, "schoolYearDescription": "2025-2026" }"""
-            )!
-        );
-        await UpsertAsync(
-            "Course",
-            Guid.Parse("d8100000-0000-0000-0000-0000000000c3"),
-            JsonNode.Parse(
-                """
-                {
-                  "courseCode": "ALG-1",
-                  "courseTitle": "Algebra I",
-                  "numberOfParts": 1,
-                  "educationOrganizationReference": { "educationOrganizationId": 810001 },
-                  "identificationCodes": [
-                    { "identificationCode": "ALG-1", "courseIdentificationSystemDescriptor": "uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA course code" }
-                  ]
-                }
-                """
-            )!
-        );
-        await UpsertAsync(
-            "StudentAcademicRecord",
-            Guid.Parse("d8100000-0000-0000-0000-0000000000c4"),
-            JsonNode.Parse(
-                """
-                {
-                  "studentReference": { "studentUniqueId": "ST-1" },
-                  "educationOrganizationReference": { "educationOrganizationId": 810001 },
-                  "schoolYearTypeReference": { "schoolYear": 2026 },
-                  "termDescriptor": "uri://ed-fi.org/TermDescriptor#Fall Semester"
-                }
-                """
-            )!
-        );
-        await UpsertAsync(
-            "CourseTranscript",
-            CourseTranscriptUuid,
-            JsonNode.Parse(
-                $$"""
-                {
-                  "courseReference": { "courseCode": "ALG-1", "educationOrganizationId": 810001 },
-                  "studentAcademicRecordReference": {
-                    "educationOrganizationId": 810001,
-                    "schoolYear": 2026,
-                    "studentUniqueId": "ST-1",
-                    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Fall Semester"
-                  },
-                  "courseAttemptResultDescriptor": "uri://ed-fi.org/CourseAttemptResultDescriptor#Pass",
-                  "courseCatalogURL": "{{RootCourseCatalogUrl}}",
-                  "assigningOrganizationIdentificationCode": "ROOT-ORG",
-                  "alternativeCourseIdentificationCodes": [
-                    {
-                      "identificationCode": "ALT-1",
-                      "courseIdentificationSystemDescriptor": "uri://ed-fi.org/CourseIdentificationSystemDescriptor#State course code",
-                      "courseCatalogURL": "{{ItemCourseCatalogUrl}}",
-                      "assigningOrganizationIdentificationCode": "ITEM-ORG"
-                    }
-                  ]
-                }
-                """
-            )!
-        );
-    }
 
     private async Task UpsertAsync(string resourceName, Guid documentUuid, JsonNode body)
     {
