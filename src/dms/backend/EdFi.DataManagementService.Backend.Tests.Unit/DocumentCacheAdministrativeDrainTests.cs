@@ -550,6 +550,99 @@ public class Given_DocumentCacheAdministrativeDrain
             );
     }
 
+    [Test]
+    public async Task It_bounds_poison_passes_when_failures_exceed_the_suppression_capacity()
+    {
+        MutableTimeProvider clock = new(ObservedAt);
+        var first = new DocumentProjectionWorkPage([WorkItem(101, 10)], pageSize: 1);
+        var second = new DocumentProjectionWorkPage([WorkItem(102, 10)], pageSize: 1);
+        var empty = new DocumentProjectionWorkPage([], pageSize: 1);
+        var pager = new RecordingWorkPager(first, second, empty, first, second, empty, first);
+        DocumentCacheProjectionTargetRuntimeContext target = RuntimeContext(pageSize: 1);
+        var primitives = new RecordingAdministrativePrimitives();
+        var context = CreateCommandContext(primitives, new RecordingMutexLease(), target);
+        context.MarkMutated(RebuildingLifecycle);
+        var scheduler = CreateRealScheduler(
+            new DocumentCacheProjectionDrainPageProcessor(
+                pager,
+                new NativeLimitItemProcessor(clock),
+                NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+                clock
+            )
+        );
+        var delay = new RecordingDrainDelay(clock);
+
+        var result = await CreateDrainer(scheduler, delay, clock).DrainToEmptyAsync(context);
+
+        result.Completed.Should().BeFalse();
+        result.ProcessedItemCount.Should().Be(5);
+        result.AcknowledgedOrRemovedItemCount.Should().Be(0);
+        result
+            .FailureResult!.Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.PersistentPoison);
+        result.FailureResult.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
+        result.FailureResult.Lifecycle.Should().Be(DocumentCacheLifecycleState.Rebuilding);
+        result
+            .FailureResult.PhaseDiagnostics.Should()
+            .Contain(d =>
+                d.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
+                && d.AffectedDocumentIds.SequenceEqual(new long[] { 101 })
+            );
+        target.FailureBackoffState.Count.Should().Be(1);
+        target.FailureBackoffState.EvictionCount.Should().Be(4);
+        delay.Delays.Should().BeEmpty();
+        primitives.EmptinessReadCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_keeps_draining_when_the_wrapping_page_acknowledges_work_after_poison_passes()
+    {
+        var first = new DocumentProjectionWorkPage([WorkItem(101, 10)], pageSize: 1);
+        var second = new DocumentProjectionWorkPage([WorkItem(102, 10)], pageSize: 1);
+        var empty = new DocumentProjectionWorkPage([], pageSize: 1);
+        var pager = new RecordingWorkPager(
+            first,
+            second,
+            empty,
+            first,
+            second,
+            empty,
+            first,
+            second,
+            empty,
+            empty
+        );
+        MutableTimeProvider clock = new(ObservedAt);
+        var scheduler = CreateRealScheduler(
+            new DocumentCacheProjectionDrainPageProcessor(
+                pager,
+                new ScriptedItemProcessor(
+                    DocumentCacheProjectionItemProcessResult.DocumentScopedFailure,
+                    DocumentCacheProjectionItemProcessResult.DocumentScopedFailure,
+                    DocumentCacheProjectionItemProcessResult.DocumentScopedFailure,
+                    DocumentCacheProjectionItemProcessResult.DocumentScopedFailure,
+                    DocumentCacheProjectionItemProcessResult.AcknowledgedOrRemoved,
+                    DocumentCacheProjectionItemProcessResult.AcknowledgedOrRemoved
+                ),
+                NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+                clock
+            )
+        );
+        var context = CreateCommandContext(
+            new RecordingAdministrativePrimitives(
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, true, "empty")
+            ),
+            new RecordingMutexLease(),
+            RuntimeContext(pageSize: 1)
+        );
+
+        var result = await CreateDrainer(scheduler).DrainToEmptyAsync(context);
+
+        result.Completed.Should().BeTrue();
+        result.ProcessedItemCount.Should().Be(6);
+        result.AcknowledgedOrRemovedItemCount.Should().Be(2);
+    }
+
     private static DocumentCacheAdministrativeDrainer CreateDrainer(
         IDocumentCacheProjectionScheduler scheduler,
         IDocumentCacheAdministrativeDrainDelay? delay = null,
@@ -606,7 +699,8 @@ public class Given_DocumentCacheAdministrativeDrain
     private static DocumentCacheProjectionTargetRuntimeContext RuntimeContext(
         IDocumentCacheMaterializer? materializer = null,
         IDocumentCacheWriter? writer = null,
-        IDocumentCacheSessionBoundWriter? sessionBoundWriter = null
+        IDocumentCacheSessionBoundWriter? sessionBoundWriter = null,
+        int pageSize = 3
     )
     {
         DocumentCacheTargetExecutionContext executionContext = new(
@@ -616,7 +710,7 @@ public class Given_DocumentCacheAdministrativeDrain
                 readAccelerationEnabled: true,
                 directFillTimeout: TimeSpan.FromMilliseconds(250),
                 projectorPollInterval: TimeSpan.FromSeconds(5),
-                projectorPageSize: 3,
+                projectorPageSize: pageSize,
                 projectorMaxConcurrentTargets: 1,
                 projectorFailureBackoff: TimeSpan.FromSeconds(10),
                 projectorBaselineHighWaterMark: 100,
@@ -755,6 +849,24 @@ public class Given_DocumentCacheAdministrativeDrain
             _ = cancellationToken;
             Requests.Add(request);
             return Task.FromResult(_results.Dequeue());
+        }
+    }
+
+    private sealed class NativeLimitItemProcessor(TimeProvider clock) : IDocumentCacheProjectionItemProcessor
+    {
+        public Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
+            DocumentCacheProjectionItemProcessRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            request.TargetContext.FailureBackoffState.RecordFailure(
+                request.WorkItem.DocumentId,
+                DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded,
+                "Native JSON storage limit exceeded.",
+                clock.GetUtcNow(),
+                TimeSpan.FromSeconds(10)
+            );
+            return Task.FromResult(DocumentCacheProjectionItemProcessResult.DocumentScopedFailure);
         }
     }
 

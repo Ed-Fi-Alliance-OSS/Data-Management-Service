@@ -357,7 +357,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
         var currentPass = new DocumentCacheAdministrativeDrainPass(
             context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize
         );
-        var poisonSuppressionRetryPassCount = 0;
+        var unproductivePoisonPassCount = 0;
 
         while (true)
         {
@@ -382,15 +382,30 @@ internal sealed class DocumentCacheAdministrativeDrainer(
 
             if (CompletedCursorPass(startingCursor, endingCursor, drainResult))
             {
-                // A scan over suppressed rows can wrap the cursor immediately after retrying
-                // native-limit failures. Preserve the attempt count until the next retry is due.
+                // Failures can outnumber the bounded suppression cache and become eligible
+                // again on every wrap. Count those unproductive passes without requiring an
+                // all-suppressed page. Acknowledgement on the wrapping page is still progress.
                 if (
+                    currentPass.IsUnproductivePoisonPass
+                    && drainResult.ProcessedItemCount > 0
+                    && drainResult.AcknowledgedOrRemovedItemCount == 0
+                )
+                {
+                    unproductivePoisonPassCount++;
+                    if (unproductivePoisonPassCount >= 2)
+                    {
+                        return PersistentPoison(context, stats, currentPass.DiagnosticDocumentIds);
+                    }
+                }
+                // A scan over suppressed rows can also wrap immediately after retrying
+                // native-limit failures. Preserve that attempt count until retry is due.
+                else if (
                     drainResult.ProcessedItemCount != 0
                     || !currentPass.IsUnproductivePoisonPass
                     || !HasNativeLimitFailure(context, currentPass.DiagnosticDocumentIds)
                 )
                 {
-                    poisonSuppressionRetryPassCount = 0;
+                    unproductivePoisonPassCount = 0;
                 }
 
                 if (
@@ -433,15 +448,15 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                     {
                         if (currentPass.IsUnproductivePoisonPass || currentPass.ProcessedItemCount == 0)
                         {
-                            poisonSuppressionRetryPassCount++;
-                            if (poisonSuppressionRetryPassCount >= 2)
+                            unproductivePoisonPassCount++;
+                            if (unproductivePoisonPassCount >= 2)
                             {
                                 return PersistentPoison(context, stats, currentPass.DiagnosticDocumentIds);
                             }
                         }
                         else
                         {
-                            poisonSuppressionRetryPassCount = 0;
+                            unproductivePoisonPassCount = 0;
                         }
 
                         await DelayUntilAsync(drainResult.NextRetryAt.Value, effectiveCancellationToken)
@@ -450,7 +465,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                         continue;
                     }
 
-                    poisonSuppressionRetryPassCount = 0;
+                    unproductivePoisonPassCount = 0;
                     currentPass = NewPass(context);
                     logger.LogDebug(
                         "DocumentCache administrative drain for target {TargetKey} found durable work after an empty page and will poll again.",
@@ -616,7 +631,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
             DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison,
             HasNativeLimitFailure(context, boundedDocumentIds)
                 ? "A document exceeds SQL Server native JSON storage limits. Its projection work is still pending. Update or remove the source document before retrying."
-                : "Administrative drain observed durable work that repeatedly produced only document-scoped failures after retry was due.",
+                : "Administrative drain observed durable work that repeatedly produced only document-scoped failures without acknowledgement or removal.",
             retryable: true,
             affectedDocumentIds: boundedDocumentIds
                 .Take(context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize)
