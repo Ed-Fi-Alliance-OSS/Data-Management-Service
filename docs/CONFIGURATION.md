@@ -1562,6 +1562,9 @@ Separate budgets do not protect against CPU, log or memory exhaustion.
 Total-load caps, connection limits, and DoS and brute-force protection
 belong at the application gateway; treat this limiter as a per-client
 backstop.
+Client and address partitions use the same configured limits; separate
+anonymous limits are not implemented, so apply stricter anonymous limits at
+the gateway.
 
 The `RateLimit` object should have the following parameters.
 
