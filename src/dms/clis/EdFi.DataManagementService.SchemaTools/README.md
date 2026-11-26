@@ -183,8 +183,12 @@ and the `CDC-INV-02` / `CDC-INV-03` traceability rows live under
 Provisioning is create-only. Its phase-zero checks are limited to the effective-schema
 hash, `dms.DataStoreIdentity` and `dms.DocumentCacheState` singleton safety, known legacy
 DocumentCache artifacts (`DocumentCache.Etag`, `UX_DocumentCache_DocumentUuid`, and
-`IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt`), and PostgreSQL
-enqueue-owner prerequisites. It does not migrate old cache shapes, reconcile arbitrary
+`IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt`), PostgreSQL
+enqueue-owner prerequisites, and the SQL Server DocumentCache physical-schema preflight:
+the SQL Server 2025 (major version 17) engine floor, rejection of the legacy v1
+`nvarchar(max)` `DocumentJson` shape, and, for an existing schema, the v2 physical marker,
+native `json` column type, and marker-object constraint checks. An existing SQL Server
+cache that is legacy or incompatible must be dropped and recreated. It does not migrate old cache shapes, reconcile arbitrary
 drift, or classify every partial database state. A completed same-hash rerun preserves
 `SourceIdentity`, projection lifecycle, `CacheAheadRecoveryRequired`, cache rows, pending
 work, and enqueue timestamps, while compatible existence checks and replaceable

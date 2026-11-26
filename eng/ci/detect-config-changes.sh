@@ -63,6 +63,9 @@ while IFS= read -r file; do
   esac
   case "$file" in
     src/shared/*|src/dms/Dockerfile|src/dms/.dockerignore|src/dms/Directory.Build.*|src/dms/run.sh|\
+    src/dms/core/EdFi.DataManagementService.Core/*|\
+    src/dms/core/EdFi.DataManagementService.Core.External/*|\
+    src/dms/backend/EdFi.DataManagementService.Backend.Cdc/*|\
     src/dms/backend/EdFi.DataManagementService.Backend.Ddl/*|\
     src/dms/backend/EdFi.DataManagementService.Backend.External/*|\
     src/dms/backend/EdFi.DataManagementService.Backend.Mssql/*|\

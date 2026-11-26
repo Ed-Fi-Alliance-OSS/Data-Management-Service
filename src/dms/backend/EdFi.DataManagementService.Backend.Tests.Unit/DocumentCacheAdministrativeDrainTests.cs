@@ -788,6 +788,129 @@ public class Given_DocumentCacheAdministrativeDrain
         result.AcknowledgedOrRemovedItemCount.Should().Be(2);
     }
 
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_bounds_mixed_failures_after_allowing_ordinary_retries_in_either_order(
+        bool nativeLimitFirst
+    )
+    {
+        await AssertMixedFailureDrainAsync(nativeLimitFirst, ordinaryRecovers: false);
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_acknowledges_a_recovering_ordinary_document_before_reporting_native_poison_in_either_order(
+        bool nativeLimitFirst
+    )
+    {
+        await AssertMixedFailureDrainAsync(nativeLimitFirst, ordinaryRecovers: true);
+    }
+
+    private static async Task AssertMixedFailureDrainAsync(bool nativeLimitFirst, bool ordinaryRecovers)
+    {
+        MutableTimeProvider clock = new(ObservedAt);
+        using var attemptLimit = new CancellationTokenSource();
+        var queue = new MixedFailureWorkQueue(clock, nativeLimitFirst, ordinaryRecovers, attemptLimit);
+        var target = RuntimeContext(pageSize: 1, providerToken: RelationalProviderToken.SqlServer);
+        var context = CreateCommandContext(
+            new RecordingAdministrativePrimitives(
+                Enumerable
+                    .Repeat(
+                        new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, false, "pending"),
+                        10
+                    )
+                    .ToArray()
+            ),
+            new RecordingMutexLease(),
+            target
+        );
+        context.MarkMutated(RebuildingLifecycle);
+        var scheduler = CreateRealScheduler(
+            new DocumentCacheProjectionDrainPageProcessor(
+                queue,
+                queue,
+                NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+                clock
+            )
+        );
+        var delay = new RecordingDrainDelay(clock);
+        DocumentCacheAdministrativeDrainToEmptyResult? result = null;
+
+        Func<Task> drain = async () =>
+            result = await CreateDrainer(scheduler, delay, clock)
+                .DrainToEmptyAsync(context, attemptLimit.Token);
+
+        await drain.Should().NotThrowAsync("mixed poison must be identified within twenty item attempts");
+
+        result!
+            .FailureResult!.Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.PersistentPoison);
+        result.FailureResult.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
+        result.FailureResult.Lifecycle.Should().Be(DocumentCacheLifecycleState.Rebuilding);
+        var diagnostic = result.FailureResult.PhaseDiagnostics.Single(d =>
+            d.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
+        );
+        diagnostic.AffectedDocumentIds.Should().Equal(nativeLimitFirst ? 101L : 102L);
+        diagnostic.Message.Should().Contain("Update or remove");
+        queue.PendingDocumentIds.Should().Contain(nativeLimitFirst ? 101L : 102L);
+        if (ordinaryRecovers)
+        {
+            queue.OrdinaryAttemptCount.Should().Be(4);
+            result.AcknowledgedOrRemovedItemCount.Should().Be(1);
+            queue.PendingDocumentIds.Should().NotContain(nativeLimitFirst ? 102L : 101L);
+        }
+        else
+        {
+            queue.OrdinaryAttemptCount.Should().BeGreaterThanOrEqualTo(4);
+            result.AcknowledgedOrRemovedItemCount.Should().Be(0);
+            queue.PendingDocumentIds.Should().HaveCount(2);
+        }
+        target.FailureBackoffState.EvictionCount.Should().BeGreaterThan(0);
+        delay.Delays.Should().NotBeEmpty().And.OnlyContain(value => value == TimeSpan.FromSeconds(10));
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public void It_does_not_classify_mixed_failure_passes_as_native_limit_passes_in_either_order(
+        bool nativeLimitFirst
+    )
+    {
+        var pass = new DocumentCacheAdministrativeDrainPass(1);
+        var nativeLimitPage = DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [101]);
+        var ordinaryPage = DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [102]);
+
+        if (nativeLimitFirst)
+        {
+            pass.Record(nativeLimitPage, nativeLimitFailureIds: [101]);
+            pass.Record(ordinaryPage);
+        }
+        else
+        {
+            pass.Record(ordinaryPage);
+            pass.Record(nativeLimitPage, nativeLimitFailureIds: [101]);
+        }
+
+        pass.IsUnproductivePoisonPass.Should().BeTrue();
+        pass.IsUnproductiveNativeLimitPass.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_classifies_a_pass_of_only_native_limit_failures_after_the_suppression_state_evicts_them()
+    {
+        var pass = new DocumentCacheAdministrativeDrainPass(1);
+
+        pass.Record(
+            DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [101]),
+            nativeLimitFailureIds: [101]
+        );
+        pass.Record(
+            DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [102]),
+            nativeLimitFailureIds: [102]
+        );
+
+        pass.IsUnproductiveNativeLimitPass.Should().BeTrue();
+    }
+
     private static DocumentCacheAdministrativeDrainer CreateDrainer(
         IDocumentCacheProjectionScheduler scheduler,
         IDocumentCacheAdministrativeDrainDelay? delay = null,
@@ -978,6 +1101,69 @@ public class Given_DocumentCacheAdministrativeDrain
         {
             Requests.Add(request);
             return Task.FromResult(_pages.Dequeue());
+        }
+    }
+
+    private sealed class MixedFailureWorkQueue(
+        TimeProvider clock,
+        bool nativeLimitFirst,
+        bool ordinaryRecovers,
+        CancellationTokenSource attemptLimit
+    ) : IDocumentProjectionWorkPager, IDocumentCacheProjectionItemProcessor
+    {
+        private int _attemptCount;
+        private readonly SortedSet<long> _pendingDocumentIds = [101, 102];
+
+        public RelationalProviderToken ProviderToken => RelationalProviderToken.SqlServer;
+
+        public int OrdinaryAttemptCount { get; private set; }
+
+        public IReadOnlyCollection<long> PendingDocumentIds => _pendingDocumentIds;
+
+        public Task<DocumentProjectionWorkPage> ReadPageAsync(
+            DocumentProjectionWorkPageRequest request,
+            CancellationToken cancellationToken = default
+        ) =>
+            Task.FromResult(
+                new DocumentProjectionWorkPage(
+                    _pendingDocumentIds
+                        .Where(id => !request.Cursor.HasValue || id > request.Cursor.LastDocumentId)
+                        .Take(request.PageSize)
+                        .Select(id => WorkItem(id, 10)),
+                    request.PageSize
+                )
+            );
+
+        public Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
+            DocumentCacheProjectionItemProcessRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (++_attemptCount > 20)
+            {
+                attemptLimit.Cancel();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            long id = request.WorkItem.DocumentId;
+            bool nativeLimitFailure = id == (nativeLimitFirst ? 101 : 102);
+            if (!nativeLimitFailure && ++OrdinaryAttemptCount > 3 && ordinaryRecovers)
+            {
+                _pendingDocumentIds.Remove(id);
+                request.TargetContext.FailureBackoffState.ClearFailure(id);
+                return Task.FromResult(DocumentCacheProjectionItemProcessResult.AcknowledgedOrRemoved);
+            }
+
+            request.TargetContext.FailureBackoffState.RecordFailure(
+                id,
+                nativeLimitFailure
+                    ? DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                    : DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure,
+                "Document projection failed.",
+                clock.GetUtcNow(),
+                TimeSpan.FromSeconds(10)
+            );
+            return Task.FromResult(DocumentCacheProjectionItemProcessResult.DocumentScopedFailure);
         }
     }
 
