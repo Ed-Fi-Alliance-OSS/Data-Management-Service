@@ -194,7 +194,7 @@ Restarting does not shorten a token that was already issued, so an issued token 
 
 ## Rate limiting
 
-The identity routes are subject to the same global rate limiter as the rest of the Ed-Fi API, configured under `RateLimit`.
+The identity routes are subject to the same global rate limiter as the rest of the Ed-Fi API, configured under `RateLimit`, and a client's identity requests draw on the same per-client budget as its other requests.
 See [RateLimit](./CONFIGURATION.md#ratelimit).
 A request the limiter rejects answers `429`.
 It carries a `Retry-After` header only when the limiter supplies one.

@@ -5,6 +5,7 @@
 
 using System.Security.Claims;
 using EdFi.DataManagementService.Core.External.Model;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Security;
 
@@ -23,6 +24,29 @@ internal interface IJwtValidationService
         ClaimsPrincipal? Principal,
         ClientAuthorizations? ClientAuthorizations
     )> ValidateAndExtractClientAuthorizationsAsync(string token, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Validates a JWT token and extracts the client authorizations, asking for a token that is rejected
+    /// as malformed, expired or otherwise invalid to be logged at <paramref name="credentialFailureLevel"/>
+    /// instead of Warning. This default body only forwards to the token overload and ignores the level,
+    /// so implementations that do not log, such as test doubles, need not implement it. It does not
+    /// guarantee the level for any implementation that does not override it.
+    /// </summary>
+    /// <param name="token">The JWT token to validate</param>
+    /// <param name="credentialFailureLevel">The requested level for a rejected token</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Tuple containing the claims principal and client authorizations, or nulls if validation fails</returns>
+    Task<(
+        ClaimsPrincipal? Principal,
+        ClientAuthorizations? ClientAuthorizations
+    )> ValidateAndExtractClientAuthorizationsAsync(
+        string token,
+        LogLevel credentialFailureLevel,
+        CancellationToken cancellationToken
+    )
+    {
+        return ValidateAndExtractClientAuthorizationsAsync(token, cancellationToken);
+    }
 
     /// <summary>
     /// Validates the bearer token contained in an Authorization header without requiring callers to allocate

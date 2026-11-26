@@ -226,20 +226,31 @@ public static class WebApplicationBuilderExtensions
 
         // Container-owned so it is disposed with the host, which stops its replenishment timer.
         // GlobalRateLimitingMiddleware applies it to every request.
-        webAppBuilder.Services.AddSingleton(_ =>
-            PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: httpContext.Request.Headers.Host.ToString(),
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = rateLimitOptions.PermitLimit,
-                        QueueLimit = rateLimitOptions.QueueLimit,
-                        Window = TimeSpan.FromSeconds(rateLimitOptions.Window),
-                    }
-                )
+        webAppBuilder.Services.AddSingleton(_ => CreateGlobalLimiter(rateLimitOptions));
+    }
+
+    /// <summary>
+    /// Builds the global limiter: one fixed window per partition, each with the configured permit,
+    /// window and queue limits. A request is partitioned by the key
+    /// <see cref="GlobalRateLimitingMiddleware"/> resolved for it, a validated client or a connection
+    /// address, and otherwise by its connection address. Neither the Host header nor a forwarded
+    /// header from an untrusted peer can split or reset a budget.
+    /// </summary>
+    internal static PartitionedRateLimiter<HttpContext> CreateGlobalLimiter(
+        RateLimitOptions rateLimitOptions
+    ) =>
+        PartitionedRateLimiter.Create<HttpContext, RateLimitPartitionKey>(httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: httpContext.Features.Get<RateLimitPartitionFeature>()?.Key
+                    ?? RateLimitPartitionKey.ForAddress(httpContext.Connection.RemoteIpAddress),
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = rateLimitOptions.PermitLimit,
+                    QueueLimit = rateLimitOptions.QueueLimit,
+                    Window = TimeSpan.FromSeconds(rateLimitOptions.Window),
+                }
             )
         );
-    }
 
     /// <summary>
     /// Serves the rejection produced by <see cref="GlobalRateLimitingMiddleware"/>, which sets the

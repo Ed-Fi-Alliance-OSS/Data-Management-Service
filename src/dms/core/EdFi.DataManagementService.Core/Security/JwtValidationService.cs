@@ -70,18 +70,52 @@ internal class JwtValidationService(
     }
 
     /// <summary>
+    /// Validates a JWT token and extracts client authorization information, logging a token that is
+    /// rejected as malformed, expired or otherwise invalid at <paramref name="credentialFailureLevel"/>
+    /// instead of Warning. Every other diagnostic keeps its own level.
+    /// </summary>
+    /// <param name="token">The JWT token to validate</param>
+    /// <param name="credentialFailureLevel">The level for a rejected token</param>
+    /// <param name="cancellationToken">Cancellation token for async operations</param>
+    /// <returns>A tuple containing the validated ClaimsPrincipal and extracted ClientAuthorizations, or (null, null) if validation fails</returns>
+    public Task<(
+        ClaimsPrincipal? Principal,
+        ClientAuthorizations? ClientAuthorizations
+    )> ValidateAndExtractClientAuthorizationsAsync(
+        string token,
+        LogLevel credentialFailureLevel,
+        CancellationToken cancellationToken
+    )
+    {
+        return ValidateAsync(token, 0, credentialFailureLevel, cancellationToken);
+    }
+
+    /// <summary>
     /// Validates a JWT token embedded in an Authorization header and extracts client authorization information.
     /// </summary>
     /// <param name="authorizationHeader">The full Authorization header value, or the token itself when tokenStartIndex is 0</param>
     /// <param name="tokenStartIndex">The index at which the bearer token starts</param>
     /// <param name="cancellationToken">Cancellation token for async operations</param>
     /// <returns>A tuple containing the validated ClaimsPrincipal and extracted ClientAuthorizations, or (null, null) if validation fails</returns>
-    public async Task<(
+    public Task<(
         ClaimsPrincipal? Principal,
         ClientAuthorizations? ClientAuthorizations
     )> ValidateAndExtractClientAuthorizationsAsync(
         string authorizationHeader,
         int tokenStartIndex,
+        CancellationToken cancellationToken
+    )
+    {
+        return ValidateAsync(authorizationHeader, tokenStartIndex, LogLevel.Warning, cancellationToken);
+    }
+
+    private async Task<(
+        ClaimsPrincipal? Principal,
+        ClientAuthorizations? ClientAuthorizations
+    )> ValidateAsync(
+        string authorizationHeader,
+        int tokenStartIndex,
+        LogLevel credentialFailureLevel,
         CancellationToken cancellationToken
     )
     {
@@ -151,11 +185,34 @@ internal class JwtValidationService(
 
             string token = authorizationHeader[tokenStartIndex..];
 
-            ClaimsPrincipal principal = _tokenHandler.ValidateToken(
-                token,
-                validationParameters,
-                out SecurityToken validatedToken
-            );
+            ClaimsPrincipal principal;
+            SecurityToken validatedToken;
+            try
+            {
+                principal = _tokenHandler.ValidateToken(token, validationParameters, out validatedToken);
+            }
+            catch (Exception ex) when (IsMalformedTokenException(ex))
+            {
+                // IdentityModel reports a token it cannot parse as ArgumentException or FormatException,
+                // not as SecurityTokenException. That is client input, not a fault, so it is a failed
+                // validation. S6667 asks for the caught exception to be passed to the logger; it is not,
+                // because its message and stack describe only input that the caller sent.
+#pragma warning disable S6667
+                logger.Log(
+                    credentialFailureLevel,
+                    "Token validation failed: malformed token ({ExceptionType})",
+                    ex.GetType().Name
+                );
+#pragma warning restore S6667
+                return (null, null);
+            }
+            catch (SecurityTokenException ex)
+            {
+                // Only a rejection of the token itself takes the requested level. The same exception
+                // types raised outside this call are left to the catches below.
+                LogRejectedToken(ex, credentialFailureLevel);
+                return (null, null);
+            }
 
             string fallbackTokenId = CreateFallbackTokenId(authorizationHeader, tokenStartIndex);
             ClientAuthorizations clientAuthorizations = ExtractClientAuthorizations(
@@ -190,6 +247,31 @@ internal class JwtValidationService(
         {
             logger.LogError(ex, "Unexpected error during token validation");
             return (null, null);
+        }
+    }
+
+    /// <summary>
+    /// Whether an exception from token parsing describes the token itself. ArgumentNullException is
+    /// excluded: callers must pass a nonblank token (the authorization header parser and the token
+    /// info handler both reject a blank one first), so a null argument is a caller defect.
+    /// </summary>
+    private static bool IsMalformedTokenException(Exception exception) =>
+        exception is FormatException
+        || (exception is ArgumentException && exception is not ArgumentNullException);
+
+    /// <summary>
+    /// Logs a token that IdentityModel rejected, with the same messages as the catches of
+    /// ValidateAndExtractClientAuthorizationsAsync.
+    /// </summary>
+    private void LogRejectedToken(SecurityTokenException exception, LogLevel level)
+    {
+        if (exception is SecurityTokenExpiredException)
+        {
+            logger.Log(level, exception, "Token validation failed: Token expired");
+        }
+        else
+        {
+            logger.Log(level, exception, "Token validation failed");
         }
     }
 

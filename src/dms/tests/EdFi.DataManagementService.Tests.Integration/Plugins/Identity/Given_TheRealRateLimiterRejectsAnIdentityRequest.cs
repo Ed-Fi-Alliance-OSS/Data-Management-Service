@@ -17,9 +17,9 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 /// <remarks>
 /// The permit is spent on the metadata root under tenant one's first district, not on
 /// <c>/health</c>, whose database check would dial, and not on the unqualified <c>/metadata</c>,
-/// which the multi-tenant host answers with the guidance 404. The limiter partitions by host, and
-/// every in-process request shares one partition. The negative control is a host at the default
-/// limit: the same identity request reaches the provider.
+/// which the multi-tenant host answers with the guidance 404. Both requests carry client A's token,
+/// so the limiter budgets them under client A's partition. The negative control is a host at the
+/// default limit: the same identity request reaches the provider.
 /// </remarks>
 [Category("PluginIntegration")]
 public sealed class Given_TheRealRateLimiterRejectsAnIdentityRequest

@@ -81,7 +81,7 @@ internal partial class GetTokenInfoHandler(
                 return;
             }
         }
-        else if (requestInfo.FrontendRequest.Form != null)
+        else if (requestInfo.FrontendRequest.Form is not null)
         {
             tokenFromBody = new Dictionary<string, string>(
                 requestInfo.FrontendRequest.Form,
@@ -89,7 +89,9 @@ internal partial class GetTokenInfoHandler(
             ).GetValueOrDefault("Token");
         }
 
-        if (tokenFromBody == null)
+        // The token validator requires a nonblank token, so a blank one is treated as missing.
+        // A nonblank token is passed on exactly as sent.
+        if (string.IsNullOrWhiteSpace(tokenFromBody))
         {
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
