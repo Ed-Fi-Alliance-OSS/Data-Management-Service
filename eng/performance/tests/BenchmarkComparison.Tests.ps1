@@ -347,6 +347,30 @@ Describe 'Invoke-BenchmarkComparison' {
             @($script:DotnetCalls | Where-Object { $_.Arguments -like 'build*' }).Count | Should -Be 2
         }
 
+        It 'Given relative -ResultsDirectory and -WorktreeRoot under a location other than the process directory, both resolve against that location' {
+            # Set-Location never moves the process directory, which [IO.File] and git -C use, so
+            # a relative path used to reach the run-plan write unresolved and fail after the builds.
+            $location = New-Item -ItemType Directory -Path (Join-Path $TestDrive "location-$([guid]::NewGuid().ToString('N'))")
+            Push-Location -LiteralPath $location.FullName
+            try {
+                # As PowerShell spells it (TEMP may be an 8.3 path).
+                $script:Location = $PWD.ProviderPath
+                [Environment]::CurrentDirectory | Should -Not -Be $script:Location
+                $result = Invoke-Comparison -Outcome @{ ResultsDirectory = 'relative-results'; WorktreeRoot = 'relative-worktrees' }
+            }
+            finally {
+                Pop-Location
+            }
+
+            $result.ExitCode | Should -Be 0
+            $result.InvocationDirectory | Should -BeLike (Join-Path -Path $script:Location -ChildPath 'relative-results' -AdditionalChildPath '*')
+            Join-Path $result.InvocationDirectory 'run-plan.json' | Should -Exist
+            Should -Invoke -ModuleName BenchmarkComparison Invoke-BenchmarkGit -Times 1 -Exactly -ParameterFilter {
+                $ArgumentList[0] -eq 'worktree' -and
+                $ArgumentList[3] -eq (Join-Path -Path $script:Location -ChildPath 'relative-worktrees' -AdditionalChildPath $script:Reference.Substring(0, 12))
+            }
+        }
+
         It 'Given a side process that fails, the loop stops and the comparison still decides (2)' {
             $script:SideExits = @{ 2 = 1 }
             $script:ComparisonResult = 'invalid'
@@ -599,8 +623,29 @@ Describe 'Get-BenchmarkDatabaseCpuLimit' {
         @{ Name = 'a 50 ms quota per 100 ms pinned to one CPU'; HostConfig = '{"NanoCpus":0,"CpuQuota":50000,"CpuPeriod":100000,"CpusetCpus":"0"}'; Expected = 0.5 }
         @{ Name = 'a quota with the default period'; HostConfig = '{"NanoCpus":0,"CpuQuota":300000,"CpuPeriod":0,"CpusetCpus":""}'; Expected = 3 }
         @{ Name = '--cpuset-cpus 0-3,6'; HostConfig = '{"NanoCpus":0,"CpuQuota":0,"CpuPeriod":0,"CpusetCpus":"0-3,6"}'; Expected = 5 }
+        @{ Name = 'overlapping --cpuset-cpus 0-3,2-5'; HostConfig = '{"NanoCpus":0,"CpuQuota":0,"CpuPeriod":0,"CpusetCpus":"0-3,2-5"}'; Expected = 6 }
     ) {
         $config = $HostConfig | ConvertFrom-Json
         Get-BenchmarkDatabaseCpuLimit -HostConfig $config -VmCpus 8 | Should -Be ([decimal]$Expected)
+    }
+}
+
+Describe 'Get-BenchmarkDatabaseCpuset' {
+    It 'Given <CpusetCpus>, it records <Expected>' -ForEach @(
+        @{ CpusetCpus = ''; Expected = '' }
+        @{ CpusetCpus = '0-3'; Expected = '0,1,2,3' }
+        @{ CpusetCpus = '3,2,1,0'; Expected = '0,1,2,3' }
+        @{ CpusetCpus = '0-3,2-5'; Expected = '0,1,2,3,4,5' }
+        @{ CpusetCpus = ' 10,8-9 '; Expected = '8,9,10' }
+    ) {
+        Get-BenchmarkDatabaseCpuset -CpusetCpus $CpusetCpus | Should -Be $Expected
+    }
+
+    It 'Given two pins of the same size on different CPUs, the limits match but the sets do not' {
+        $first = '{"NanoCpus":0,"CpuQuota":0,"CpuPeriod":0,"CpusetCpus":"0-3"}' | ConvertFrom-Json
+        $second = '{"NanoCpus":0,"CpuQuota":0,"CpuPeriod":0,"CpusetCpus":"4-7"}' | ConvertFrom-Json
+
+        Get-BenchmarkDatabaseCpuLimit -HostConfig $second -VmCpus 8 | Should -Be (Get-BenchmarkDatabaseCpuLimit -HostConfig $first -VmCpus 8)
+        Get-BenchmarkDatabaseCpuset -CpusetCpus $second.CpusetCpus | Should -Not -Be (Get-BenchmarkDatabaseCpuset -CpusetCpus $first.CpusetCpus)
     }
 }

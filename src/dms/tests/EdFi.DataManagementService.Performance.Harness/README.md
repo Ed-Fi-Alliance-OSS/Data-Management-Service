@@ -403,10 +403,10 @@ Two different fingerprints are compared:
 - **Against qualification**, when the profile sets `qualifiedEnvironments.<provider>`, every
   side's fingerprint must equal it: OS family and architecture, the .NET runtime (major.minor,
   `dotnetRuntime`), machine fingerprint, CPU model and cores, host memory, power plan and AC
-  state, Docker VM CPUs and memory, the database container's CPU and memory limits, image
-  digest, server version, database settings, storage mount type, and effective connection
-  settings. It never includes the profile hash or the harness commit, so editing the profile
-  does not invalidate it. When it is null, the result is labelled `uncalibrated`.
+  state, Docker VM CPUs and memory, the database container's CPU limit, CPU set and memory
+  limit, image digest, server version, database settings, storage mount type, and effective
+  connection settings. It never includes the profile hash or the harness commit, so editing the
+  profile does not invalidate it. When it is null, the result is labelled `uncalibrated`.
 
 The OS build, the Docker version and the .NET patch are recorded and listed, but they never
 invalidate a qualification: they change with routine servicing of the workstation, and pinning
@@ -416,7 +416,9 @@ does.
 The database container's CPU limit is the smallest of its `--cpus`, its CFS quota
 (`--cpu-quota` / `--cpu-period`), the number of CPUs its `--cpuset-cpus` allows, and the Docker
 VM's CPUs, so a quota or a CPU pinning changes the fingerprint even though Docker records them
-apart from `--cpus`.
+apart from `--cpus`. The CPU set (`databaseCpuset`) records which CPUs that list allows, in
+canonical form (`0-3` and `3,2,1,0` are both `0,1,2,3`; empty when unpinned), so moving a pin
+to other CPUs, or widening it under the same cap, changes the fingerprint too.
 
 Required values are asserted on every side directly, not only compared between sides: Serilog
 `Warning`, ownership published, connection settings equal to `workload.connection.<provider>`,
@@ -479,7 +481,9 @@ that provider (see [calibration, sizing and qualification](#calibration-sizing-a
 then update its thresholds, fingerprint, and factors in the profile through a pull request.
 `Calibration` and `Sizing` runs do not check the frozen fingerprint, so they can derive those
 replacements on the changed environment; a mismatch only labels them `uncalibrated`. Every
-other purpose stays invalid there until the updated profile is merged.
+other purpose stays invalid there until the updated profile is merged. For a connection-setting
+change, update `workload.connection.<provider>` first, because every side must match it; the
+frozen fingerprint keeps the old settings until the calibration replaces it.
 
 ### Results and exit codes
 

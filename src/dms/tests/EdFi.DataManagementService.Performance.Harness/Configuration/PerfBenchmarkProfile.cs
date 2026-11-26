@@ -149,6 +149,8 @@ public sealed record PerfBenchmarkEnvironmentRules(
 /// It never holds the profile hash or the harness commit, so freezing the profile cannot
 /// invalidate it. <see cref="DotnetRuntime" /> is the runtime's major.minor (e.g. <c>10.0</c>):
 /// a patch release is routine servicing, a new major is a new platform.
+/// <see cref="DatabaseCpuset" /> pins which CPUs the database container may use, beside
+/// <see cref="DatabaseCpuLimit" />, how many; empty when it is not pinned.
 /// </summary>
 public sealed record PerfBenchmarkEnvironmentFingerprint(
     string OsFamily,
@@ -168,7 +170,8 @@ public sealed record PerfBenchmarkEnvironmentFingerprint(
     string ServerVersion,
     IReadOnlyList<PerfSetting> DatabaseSettings,
     string StorageMountType,
-    PerfBenchmarkConnectionSettings Connection
+    PerfBenchmarkConnectionSettings Connection,
+    string DatabaseCpuset = ""
 );
 
 public sealed record PerfLoadedBenchmarkProfile(PerfBenchmarkProfile Profile, string Sha256);
@@ -562,7 +565,7 @@ public static partial class PerfBenchmarkProfileLoader
             PerfBenchmarkEnvironmentFingerprint? fingerprint = environment.QualifiedEnvironments[provider];
             if (fingerprint is not null)
             {
-                ValidateFingerprint($"{Path}.{provider}", provider, fingerprint, profile, errors);
+                ValidateFingerprint($"{Path}.{provider}", fingerprint, profile, errors);
             }
             else if (profile.IsFrozenSafe())
             {
@@ -575,7 +578,6 @@ public static partial class PerfBenchmarkProfileLoader
 
     private static void ValidateFingerprint(
         string path,
-        string provider,
         PerfBenchmarkEnvironmentFingerprint fingerprint,
         PerfBenchmarkProfile profile,
         List<string> errors
@@ -636,13 +638,10 @@ public static partial class PerfBenchmarkProfileLoader
             errors
         );
 
-        if (
-            profile.Workload.Connection.TryGetValue(provider, out PerfBenchmarkConnectionSettings? pinned)
-            && fingerprint.Connection != pinned
-        )
-        {
-            errors.Add($"{path}.connection must equal workload.connection.{provider}.");
-        }
+        // The connection is deliberately not compared with workload.connection here: after a
+        // connection-setting change the old fingerprint must still load, so the comparison's
+        // qualified-environment check judges it like every other field, and a Calibration on
+        // the new settings can derive the replacement.
     }
 
     /// <summary>

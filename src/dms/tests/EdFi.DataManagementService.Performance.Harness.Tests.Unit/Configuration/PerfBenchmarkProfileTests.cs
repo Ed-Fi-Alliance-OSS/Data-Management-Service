@@ -446,15 +446,26 @@ public class Given_A_Profile_With_A_Malformed_Fingerprint : ProfileDefectFixture
         profile["environment"]!["qualifiedEnvironments"]!["mssql"]!["imageDigest"] = "latest";
 }
 
+/// <summary>
+/// The recalibration path for a connection-setting change: workload.connection is updated
+/// first, and the frozen fingerprint still records the old settings until a Calibration on the
+/// new ones derives its replacement. The comparison, not the loader, judges the mismatch.
+/// </summary>
 [TestFixture]
-public class Given_A_Profile_With_A_Fingerprint_Off_The_Pinned_Connection : ProfileDefectFixture
+public class Given_A_Frozen_Profile_Whose_Workload_Connection_Changed_After_Qualification
 {
-    protected override string ExpectedField => "environment.qualifiedEnvironments.postgresql.connection";
+    [Test]
+    public void It_loads_with_the_previous_fingerprint()
+    {
+        JsonObject profile = ProfileTestValues.Frozen();
+        profile["workload"]!["connection"]!["mssql"]!["maxPoolSize"] = 80;
 
-    protected override JsonObject Start() => ProfileTestValues.Frozen();
+        PerfBenchmarkProfile loaded = ProfileTestValues.Load(profile).Profile;
 
-    protected override void Corrupt(JsonObject profile) =>
-        profile["environment"]!["qualifiedEnvironments"]!["postgresql"]!["connection"]!["pooling"] = false;
+        loaded.IsFrozen.Should().BeTrue();
+        loaded.Workload.Connection["mssql"].MaxPoolSize.Should().Be(80);
+        loaded.Environment.QualifiedEnvironments["mssql"]!.Connection.MaxPoolSize.Should().Be(100);
+    }
 }
 
 [TestFixture]

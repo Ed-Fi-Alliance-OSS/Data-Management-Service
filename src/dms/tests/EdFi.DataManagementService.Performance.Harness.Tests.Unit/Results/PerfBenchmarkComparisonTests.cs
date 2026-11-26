@@ -1040,6 +1040,11 @@ public class Given_A_Mismatch
             "databaseCpuLimit",
             side => side with { Environment = side.Environment with { DatabaseCpuLimit = 2 } }
         );
+        // The same number of CPUs, so the limit agrees, but other CPUs.
+        yield return Fingerprint(
+            "databaseCpuset",
+            side => side with { Environment = side.Environment with { DatabaseCpuset = "4,5,6,7" } }
+        );
         yield return Fingerprint(
             "databaseMemoryLimitBytes",
             side => side with { Environment = side.Environment with { DatabaseMemoryLimitBytes = 1 } }
@@ -1347,6 +1352,89 @@ public class Given_A_Different_Environment
         );
 
         builder.Compare().ShouldBeInvalidBecause("qualifiedEnvironments.postgresql in connection");
+    }
+
+    /// <summary>
+    /// The documented connection-setting recalibration: workload.connection already holds the
+    /// new settings, the frozen fingerprint still the old ones, and the sides run the new ones.
+    /// The profile goes through the real loader, which used to reject that mismatch.
+    /// </summary>
+    private static ComparisonBuilder OnNewConnectionSettings(ComparisonBuilder builder)
+    {
+        builder.Profile = ComparisonProfiles.FrozenFor(
+            builder,
+            profile => profile["workload"]!["connection"]!["postgresql"]!["maxPoolSize"] = 80
+        );
+        return builder.EditSides(side =>
+            side with
+            {
+                Side = side.Side with
+                {
+                    EffectiveConnection = side.Side.EffectiveConnection with { MaxPoolSize = 80 },
+                },
+            }
+        );
+    }
+
+    [Test]
+    public void It_lets_a_calibration_on_new_connection_settings_derive_the_replacement_fingerprint()
+    {
+        PerfBenchmarkComparisonResult result = OnNewConnectionSettings(
+                new ComparisonBuilder { Purpose = PerfBenchmarkComparison.Calibration }
+            )
+            .Compare();
+
+        result.ShouldBeValid();
+        result.Labels.Should().Contain(PerfBenchmarkComparisonResult.UncalibratedLabel);
+        result.Calibration!.Fingerprint.Connection.MaxPoolSize.Should().Be(80);
+    }
+
+    [Test]
+    public void It_keeps_a_candidate_on_new_connection_settings_invalid_until_the_fingerprint_is_replaced()
+    {
+        OnNewConnectionSettings(new ComparisonBuilder())
+            .Compare()
+            .ShouldBeInvalidBecause("qualifiedEnvironments.postgresql in connection");
+    }
+
+    /// <summary>
+    /// Qualified pinned to CPUs 0-3, then run on <paramref name="cpuset" />. The CPU limit is 4
+    /// both times, so only the CPU set can tell the environments apart.
+    /// </summary>
+    private static ComparisonBuilder QualifiedOnCpus0To3RunOn(string cpuset)
+    {
+        ComparisonBuilder builder = new();
+        builder.Profile = ComparisonProfiles.Frozen(
+            builder.Provider,
+            builder.Fingerprint() with
+            {
+                DatabaseCpuLimit = 4,
+                DatabaseCpuset = "0,1,2,3",
+            }
+        );
+        return builder.EditSides(side =>
+            side with
+            {
+                Environment = side.Environment with { DatabaseCpuLimit = 4, DatabaseCpuset = cpuset },
+            }
+        );
+    }
+
+    [Test]
+    public void It_keeps_the_qualification_on_the_same_cpus()
+    {
+        PerfBenchmarkComparisonResult result = QualifiedOnCpus0To3RunOn("0,1,2,3").Compare();
+
+        result.ShouldBeValid();
+        result.Labels.Should().NotContain(PerfBenchmarkComparisonResult.UncalibratedLabel);
+    }
+
+    [Test]
+    public void It_is_invalid_on_the_same_number_of_other_cpus()
+    {
+        QualifiedOnCpus0To3RunOn("4,5,6,7")
+            .Compare()
+            .ShouldBeInvalidBecause("differs from qualifiedEnvironments.postgresql in databaseCpuset.");
     }
 
     private static ComparisonBuilder OnDotnet(ComparisonBuilder builder, string dotnetVersion)
@@ -1885,6 +1973,26 @@ public class Given_A_Comparison_Directory
         loaded.ShouldBeValid();
         loaded.Result.Should().Be(PerfBenchmarkComparisonResult.SuspectedRegression);
         loaded.Scenario(ComparisonBuilder.DeepLarge).MedianP50Ratio.Should().Be(1.29m);
+    }
+
+    [TestCase(PerfBenchmarkComparison.Candidate)]
+    [TestCase(PerfBenchmarkComparison.Calibration)]
+    public void It_rejects_a_run_plan_with_no_pairs(string purpose)
+    {
+        // The loader reads only planned sides, so an empty order plans no work and nothing is
+        // missing: different builds read as acceptable at exit 0, and a same build threw while
+        // taking its calibration fingerprint from the first side.
+        PerfBenchmarkComparisonInput input = new ComparisonBuilder { Purpose = purpose }.Build();
+        ComparisonBuilder.WriteDirectory(_directory, input);
+        File.WriteAllText(
+            Path.Combine(_directory, PerfBenchmarkRunPlan.FileName),
+            PerfBenchmarkJson.Serialize(input.Plan with { Order = [] })
+        );
+
+        PerfBenchmarkComparisonInput loaded = PerfBenchmarkComparisonLoader.Load(_directory, input.Profile);
+
+        loaded.Sides.Should().BeEmpty();
+        PerfBenchmarkComparison.Compare(loaded).ShouldBeInvalidBecause("run plan: the order must hold");
     }
 
     [Test]

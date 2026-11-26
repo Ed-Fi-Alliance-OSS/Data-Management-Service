@@ -46,6 +46,8 @@ public sealed record PerfBenchmarkPhaseWindow(string Name, DateTimeOffset StartU
 /// <c>environment.json</c>: the host, Docker and database-container facts of one side, and
 /// its phase windows, written by the wrapper. <see cref="SideExitCode" /> is the side process's
 /// exit code, recorded only by the rewrite after the process exits; null when it never was.
+/// <see cref="DatabaseCpuset" /> is the container's canonical <c>--cpuset-cpus</c> set
+/// (<c>0,1,2,3</c>), empty when it is not pinned.
 /// </summary>
 public sealed record PerfBenchmarkEnvironment(
     string SchemaVersion,
@@ -68,7 +70,8 @@ public sealed record PerfBenchmarkEnvironment(
     IReadOnlyList<PerfBenchmarkPhaseWindow> Phases,
     bool TrailingSampleTimeout = false,
     IReadOnlyList<string>? MissingTrailingMetrics = null,
-    int? SideExitCode = null
+    int? SideExitCode = null,
+    string DatabaseCpuset = ""
 )
 {
     public const string CurrentSchemaVersion = "benchmark-environment 1.0.0";
@@ -492,7 +495,8 @@ public static class PerfBenchmarkComparison
             reads?.Server.ServerVersion ?? string.Empty,
             [.. (reads?.Server.Settings ?? []).OrderBy(setting => setting.Name, StringComparer.Ordinal)],
             environment.StorageMountType,
-            side.Side.EffectiveConnection
+            side.Side.EffectiveConnection,
+            environment.DatabaseCpuset
         );
     }
 
@@ -583,10 +587,12 @@ public static class PerfBenchmarkComparison
             );
         }
 
-        // Exactly one baseline and one candidate per pair, pairs 1..N, odd pairs baseline first.
+        // Exactly one baseline and one candidate per pair, pairs 1..N with N at least 1, odd
+        // pairs baseline first. An empty order would plan no work, so nothing could be missing.
         int pairs = plan.PairCount;
         bool orderValid =
-            plan.Order.Count == pairs * 2
+            pairs >= 1
+            && plan.Order.Count == pairs * 2
             && Enumerable
                 .Range(1, pairs)
                 .All(pair =>
@@ -610,8 +616,8 @@ public static class PerfBenchmarkComparison
         if (!orderValid)
         {
             invalid.Add(
-                "run plan: the order must hold one baseline and one candidate for each pair 1..N, alternating "
-                    + "(odd pairs run the baseline first)."
+                "run plan: the order must hold one baseline and one candidate for each pair 1..N (N at least 1), "
+                    + "alternating (odd pairs run the baseline first)."
             );
         }
 

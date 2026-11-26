@@ -172,6 +172,7 @@ function Get-BenchmarkHostFact {
         dockerVmCpus                  = [int]$vmCpus
         dockerVmMemoryBytes           = [long]$vmMemory
         databaseCpuLimit              = Get-BenchmarkDatabaseCpuLimit -HostConfig $hostConfig -VmCpus ([int]$vmCpus)
+        databaseCpuset                = Get-BenchmarkDatabaseCpuset -CpusetCpus $hostConfig.CpusetCpus
         # Unlimited (0) containers get the VM's allocation, which is what they can use.
         databaseMemoryLimitBytes      = [long]$hostConfig.Memory -gt 0 ? [long]$hostConfig.Memory : [long]$vmMemory
         storageMountType              = Get-BenchmarkStorageMountType -Mounts $mounts -Tmpfs $tmpfs -DataPath $DataPath
@@ -409,15 +410,30 @@ function Get-BenchmarkDatabaseCpuLimit {
         $period = [long]$HostConfig.CpuPeriod -gt 0 ? [long]$HostConfig.CpuPeriod : 100000
         $limits.Add([decimal]$HostConfig.CpuQuota / $period)
     }
-    if (-not [string]::IsNullOrWhiteSpace($HostConfig.CpusetCpus)) {
-        $count = 0
-        foreach ($range in $HostConfig.CpusetCpus.Split(',')) {
-            $first, $last = $range.Trim().Split('-')
-            $count += $null -eq $last ? 1 : [int]$last - [int]$first + 1
-        }
-        $limits.Add([decimal]$count)
+    $cpuset = Get-BenchmarkDatabaseCpuset -CpusetCpus $HostConfig.CpusetCpus
+    if ($cpuset) {
+        $limits.Add([decimal]$cpuset.Split(',').Count)
     }
     return ($limits | Sort-Object)[0]
+}
+
+function Get-BenchmarkDatabaseCpuset {
+    <#
+    .SYNOPSIS
+        The CPUs a --cpuset-cpus list allows, in canonical form: distinct, ascending and
+        comma-separated, so 0-3 and 3,2,1,0 are both 0,1,2,3 and overlapping ranges count once.
+        Empty when the container is not pinned. The fingerprint records it beside the CPU limit,
+        so moving a pin to other CPUs, or widening it under the same cap, changes the fingerprint.
+    #>
+    param([string] $CpusetCpus)
+    if ([string]::IsNullOrWhiteSpace($CpusetCpus)) {
+        return ''
+    }
+    $cpus = foreach ($range in $CpusetCpus.Split(',')) {
+        $first, $last = $range.Trim().Split('-')
+        [int]$first..[int]($last ?? $first)
+    }
+    return (@($cpus) | Sort-Object -Unique) -join ','
 }
 
 function Read-BenchmarkProfile {
@@ -926,6 +942,11 @@ function Invoke-BenchmarkComparison {
     if (-not $WorktreeRoot) {
         $WorktreeRoot = Join-Path (Split-Path $SourceRoot -Parent) 'dms-bench'
     }
+    # Cmdlets and native processes resolve a relative path against PowerShell's location, but
+    # [IO.File] and git -C resolve it against the process directory or the repository, so every
+    # path is made absolute once, against the location the caller sees.
+    $ResultsDirectory = $PSCmdlet.GetUnresolvedProviderPathFromPSPath($ResultsDirectory)
+    $WorktreeRoot = $PSCmdlet.GetUnresolvedProviderPathFromPSPath($WorktreeRoot)
     # ValidateSet ignores case, but the report accepts only the canonical tokens, so a run
     # must never carry the spelling it was invoked with.
     $Provider = $Provider -eq 'pgsql' ? 'postgresql' : $Provider.ToLowerInvariant()
@@ -991,5 +1012,6 @@ Export-ModuleMember -Function @(
     'Invoke-BenchmarkComparison',
     'Wait-BenchmarkCollectorTrailingSample',
     'Get-BenchmarkStorageMountType',
-    'Get-BenchmarkDatabaseCpuLimit'
+    'Get-BenchmarkDatabaseCpuLimit',
+    'Get-BenchmarkDatabaseCpuset'
 )
