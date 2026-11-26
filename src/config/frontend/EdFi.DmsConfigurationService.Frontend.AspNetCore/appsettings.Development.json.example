@@ -8,6 +8,13 @@
         // which this example does not configure. See docs/CMS-MANAGED-DATA-STORES.md to enable it.
         "EnableDataStoreManagement": false
     },
+    "JobSettings": {
+        // Bootstrap mode: this instance queues jobs and runs none of them. Job workers default to
+        // enabled, and startup then requires the DMS education organization reader settings, which
+        // this example does not configure. Once they are configured, remove this setting; see
+        // "Bootstrap and operational modes" in docs/CONFIGURATION.md.
+        "WorkerEnabled": false
+    },
     "DatabaseSettings": {
         // Must match the PostgreSQL instance started for local development.
         "DatabaseConnection": "host=localhost;port=5432;username=postgres;database=edfi_configurationservice;",

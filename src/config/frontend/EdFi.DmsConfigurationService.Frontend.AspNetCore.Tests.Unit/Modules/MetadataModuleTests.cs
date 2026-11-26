@@ -154,6 +154,8 @@ public class MetadataModuleTests
         "DataStoreManageResponse.dataStoreId int32",
         "EditResourceClaimActionsOnClaimSetRequest.claimSetId int32",
         "EditResourceClaimActionsOnClaimSetRequest.resourceClaimId int32",
+        "EducationOrganizationResponse.educationOrganizationId int64",
+        "EducationOrganizationResponse.parentId int64",
         "OverrideAuthStategyOnClaimSetRequest.authStrategyIds int32",
         "OverrideAuthStategyOnClaimSetRequest.claimSetId int32",
         "OverrideAuthStategyOnClaimSetRequest.resourceClaimId int32",
@@ -163,6 +165,8 @@ public class MetadataModuleTests
         // problem responses carries the HTTP status as an int32.
         "ProblemDetails.status int32",
         "ProfileUpdateCommand.id int32",
+        "TenantDataStoreResponse.id int32",
+        "TenantDataStoreResponse.dataStoreManageId int32",
         "VendorUpdateCommand.id int32",
     ];
 

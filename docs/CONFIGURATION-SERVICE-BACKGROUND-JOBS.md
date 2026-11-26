@@ -22,6 +22,10 @@ The design record, with every decision and its evidence, is
 | Retention sweep                | `JobSettings:RetentionEnabled`   | Deletes finished jobs older than `FinishedJobRetention`                                |
 | `GET /v3/jobs/{jobId}`         | Always                           | Returns the status of one job of the caller's tenant                                   |
 
+An instance with the worker on requires the DMS education organization reader settings at startup; an instance
+with it off logs `JobWorkersDisabled` and runs no jobs. See
+[Bootstrap and operational modes](./CONFIGURATION.md#bootstrap-and-operational-modes).
+
 Each switch is independent and is read at startup. Every Configuration Service instance may run all three; the
 database coordinates them, so running several instances is safe and adds capacity.
 
@@ -100,6 +104,13 @@ data-store lifecycle (DMS-1439) must meet both:
   `WorkerEnabled=false` stops every job type; removing a handler still allows its jobs to be
   claimed and fail with `UnsupportedJobType`.
 
+The education organization refresh (`EducationOrganization.Refresh`; see
+[Education Organization Refresh](./CMS-EDUCATION-ORGANIZATION-REFRESH.md)) keeps no record of its own that must
+follow a job's outcome: its public meaning of `Error` is "not confirmed complete", and data stores it published stay
+published whatever the job's end. It has no feature switch; `WorkerEnabled=false` stops it with every other job type.
+Its handler serializes its own work with a lease on each data store, which the schedule's skip rule does not do
+across jobs (see [Schedules](#schedules)).
+
 ### Failure classification and public error text
 
 A handler throws `JobPermanentException(JobErrorCode)` for a failure that retrying cannot fix; the
@@ -131,6 +142,26 @@ opens no DMS database connection, and the backend project references no DMS asse
 database provider (`BackendProjectBoundaryTests`). Its logs follow the rules in
 [Observability](#observability) and also never contain tokens, client secrets, cursors or
 `Authorization` headers, at any level (`RedactionTests`).
+
+### Composite error codes
+
+A job that covers several items can fail with one code that lists the categories of its problems. A consumer
+registers such a code with `AddJobCompositeErrorCode(code, message, categoryCodes)` and raises it with
+`JobPermanentException(errorCode, categories)`.
+
+- **Registration** happens during service registration, so a violation stops startup on every instance. Each
+  category must already be registered, as a consumer or built-in code, before the composite that lists it; must be
+  distinct; and must not itself be composite. The worst case, the message plus every category code, must fit in 1000
+  characters.
+- **Text.** The registered message, then `Problem categories:` with the category codes in the order given, without
+  duplicates, then each category's registered message while the total stays within 1000 characters. Every category
+  code is always listed, and the text is registry text only; the exception's own message is never used.
+- **Fail closed.** A composite failure whose code is not a registered composite, whose category list is empty, or
+  whose categories are not all allowed for it fails the job as `HandlerFailed` and logs `JobCompositeErrorRejected`.
+  The single-code path is unchanged.
+
+The education organization refresh registers `EdOrgRefreshIncomplete`; see
+[Job outcomes and errors](./CMS-EDUCATION-ORGANIZATION-REFRESH.md#job-outcomes-and-errors).
 
 ## Polling endpoint
 
@@ -296,7 +327,8 @@ Scheduled jobs run through the same worker and the same lifecycle as any other j
 only keeps one schedule's own jobs from overlapping. It does not coordinate a scheduled job with
 manually enqueued jobs or with jobs from other schedules that touch the same tenant or target. A
 consumer that needs that, such as the education-organization refresh (DMS-1441), must deduplicate
-or serialize that work itself.
+or serialize that work itself. The education organization refresh serializes it with a lease on each data store; see
+[Scheduled refresh](./CMS-EDUCATION-ORGANIZATION-REFRESH.md#scheduled-refresh).
 
 ## Recovery
 
@@ -356,6 +388,8 @@ Identifiers are sanitized before logging.
 | `RetentionDeleted`                  | Info     | Finished jobs deleted by one sweep                        |
 | `RetentionFailed`                   | Warning  | A retention sweep stopped early; retried next interval    |
 | `JobStatusReadFailed`               | Error    | `GET /v3/jobs/{jobId}` could not read the job (500)       |
+| `JobCompositeErrorRejected`         | Warning  | A composite failure broke its contract; the job failed as `HandlerFailed` |
+| `JobWorkersDisabled`                | Warning  | At startup, on an instance with `WorkerEnabled=false`     |
 
 Metrics come from the `EdFi.DmsConfigurationService.Jobs` meter (no exporter is configured by
 the service):

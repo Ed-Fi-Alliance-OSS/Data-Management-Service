@@ -163,6 +163,32 @@ cd ~/dms-src/eng/azure-vm/compose/claims &&
 
 `mv -n` never overwrites: if a file is still listed, a `-claims.json` file with the same stem already exists, so merge or remove one of them by hand.
 
+The Configuration Services now refuse to start with job workers on until their DMS education organization reader is configured, and an existing `.env` keeps workers on.
+Before updating, choose one, as described in [Bootstrap and operational modes](../../../docs/CONFIGURATION.md#bootstrap-and-operational-modes):
+
+- **Operational:** only when the running build's Configuration Service databases are at migration `0039` or later, which adds the projection service claim (check below). On the running build, create the projection claim set and application for each stack (one per tenant on the multi-tenant stack), then configure the reader as described in [Reader credentials](#reader-credentials).
+- **Bootstrap:** add `CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED=false` to `.env`. Both Configuration Services start, log `JobWorkersDisabled`, and run no jobs until the reader is configured and the variable is set back to `true`.
+
+Skipping both makes `st-config` and `mt-config` fail at startup, naming the missing reader settings.
+
+Check for migration `0039` on the running build; each database prints `1` when it has it:
+
+```bash
+for db in edfi_st_config edfi_mt_config; do
+  docker exec dms-sec-postgres psql -U postgres -d "$db" -tAc \
+    "SELECT count(*) FROM public.\"dmscs_SchemaVersions\" WHERE scriptname LIKE '%0039_Add_EducationOrganizationProjection_Claim%'"
+done
+```
+
+A database that prints `0` has no projection claim yet, so the credential cannot be created before updating.
+Update such an installation in bootstrap, then make it operational:
+
+1. Add `CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED=false` to `.env`.
+2. Update with the command below. Both Configuration Services start in bootstrap; refresh requests and schedules queue jobs, and no job runs.
+3. On the updated build, create the projection claim set and application for each stack (one per tenant on the multi-tenant stack).
+4. Configure the reader as described in [Reader credentials](#reader-credentials).
+5. Set `CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED=true` in `.env` and run `./up.sh st-config mt-config`. The queued jobs then run.
+
 ```bash
 cd ~/dms-src && git restore -- '*packages.lock.json' &&
   git fetch --force --tags origin && git switch --detach origin/main && git log -1 --oneline &&
@@ -327,6 +353,17 @@ cd ~/dms-src/eng/azure-vm/http
 FQDN=<FQDN> ST_CREDS='key:secret' T1_CREDS='key:secret' T2_CREDS='key:secret' ./sample-all.sh
 ```
 
+### Reader credentials
+
+Each stack reads its DMS through an application whose claim set grants the projection service claim:
+
+- Set `CONFIGURATION_SERVICE_ST_DMS_EDORG_BASE_URL` and `CONFIGURATION_SERVICE_MT_DMS_EDORG_BASE_URL` in `.env` (for example `http://st-dms:8080/st-dms` and `http://mt-dms:8080/mt-dms`).
+- Single-tenant: set `CONFIGURATION_SERVICE_ST_DMS_EDORG_CLIENT_ID` and `_CLIENT_SECRET` in `.env` when the secret has no `$`. `setup-env.ps1` and `bootstrap.ps1` refuse `$` anywhere in `.env`, quoted or not, and generated secrets can contain it.
+- Multi-tenant, one credential per tenant, and a single-tenant secret that contains `$`: copy `compose/reader.compose.override.example.yml` to `compose/reader.compose.override.yml`, keep the entries you need and fill them in, and leave the `.env` variables they replace empty. The tenant entries are keyed by the `MT_TENANT_1` and `MT_TENANT_2` names. Compose interpolates this file too, and YAML quotes do not prevent it: write each `$` in a value as `$$` (the secret `Ab$Cd` becomes `"Ab$$Cd"`). The file is gitignored; `chmod 600` it and record its values in your private vault, as for `.env`.
+
+`up.sh`, `update.sh`, `reset.sh` and `setup-env.ps1` load `reader.compose.override.yml` last whenever it exists.
+A manual `docker compose` command that creates or recreates services must select the same files, or the recreated Configuration Services lose the override's credentials: run `source ./compose-files.sh` in `compose/` and pass `"${compose_files[@]}"` as Part C does, or add `-f reader.compose.override.yml` after `-f keycloak.compose.yml`.
+
 ## Part C: Switch the Data Standard (5.2 to 6.1)
 
 The DMS DS 6.1 populated template leaves out the educator-preparation sample data, so it carries the same 960 students in 3 schools as DS 5.2.
@@ -377,7 +414,8 @@ The DS 6.1 template must exist for the running build; builds before 8.0.1-alpha.
    It loads claims only into an empty database, so the recreated services need one reload:
 
    ```bash
-   docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d --no-deps st-config mt-config
+   source ./compose-files.sh   # the stack's Compose files, plus reader.compose.override.yml when it exists
+   docker compose "${compose_files[@]}" --env-file .env up -d --no-deps st-config mt-config
    until [ "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/st-config/health)" = 200 ] &&
      curl -sk -o /dev/null -w '%{http_code}' https://localhost/mt-config/health | grep -qE '^(200|400)$'; do sleep 5; done
    ADMIN_ID=$(grep -E '^BOOTSTRAP_ADMIN_CLIENT_ID=' .env | cut -d= -f2-)
@@ -415,7 +453,8 @@ The DS 6.1 template must exist for the running build; builds before 8.0.1-alpha.
 
    ```bash
    sed -i 's/^CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=.*/CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=false/' .env
-   docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d --no-deps st-config mt-config
+   source ./compose-files.sh
+   docker compose "${compose_files[@]}" --env-file .env up -d --no-deps st-config mt-config
    ```
 
 5. Start the DMS services and check the existing keys **[bash]**:

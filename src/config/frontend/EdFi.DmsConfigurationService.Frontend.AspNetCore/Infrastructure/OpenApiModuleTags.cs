@@ -26,6 +26,7 @@ public static class OpenApiModuleTags
             [typeof(DataStoreContextModule)] = "DataStoreContexts",
             [typeof(DataStoreDerivativeModule)] = "DataStoreDerivatives",
             [typeof(DataStoreModule)] = "DataStores",
+            [typeof(EducationOrganizationModule)] = "DataStores",
             [typeof(HealthModule)] = "Health",
             [typeof(IdentityModule)] = "Connect",
             [typeof(InformationModule)] = "Information",

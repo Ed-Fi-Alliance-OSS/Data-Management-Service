@@ -123,6 +123,29 @@ if ($LASTEXITCODE -ne 0) { throw "Cannot talk to Docker. Log out and back in (so
 
 Push-Location $composeDir
 try {
+    # The Compose files for the commands below that create or recreate the stack's services, as
+    # compose/compose-files.sh selects them for up.sh, update.sh and reset.sh: an explicit -f stops Compose
+    # from reading docker-compose.override.yml, so the optional, gitignored reader credential override
+    # (compose/reader.compose.override.example.yml) is added last whenever it exists.
+    $composeFiles = @('-f', 'docker-compose.yml', '-f', 'keycloak.compose.yml')
+    if (Test-Path -LiteralPath 'reader.compose.override.yml' -PathType Leaf) {
+        $composeFiles += @('-f', 'reader.compose.override.yml')
+
+        # Before .env is written or any service starts: a value in the override replaces the same setting from .env,
+        # and the .env placeholder checks below do not read the override, so an entry still holding an example value
+        # (CHANGEME_...) would silently replace a working credential. Same pattern as refuse_reader_override_placeholders
+        # in compose/compose-files.sh: a non-comment line assigning a value that starts with CHANGEME_. Only the line
+        # numbers are reported, never their text.
+        $placeholderLines = @(Select-String -LiteralPath 'reader.compose.override.yml' -CaseSensitive `
+                -Pattern '^\s*[^#\s].*[:=]\s*["'']?CHANGEME_' | ForEach-Object LineNumber)
+        if ($placeholderLines.Count -gt 0) {
+            throw ("reader.compose.override.yml still holds example CHANGEME_ values (line(s) $($placeholderLines -join ', ')). " +
+                "A value there replaces the same setting from .env, so the Configuration Services would start with the " +
+                "placeholder credentials. Replace each one you need with the real value and delete the entries you do not " +
+                "need (see reader.compose.override.example.yml), or remove the file to use .env only. No services were started.")
+        }
+    }
+
     # --- 2. .env: host (always) + generated secrets (first run / -RotateSecrets only) -------
     $freshEnv = -not (Test-Path ".env")
     if ($freshEnv) { Copy-Item ".env.example" ".env" }
@@ -269,7 +292,7 @@ try {
     Write-Output "Starting infrastructure (postgres, keycloak, Configuration Service instances, gateway)..."
     # --no-deps so the gateway (which depends_on the DMS services) does not pull them up early;
     # the gateway resolves upstreams at request time, so it starts fine without the DMS backends.
-    docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d --no-deps `
+    docker compose @composeFiles --env-file .env up -d --no-deps `
         postgres keycloak st-config mt-config pgadmin swagger-ui gateway
     if ($LASTEXITCODE -ne 0) { throw "docker compose up (infrastructure) failed ($LASTEXITCODE)." }
 
@@ -343,7 +366,7 @@ try {
                 "copy that folder here), then re-run with -StartDms. See ../docs/infrastructure.md 'Provisioning method'.")
         }
         Write-Output "Starting DMS services..."
-        docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d st-dms mt-dms
+        docker compose @composeFiles --env-file .env up -d st-dms mt-dms
         if ($LASTEXITCODE -ne 0) { throw "docker compose up st-dms/mt-dms failed ($LASTEXITCODE)." }
         Write-Output "Waiting for DMS services to report healthy (requires provisioned schema)..."
         $deadline = (Get-Date).AddMinutes(8)

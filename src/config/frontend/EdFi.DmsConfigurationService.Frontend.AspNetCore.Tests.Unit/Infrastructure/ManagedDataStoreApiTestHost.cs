@@ -5,12 +5,17 @@
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 
-/// <summary>Uses production routes with isolated test dependencies and optional path-base simulation.</summary>
+/// <summary>
+/// Uses production routes with isolated test dependencies and optional path-base simulation: the
+/// <c>X-Test-PathBase</c> header becomes the request's path base, and a request path under it is routed without it,
+/// as UsePathBase does, so a returned relative URL can be requested again.
+/// </summary>
 public static class ManagedDataStoreApiTestHost
 {
     public static WebApplicationFactory<Program> Create(
@@ -52,7 +57,18 @@ public static class ManagedDataStoreApiTestHost
                 app.Use(
                     async (context, continuation) =>
                     {
-                        context.Request.PathBase = context.Request.Headers["X-Test-PathBase"].ToString();
+                        string pathBase = context.Request.Headers["X-Test-PathBase"].ToString();
+                        context.Request.PathBase = pathBase;
+                        if (
+                            pathBase.Length > 1
+                            && context.Request.Path.StartsWithSegments(
+                                pathBase.TrimEnd('/'),
+                                out PathString remaining
+                            )
+                        )
+                        {
+                            context.Request.Path = remaining;
+                        }
                         await continuation();
                     }
                 );

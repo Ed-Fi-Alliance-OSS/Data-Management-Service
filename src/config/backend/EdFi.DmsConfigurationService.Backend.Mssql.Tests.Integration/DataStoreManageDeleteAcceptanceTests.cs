@@ -94,6 +94,8 @@ public partial class Given_data_store_namespace_reservations
                 "DataStoreContext",
                 "DataStoreDerivative",
                 "ApiClientDataStore",
+                "EducationOrganizationSnapshotTarget",
+                "EducationOrganizationSnapshot",
                 "ApiClient",
                 "Application",
                 "Vendor",
@@ -104,6 +106,9 @@ public partial class Given_data_store_namespace_reservations
             {
                 "Job" => "\"JobId\"",
                 "ApiClientDataStore" => "\"ApiClientId\", \"DataStoreId\"",
+                "EducationOrganizationSnapshotTarget" => "\"DataStoreId\"",
+                "EducationOrganizationSnapshot" =>
+                    "\"DataStoreId\", \"Generation\", \"EducationOrganizationId\"",
                 _ => "\"Id\"",
             };
             tables.Add(

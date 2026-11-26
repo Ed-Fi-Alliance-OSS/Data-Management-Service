@@ -23,9 +23,10 @@ public enum RequestKind
 
 /// <summary>
 /// One request the reader sent. For a page, <see cref="Attempt"/> counts walks (a page sent without a cursor starts
-/// one) and <see cref="AttemptPage"/> is the page's position in its walk.
+/// one), <see cref="AttemptPage"/> is the page's position in its walk, and <see cref="DataStoreId"/> is the
+/// <c>dataStoreId</c> of its query.
 /// </summary>
-public sealed record RecordedRequest(RequestKind Kind, int Attempt, int AttemptPage);
+public sealed record RecordedRequest(RequestKind Kind, int Attempt, int AttemptPage, int? DataStoreId = null);
 
 /// <summary>
 /// What a test injects: for a page request, a response to return instead of calling DMS, or <c>null</c> to let the
@@ -71,7 +72,12 @@ public sealed class FaultPlan
                 bool hasCursor = request.RequestUri.Query.Contains("cursor=", StringComparison.Ordinal);
                 _attempt += hasCursor ? 0 : 1;
                 _attemptPage = hasCursor ? _attemptPage + 1 : 1;
-                recorded = new RecordedRequest(RequestKind.Page, _attempt, _attemptPage);
+                recorded = new RecordedRequest(
+                    RequestKind.Page,
+                    _attempt,
+                    _attemptPage,
+                    QueryDataStoreId(request.RequestUri.Query)
+                );
             }
             else
             {
@@ -87,6 +93,27 @@ public sealed class FaultPlan
             _requests.Add(recorded);
             return recorded;
         }
+    }
+
+    private static int? QueryDataStoreId(string query)
+    {
+        foreach (string parameter in query.TrimStart('?').Split('&'))
+        {
+            if (
+                parameter.StartsWith("dataStoreId=", StringComparison.Ordinal)
+                && int.TryParse(
+                    parameter["dataStoreId=".Length..],
+                    System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out int dataStoreId
+                )
+            )
+            {
+                return dataStoreId;
+            }
+        }
+
+        return null;
     }
 }
 
@@ -120,13 +147,18 @@ public sealed class FaultInjectingHandler(FaultPlan plan) : DelegatingHandler
 /// The production reader registration (<see cref="ServiceCollectionExtensions.AddDmsEducationOrganizationProjectionReader"/>)
 /// configured with the fixture's per-tenant projection credentials and the live DMS, plus the fault handler. One per
 /// test fixture, so Discovery and token caches never carry over between cases. A case can point it at another base
-/// URL with <c>dmsBaseUrl</c>.
+/// URL with <c>dmsBaseUrl</c>, and use other credentials with <c>clients</c>.
 /// </summary>
 public sealed class ReaderHost : IDisposable
 {
     private readonly ServiceProvider _provider;
 
-    public ReaderHost(ProjectionE2EFixture fixture, int pageSize = 2, Uri? dmsBaseUrl = null)
+    public ReaderHost(
+        ProjectionE2EFixture fixture,
+        int pageSize = 2,
+        Uri? dmsBaseUrl = null,
+        IReadOnlyDictionary<string, ClientCredentials>? clients = null
+    )
     {
         string section = DmsEducationOrganizationProjectionSettings.SectionName;
         Dictionary<string, string?> values = new()
@@ -136,7 +168,7 @@ public sealed class ReaderHost : IDisposable
                 .TrimEnd('/'),
             [$"{section}:PageSize"] = pageSize.ToString(System.Globalization.CultureInfo.InvariantCulture),
         };
-        foreach ((string tenant, ClientCredentials client) in fixture.ProjectionClients)
+        foreach ((string tenant, ClientCredentials client) in clients ?? fixture.ProjectionClients)
         {
             values[$"{section}:TenantCredentials:{tenant}:ClientId"] = client.Key;
             values[$"{section}:TenantCredentials:{tenant}:ClientSecret"] = client.Secret;

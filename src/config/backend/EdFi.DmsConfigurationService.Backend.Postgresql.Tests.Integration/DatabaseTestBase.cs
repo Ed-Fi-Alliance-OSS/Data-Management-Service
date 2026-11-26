@@ -50,6 +50,8 @@ public abstract class DatabaseTestBase
                     new("dmscs", "ClaimsHierarchy"),
                     new("dmscs", "DataStore"),
                     new("dmscs", "DataStoreContext"),
+                    new("dmscs", "EducationOrganizationSnapshot"),
+                    new("dmscs", "EducationOrganizationSnapshotTarget"),
                     new("dmscs", "OpenIddictApplication"),
                     new("dmscs", "OpenIddictApplicationScope"),
                     new("dmscs", "OpenIddictToken"),

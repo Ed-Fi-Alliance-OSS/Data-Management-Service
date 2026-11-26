@@ -98,6 +98,10 @@ x-cms-common-env: &cms-common-env
   # Managed data stores default to enabled, and startup then requires DmsDataStoreProvisioning,
   # which this stack does not configure (docs/CMS-MANAGED-DATA-STORES.md).
   AppSettings__EnableDataStoreManagement: "false"
+  # Job workers run the education organization refresh, so a stack with workers on refuses to start until its
+  # DMS reader settings (per stack, below) are set. An unset variable keeps workers on, as before; a fresh
+  # .env.example sets it to false (bootstrap). See docs/CONFIGURATION.md, "Bootstrap and operational modes".
+  JobSettings__WorkerEnabled: "${CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED:-true}"
   # Keycloak-only: the DMS/CMS token endpoints, JWT authority, and metadata addresses in
   # these env blocks are all wired to the shared Keycloak realm, so an alternative identity
   # provider cannot work here. For self-contained OpenIddict identity use the official
@@ -230,6 +234,9 @@ services:
       AppSettings__PathBase: "st-config"
       AppSettings__MultiTenancy: "false"
       DatabaseSettings__DatabaseConnection: "host=postgres;port=5432;username=${POSTGRES_USER:-postgres};password=${POSTGRES_PASSWORD};database=edfi_st_config;"
+      DmsEducationOrganizationProjectionSettings__DmsBaseUrl: "${CONFIGURATION_SERVICE_ST_DMS_EDORG_BASE_URL:-}"
+      DmsEducationOrganizationProjectionSettings__Credentials__ClientId: "${CONFIGURATION_SERVICE_ST_DMS_EDORG_CLIENT_ID:-}"
+      DmsEducationOrganizationProjectionSettings__Credentials__ClientSecret: "${CONFIGURATION_SERVICE_ST_DMS_EDORG_CLIENT_SECRET:-}"
     volumes:
       - ./claims:/app/additional-claims:ro
       - ./ssl/server.crt:/gateway-tls/server.crt:ro
@@ -277,6 +284,12 @@ services:
       AppSettings__PathBase: "mt-config"
       AppSettings__MultiTenancy: "true"
       DatabaseSettings__DatabaseConnection: "host=postgres;port=5432;username=${POSTGRES_USER:-postgres};password=${POSTGRES_PASSWORD};database=edfi_mt_config;"
+      # A multi-tenant DMS issues tokens per tenant, so per-tenant credentials go in reader.compose.override.yml as
+      # DmsEducationOrganizationProjectionSettings__TenantCredentials__<tenant>__ClientId / __ClientSecret
+      # (see reader.compose.override.example.yml; the stack scripts load it last when it exists).
+      DmsEducationOrganizationProjectionSettings__DmsBaseUrl: "${CONFIGURATION_SERVICE_MT_DMS_EDORG_BASE_URL:-}"
+      DmsEducationOrganizationProjectionSettings__Credentials__ClientId: "${CONFIGURATION_SERVICE_MT_DMS_EDORG_CLIENT_ID:-}"
+      DmsEducationOrganizationProjectionSettings__Credentials__ClientSecret: "${CONFIGURATION_SERVICE_MT_DMS_EDORG_CLIENT_SECRET:-}"
     volumes:
       - ./claims:/app/additional-claims:ro
       - ./ssl/server.crt:/gateway-tls/server.crt:ro

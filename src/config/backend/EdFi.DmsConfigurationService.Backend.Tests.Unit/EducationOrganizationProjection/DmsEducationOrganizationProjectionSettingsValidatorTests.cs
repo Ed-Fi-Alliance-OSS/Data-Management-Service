@@ -47,7 +47,7 @@ public class DmsEducationOrganizationProjectionSettingsValidatorTests
         [SetUp]
         public void Setup()
         {
-            // Every other value is out of range; none is checked while the reader is not configured.
+            // Every other value is out of range, and each is still checked while the reader is not configured.
             _result = Validate(
                 new()
                 {
@@ -61,7 +61,45 @@ public class DmsEducationOrganizationProjectionSettingsValidatorTests
         }
 
         [Test]
-        public void It_succeeds_without_checking_the_other_settings() => _result.Succeeded.Should().BeTrue();
+        public void It_reports_every_other_invalid_setting() =>
+            _result
+                .Failures.Should()
+                .HaveCount(4)
+                .And.Contain($"{Section}:Credentials must set both ClientId and ClientSecret, or neither.")
+                .And.Contain(failure => failure.StartsWith($"{Section}:ContractVersions "))
+                .And.Contain(failure => failure.StartsWith($"{Section}:PageSize "))
+                .And.Contain(failure => failure.StartsWith($"{Section}:MaxResponseBodyBytes "));
+
+        [Test]
+        public void It_neither_checks_the_url_nor_requires_a_credential() =>
+            _result
+                .Failures.Should()
+                .NotContain(failure => failure.StartsWith($"{Section}:DmsBaseUrl "))
+                .And.NotContain(failure => failure.StartsWith($"{Section}:Credentials or at least one "));
+    }
+
+    [TestFixture]
+    public class Given_no_base_url_and_otherwise_default_settings
+    {
+        [Test]
+        public void It_succeeds() => Validate(new()).Succeeded.Should().BeTrue();
+
+        [Test]
+        public void It_treats_an_empty_shared_pair_as_absent() =>
+            Validate(
+                new()
+                {
+                    Credentials = new() { ClientId = "", ClientSecret = "" },
+                }
+            )
+                .Succeeded.Should()
+                .BeTrue();
+
+        [Test]
+        public void It_rejects_an_incomplete_tenant_entry() =>
+            Validate(new() { TenantCredentials = { ["Tenant1"] = new() { ClientId = "t1" } } })
+                .Failures.Should()
+                .Equal($"{Section}:TenantCredentials:Tenant1 must set both ClientId and ClientSecret.");
     }
 
     [TestFixture(nameof(DmsEducationOrganizationProjectionSettings.PageSize), 0, 1, 10_000, 10_001)]

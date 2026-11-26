@@ -425,6 +425,9 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
             ConfigServiceUrl        = "http://localhost:9081"
             ConfigAdminClientId     = "DmsConfigurationService"
             ConfigAdminClientSecret = "admin-secret"
+            EducationOrganizationRefreshIntervalMinutes = 1
+            CmsReadOnlyConnectionString = "Host=127.0.0.1;Port=5435;Database=cms;Username=reader;Password=readonly-secret;"
+            DatabaseHostPort = 5435
             Routes         = @(
                 [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2024"; DatabaseOrdinal = 1; DatabaseName = "db1"; DataStoreId = 201; DistrictContextId = 401; SchoolYearContextId = 402 },
                 [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2025"; DatabaseOrdinal = 2; DatabaseName = "db2"; DataStoreId = 202; DistrictContextId = 403; SchoolYearContextId = 404 },
@@ -442,7 +445,9 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
             "INSTANCE_E2E_FIXTURE_TENANT_2_VENDOR_ID", "INSTANCE_E2E_FIXTURE_TENANT_2_APPLICATION_ID",
             "INSTANCE_E2E_FIXTURE_TENANT_2_CLIENT_KEY", "INSTANCE_E2E_FIXTURE_TENANT_2_CLIENT_SECRET",
             "INSTANCE_E2E_FIXTURE_DATASTORE_IDS", "INSTANCE_E2E_DMS_BASE_URL", "INSTANCE_E2E_CONFIG_SERVICE_URL",
-            "INSTANCE_E2E_CONFIG_ADMIN_CLIENT_ID", "INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET"
+            "INSTANCE_E2E_CONFIG_ADMIN_CLIENT_ID", "INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET",
+            "INSTANCE_E2E_EDORG_REFRESH_INTERVAL_MINUTES", "INSTANCE_E2E_CMS_READONLY_CONNECTION_STRING",
+            "INSTANCE_E2E_DATABASE_HOST_PORT"
         )
     }
 
@@ -483,6 +488,21 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
 
         $script:observedReaderInputs | Should -Be @("http://localhost:9080", "http://localhost:9081", "DmsConfigurationService", "admin-secret")
         (Test-Path Env:INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET) | Should -BeFalse
+    }
+
+    It "sets the operational refresh interval, the read-only Configuration Service connection and the database host port, then removes them" {
+        $script:observedOperationalInputs = $null
+        Invoke-WithInstanceE2ETestProcessContext -InstanceE2ESettings $script:settings -Fixture $script:fixture -Action {
+            $script:observedOperationalInputs = @(
+                $env:INSTANCE_E2E_EDORG_REFRESH_INTERVAL_MINUTES
+                $env:INSTANCE_E2E_CMS_READONLY_CONNECTION_STRING
+                $env:INSTANCE_E2E_DATABASE_HOST_PORT
+            )
+        }
+
+        $script:observedOperationalInputs | Should -Be @("1", $script:fixture.CmsReadOnlyConnectionString, "5435")
+        (Test-Path Env:INSTANCE_E2E_CMS_READONLY_CONNECTION_STRING) | Should -BeFalse
+        (Test-Path Env:INSTANCE_E2E_EDORG_REFRESH_INTERVAL_MINUTES) | Should -BeFalse
     }
 
     It "sets the three opaque engine-correct connection strings verbatim for the action" {
@@ -612,6 +632,19 @@ Describe "Instance E2E orchestration and setup ordering (DMS-1284)" {
         $runIndex | Should -BeGreaterThan $restartIndex
         ([regex]::Matches($script:instanceE2ETests, "Restart-DmsContainer -Reason")).Count | Should -Be 1
         $script:instanceE2ETests | Should -Match "Invoke-WithInstanceE2ETestProcessContext"
+    }
+
+    It "provisions the reader credentials, recreates the Configuration Service as operational and creates the read-only login between registration and the DMS restart" {
+        $registerIndex = $script:instanceE2ETests.IndexOf("Register-InstanceE2EFixture -InstanceE2ESettings")
+        $readersIndex = $script:instanceE2ETests.IndexOf("Register-InstanceE2EEducationOrganizationReader -InstanceE2ESettings")
+        $operationalIndex = $script:instanceE2ETests.IndexOf("Enable-InstanceE2EOperationalConfigService -InstanceE2ESettings")
+        $readOnlyIndex = $script:instanceE2ETests.IndexOf("New-InstanceE2ECmsReadOnlyConnectionString")
+        $restartIndex = $script:instanceE2ETests.IndexOf("Restart-DmsContainer -Reason")
+
+        $readersIndex | Should -BeGreaterThan $registerIndex
+        $operationalIndex | Should -BeGreaterThan $readersIndex
+        $readOnlyIndex | Should -BeGreaterThan $operationalIndex
+        $restartIndex | Should -BeGreaterThan $readOnlyIndex
     }
 
     It "forwards the engine, base, and resolved environment to the instance setup script" {
@@ -1166,7 +1199,7 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
             $script:executed[0] | Should -Not -Match "--no-build"
             $script:executed[0] | Should -Not -Match "--no-restore"
             Should -Invoke Assert-DmsProjectionReaderTrxResults -Times 1 -Exactly -ParameterFilter {
-                $MinimumLiveTests -eq 28 -and $TrxFile -like "*EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.mssql.trx"
+                $MinimumLiveTests -eq 54 -and $TrxFile -like "*EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.mssql.trx"
             }
             Should -Invoke Assert-DmsProjectionReaderKeycloakTrxResults -Times 0 -Exactly
         }
@@ -1345,5 +1378,98 @@ Describe "RunInstanceE2E defaults to excluding the identity plugin slice (DMS-15
         $script:dotnetArguments[$script:dotnetArguments.IndexOf("--filter") + 1] |
             Should -Be "Category=instance-management-identity-plugin"
         ($script:dotnetArguments | Where-Object { $_ -eq "--filter" }).Count | Should -Be 1
+    }
+}
+
+Describe "The Instance E2E read-only PostgreSQL login keeps its password out of SQL text" {
+    BeforeAll {
+        function Get-BuildScriptFunctionText {
+            param([Parameter(Mandatory)] [string] $ScriptPath, [Parameter(Mandatory)] [string] $FunctionName)
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $functionAst = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName }, $true) | Select-Object -First 1
+            if ($null -eq $functionAst) { throw "Function '$FunctionName' was not found in '$ScriptPath'." }
+            return $functionAst.Extent.Text
+        }
+
+        $script:buildScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../build-dms.ps1"))
+        . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "New-InstanceE2ECmsReadOnlyConnectionString")))
+
+        function Get-ComposeResolvedEnvValue { param($EnvironmentValues, $Name, $DefaultValue) $DefaultValue }
+        function Get-InstanceE2EDatabaseHostPort { param($DatabaseEngine) 55432 }
+
+        # Leaf boundary: records the arguments and standard input psql would receive, then exits with the
+        # configured code after writing what psql writes to standard error. -ErrorAction Continue keeps those
+        # records non-terminating, as a native command's redirected standard error is, when the runner sets
+        # $ErrorActionPreference to Stop.
+        function docker {
+            $script:dockerArguments = @($args)
+            $script:dockerInput = (@($input) -join "`n") -split "\r?\n"
+            $script:dockerStandardError | ForEach-Object { Write-Error $_ -ErrorAction Continue }
+            $global:LASTEXITCODE = $script:dockerExitCode
+        }
+
+        $script:settings = [pscustomobject]@{ DatabaseEngine = "postgresql"; EnvironmentValues = @{} }
+        $script:configConnection = "Host=dms-postgresql;Port=5432;Database=edfi_configurationservice;Username=postgres;Password=abcdefgh1!;"
+
+        # Returns the two lines after \password, which psql reads as the new password and its confirmation.
+        function Get-PasswordInput {
+            $index = [array]::IndexOf($script:dockerInput, "\password edorg_refresh_e2e_reader")
+            $index | Should -BeGreaterThan -1
+            return @($script:dockerInput[$index + 1], $script:dockerInput[$index + 2])
+        }
+    }
+
+    BeforeEach {
+        $script:dockerArguments = $null
+        $script:dockerInput = $null
+        $script:dockerStandardError = @()
+        $script:dockerExitCode = 0
+        $script:hostOutput = [System.Collections.Generic.List[string]]::new()
+        Mock Write-Host { $script:hostOutput.Add([string]$Object) }
+    }
+
+    It "sends the password only as the two \password input lines, never in SQL text, arguments or host output" {
+        $script:dockerStandardError = @('Enter new password for user "edorg_refresh_e2e_reader": ', 'Enter it again: ')
+        $connectionString = New-InstanceE2ECmsReadOnlyConnectionString -InstanceE2ESettings $script:settings -ConfigServiceConnectionString $script:configConnection
+
+        $password = (Get-PasswordInput)[0]
+        $password | Should -Match '^E2e![0-9a-f]{32}$'
+        (Get-PasswordInput)[1] | Should -BeExactly $password
+        @($script:dockerInput | Where-Object { $_.Contains($password) }).Count | Should -Be 2
+        ($script:dockerInput -join "`n") | Should -Not -Match "(?i)password\s+'"
+        ($script:dockerArguments -join " ") | Should -Not -Match ([regex]::Escape($password))
+        $script:hostOutput | Should -BeNullOrEmpty
+
+        $connectionString | Should -BeExactly "Host=127.0.0.1;Port=55432;Database=edfi_configurationservice;Username=edorg_refresh_e2e_reader;Password=$password;"
+    }
+
+    It "runs psql without a terminal, stopping at the first error, and keeps the login's privileges" {
+        New-InstanceE2ECmsReadOnlyConnectionString -InstanceE2ESettings $script:settings -ConfigServiceConnectionString $script:configConnection | Out-Null
+
+        $script:dockerArguments | Should -Contain "-i"
+        $script:dockerArguments | Should -Not -Contain "-t"
+        $script:dockerArguments | Should -Not -Contain "-it"
+        ($script:dockerArguments -join " ") | Should -Match "exec -i dms-postgresql psql -U postgres -d edfi_configurationservice -v ON_ERROR_STOP=1"
+
+        $script:dockerInput | Should -Contain "ALTER ROLE edorg_refresh_e2e_reader WITH LOGIN;"
+        $script:dockerInput | Should -Contain "ALTER ROLE edorg_refresh_e2e_reader SET default_transaction_read_only = on;"
+        $script:dockerInput | Should -Contain 'GRANT CONNECT ON DATABASE "edfi_configurationservice" TO edorg_refresh_e2e_reader;'
+        $script:dockerInput | Should -Contain "GRANT USAGE ON SCHEMA dmscs TO edorg_refresh_e2e_reader;"
+        $script:dockerInput | Should -Contain 'GRANT SELECT ON dmscs."Tenant", dmscs."JobSchedule", dmscs."Job" TO edorg_refresh_e2e_reader;'
+    }
+
+    It "shows psql's output, which holds no password, and fails when psql fails" {
+        $script:dockerStandardError = @('Enter new password for user "edorg_refresh_e2e_reader": ', 'psql:<stdin>:13: ERROR:  relation "dmscs.Job" does not exist')
+        $script:dockerExitCode = 3
+
+        $thrown = { New-InstanceE2ECmsReadOnlyConnectionString -InstanceE2ESettings $script:settings -ConfigServiceConnectionString $script:configConnection } |
+            Should -Throw "*read-only Configuration Service database login failed (exit code 3)*" -PassThru
+
+        $password = (Get-PasswordInput)[0]
+        $script:hostOutput | Should -Contain 'psql:<stdin>:13: ERROR:  relation "dmscs.Job" does not exist'
+        ($script:hostOutput -join "`n") | Should -Not -Match ([regex]::Escape($password))
+        $thrown.Exception.Message | Should -Not -Match ([regex]::Escape($password))
     }
 }

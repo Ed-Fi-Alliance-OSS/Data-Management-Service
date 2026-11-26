@@ -782,6 +782,57 @@ public class JobLeaseRepositoryTests
     }
 
     [TestFixture]
+    public class Given_a_terminal_failure_with_a_composed_message_of_1000_characters : JobLeaseTestBase
+    {
+        private JobErrorCode _composite = null!;
+        private JobWriteResult _result = null!;
+        private LeaseRow _row = null!;
+
+        /// <summary>
+        /// A composite error whose message is composed by the registry at exactly 1000 characters: a message with
+        /// non-ASCII text and no spare room beyond its category codes, so every code is listed and no prose fits.
+        /// </summary>
+        private static JobErrorCode CompositeErrorAtTheLimit()
+        {
+            string[] categories = ["CategoryAlpha", "CategoryBeta"];
+            JobErrorCodeRegistrations registrations = new();
+            registrations.Add("CategoryAlpha", "Alpha could not be read.");
+            registrations.Add("CategoryBeta", "Beta was busy.");
+            const string Lead = "Données ";
+            int fill = 1000 - JobErrorCodeRegistrations.WorstCaseLength("", categories) - Lead.Length - 1;
+            registrations.AddComposite("RefreshIncomplete", Lead + new string('m', fill) + ".", categories);
+            new JobErrorCodeRegistry(registrations)
+                .TryCompose("RefreshIncomplete", categories, out string? composed)
+                .Should()
+                .BeTrue();
+            composed.Should().EndWith(" Problem categories: CategoryAlpha, CategoryBeta.");
+            return new JobErrorCode("RefreshIncomplete", composed!);
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _composite = CompositeErrorAtTheLimit();
+            await SeedJobAsync();
+            ClaimedJob claim = await ClaimAsync(OwnerA, leaseSeconds: 60);
+            _result = await Repository()
+                .FailTerminal(claim.Id, OwnerA, claim.FencingToken, _composite, default);
+            _row = await RowAsync(claim.Id);
+        }
+
+        [Test]
+        public void It_composes_exactly_1000_characters() => _composite.Message.Length.Should().Be(1000);
+
+        [Test]
+        public void It_persists_the_whole_composed_message()
+        {
+            _result.Should().BeOfType<JobWriteResult.Success>();
+            _row.Status.Should().Be(JobStatuses.Error);
+            _row.ErrorMessage.Should().Be(_composite.Message);
+        }
+    }
+
+    [TestFixture]
     public class Given_a_renewal_that_waits_on_a_lock_past_expiry : JobLeaseTestBase
     {
         private JobWriteResult _result = null!;

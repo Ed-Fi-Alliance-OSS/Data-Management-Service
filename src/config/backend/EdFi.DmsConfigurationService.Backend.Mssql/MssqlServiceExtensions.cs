@@ -46,6 +46,10 @@ public static class MssqlServiceExtensions
         >();
         services.AddTransient<IClaimSetDataProvider, ClaimSetDataProvider>();
         services.AddTransient<IApplicationLockManager, MssqlApplicationLockManager>();
+        services.AddTransient<
+            EducationOrganizationRefresh.IEducationOrganizationSnapshotRepository,
+            EducationOrganizationSnapshotRepository
+        >();
         return services;
     }
 

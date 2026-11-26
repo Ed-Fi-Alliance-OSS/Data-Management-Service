@@ -110,6 +110,55 @@ public class DmsEducationOrganizationProjectionStartupTests
             _validationFailure!.Message.Should().Contain($"{Section}:{expected}");
     }
 
+    /// <summary>
+    /// The settings are validated even while the reader is not configured, so a bad value is caught on a bootstrap
+    /// instance before an operator adds the base URL. The test environment runs no job workers.
+    /// </summary>
+    [TestFixture("PageSize", "0", "PageSize must be between 1 and 10000; it is 0.")]
+    [TestFixture(
+        "Credentials:ClientId",
+        "projection-client",
+        "Credentials must set both ClientId and ClientSecret"
+    )]
+    [TestFixture("TenantCredentials:Tenant1:ClientSecret", Secret, "TenantCredentials:Tenant1 must set both")]
+    [TestFixture(
+        "ContractVersions:0",
+        "educationOrganizationProjection.v9",
+        "ContractVersions must list distinct"
+    )]
+    public class Given_an_invalid_projection_setting_without_a_base_url_at_startup(
+        string key,
+        string value,
+        string expected
+    )
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private OptionsValidationException? _validationFailure;
+
+        [SetUp]
+        public void Act()
+        {
+            _factory = CreateFactory(new() { [$"{Section}:{key}"] = value });
+            _validationFailure = FindOptionsValidationException(StartupExceptionFor(_factory));
+        }
+
+        [TearDown]
+        public void TearDown() => _factory.Dispose();
+
+        [Test]
+        public void It_fails_to_start_naming_the_setting() =>
+            _validationFailure
+                .Should()
+                .NotBeNull()
+                .And.Subject.As<OptionsValidationException>()
+                .Message.Should()
+                .Contain($"{Section}:{expected}");
+
+        [Test]
+        public void It_keeps_the_secret_out_of_the_message() =>
+            _validationFailure!.Message.Should().NotContain(Secret);
+    }
+
     [TestFixture]
     public class Given_secrets_in_invalid_projection_settings_at_startup
     {

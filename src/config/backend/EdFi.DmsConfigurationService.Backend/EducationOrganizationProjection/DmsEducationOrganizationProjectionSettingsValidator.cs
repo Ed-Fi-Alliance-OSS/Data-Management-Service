@@ -9,8 +9,11 @@ using Microsoft.Extensions.Options;
 namespace EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
 
 /// <summary>
-/// The DMS-1440 spec §5.2 validation of <see cref="DmsEducationOrganizationProjectionSettings"/>, run at startup when
-/// <c>DmsBaseUrl</c> is set. Every failed rule is reported, and each message names
+/// The validation of <see cref="DmsEducationOrganizationProjectionSettings"/>, run at startup whatever
+/// <c>DmsBaseUrl</c> holds: every numeric bound, the response body size, the contract versions and every credential
+/// entry are checked on every instance. The base URL's format, and the need for at least one complete credential
+/// pair, are checked when <c>DmsBaseUrl</c> is set. Whether the reader must be configured at all is decided by the
+/// job workers' own requirement. Every failed rule is reported, and each message names
 /// <c>DmsEducationOrganizationProjectionSettings:&lt;Setting&gt;</c>. No message contains the base URL or a credential
 /// value, because the URL may carry user information and the messages reach the startup log.
 /// </summary>
@@ -27,15 +30,14 @@ public sealed class DmsEducationOrganizationProjectionSettingsValidator
 
     public ValidateOptionsResult Validate(string? name, DmsEducationOrganizationProjectionSettings options)
     {
-        if (string.IsNullOrWhiteSpace(options.DmsBaseUrl))
-        {
-            return ValidateOptionsResult.Success;
-        }
-
         List<string> failures = [];
+        bool baseUrlSet = !string.IsNullOrWhiteSpace(options.DmsBaseUrl);
 
-        ValidateBaseUrl(failures, options.DmsBaseUrl);
-        ValidateCredentials(failures, options);
+        if (baseUrlSet)
+        {
+            ValidateBaseUrl(failures, options.DmsBaseUrl!);
+        }
+        ValidateCredentials(failures, options, baseUrlSet);
         ValidateContractVersions(failures, options.ContractVersions);
 
         Range(failures, nameof(options.PageSize), options.PageSize, 1, 10_000);
@@ -96,16 +98,15 @@ public sealed class DmsEducationOrganizationProjectionSettingsValidator
 
     /// <summary>
     /// Each tenant entry must name both values. The shared pair may be absent (both values empty, which also covers
-    /// an environment template that sets them to empty strings) but not half set. At least one complete pair must
-    /// exist, or every read would fail for want of a credential.
+    /// an environment template that sets them to empty strings) but not half set. When the base URL is set, at least
+    /// one complete pair must exist, or every read would fail for want of a credential.
     /// </summary>
     private static void ValidateCredentials(
         List<string> failures,
-        DmsEducationOrganizationProjectionSettings options
+        DmsEducationOrganizationProjectionSettings options,
+        bool baseUrlSet
     )
     {
-        bool anyComplete = false;
-
         DmsEducationOrganizationProjectionCredentials? shared = options.Credentials;
         bool sharedHasId = !string.IsNullOrWhiteSpace(shared?.ClientId);
         bool sharedHasSecret = !string.IsNullOrWhiteSpace(shared?.ClientSecret);
@@ -115,7 +116,6 @@ public sealed class DmsEducationOrganizationProjectionSettingsValidator
                 $"{Section}:{nameof(options.Credentials)} must set both ClientId and ClientSecret, or neither."
             );
         }
-        anyComplete |= sharedHasId && sharedHasSecret;
 
         foreach (
             (
@@ -124,23 +124,16 @@ public sealed class DmsEducationOrganizationProjectionSettingsValidator
             ) in options.TenantCredentials
         )
         {
-            if (
-                string.IsNullOrWhiteSpace(credentials?.ClientId)
-                || string.IsNullOrWhiteSpace(credentials.ClientSecret)
-            )
+            if (!IsComplete(credentials))
             {
                 failures.Add(
                     $"{Section}:{nameof(options.TenantCredentials)}:{LoggingUtility.SanitizeForLog(tenant)} must set "
                         + "both ClientId and ClientSecret."
                 );
             }
-            else
-            {
-                anyComplete = true;
-            }
         }
 
-        if (!anyComplete)
+        if (baseUrlSet && !HasCompleteCredential(options))
         {
             failures.Add(
                 $"{Section}:{nameof(options.Credentials)} or at least one {Section}:{nameof(options.TenantCredentials)} "
@@ -148,6 +141,14 @@ public sealed class DmsEducationOrganizationProjectionSettingsValidator
             );
         }
     }
+
+    /// <summary>True when the shared pair or any tenant entry names both a client ID and a secret.</summary>
+    internal static bool HasCompleteCredential(DmsEducationOrganizationProjectionSettings options) =>
+        IsComplete(options.Credentials) || options.TenantCredentials.Values.Any(IsComplete);
+
+    private static bool IsComplete(DmsEducationOrganizationProjectionCredentials? credentials) =>
+        !string.IsNullOrWhiteSpace(credentials?.ClientId)
+        && !string.IsNullOrWhiteSpace(credentials.ClientSecret);
 
     /// <summary>
     /// The configured versions must be distinct and each one this service can parse; an unparseable version would be

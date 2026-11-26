@@ -344,6 +344,7 @@ The following parameters apply to the Configuration Service (`appsettings.json`)
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Datastore                    | The primary datastore used by the Configuration Service. Valid values are `postgresql` and `mssql`                                                                                                        |
 | DeployDatabaseOnStartup      | When `true` the database will be created and initialized on startup.                                                                                                                                      |
+| EdOrgsRefreshIntervalInMins  | Minutes between scheduled education organization refreshes of each tenant's data stores, from 1 to 527040 (366 days); a value outside that range stops startup. Default: `60`. See [Scheduled refresh](./CMS-EDUCATION-ORGANIZATION-REFRESH.md#scheduled-refresh). |
 | IdentityProvider             | Specifies the authentication provider. Valid values are `keycloak` and `self-contained`. Default: `self-contained`                                                                                        |
 | MultiTenancy                 | When `true`, enables multi-tenancy support in the Configuration Service. Default: `false`                                                                                                                 |
 | PathBase                     | Segment of the URL to use as base for all requests.                                                                                                                                                       |
@@ -369,7 +370,7 @@ For how jobs run, recover, and are observed, see [Configuration Service Backgrou
 
 | Parameter            | Description                                                                                                                                              | Default      | Accepted range                   |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | -------------------------------- |
-| WorkerEnabled        | Runs the worker on this instance.                                                                                                                        | `true`       | `true`, `false`                  |
+| WorkerEnabled        | Runs the worker on this instance. When `true`, the DMS education organization reader must be configured; see [Bootstrap and operational modes](#bootstrap-and-operational-modes). | `true`       | `true`, `false`                  |
 | SchedulerEnabled     | Runs the schedule dispatcher on this instance.                                                                                                           | `true`       | `true`, `false`                  |
 | RetentionEnabled     | Runs the retention sweep on this instance.                                                                                                               | `true`       | `true`, `false`                  |
 | PollInterval         | How often an idle worker or dispatcher checks for work.                                                                                                  | `00:00:05`   | 1 s – 5 min                      |
@@ -385,6 +386,94 @@ For how jobs run, recover, and are observed, see [Configuration Service Backgrou
 | RetentionBatchSize   | Jobs one retention batch deletes.                                                                                                                        | `500`        | 1 – 2000                         |
 
 The lease must also leave room for a late renewal. Startup also requires `RenewalInterval + 2 × 6 s + FenceTimeout + 5 s + RenewalInterval / 2 + SafetyMargin <= LeaseDuration`. The 2 × 6 s term is the fixed fence acquisition timeout, which a fence can use twice while a renewal waits for it: once to open its connection and transaction, and once to lock and check the job row. The 5 s term is the fixed lock wait of a renewal. It already falls within `RenewalInterval / 2` and is counted again as extra allowance. `SafetyMargin` is the larger of 10 s and `LeaseDuration / 6`. With the defaults this is 60 + 12 + 10 + 5 + 30 + 50 = 167 s, within 300 s. When it fails, the startup message lists each term's value.
+
+### Bootstrap and operational modes
+
+Job workers run the education organization refresh, which reads DMS through the
+[DMS education organization reader](#dmseducationorganizationprojectionsettings). An instance with
+`JobSettings:WorkerEnabled=true` therefore refuses to start until
+`DmsEducationOrganizationProjectionSettings:DmsBaseUrl` and at least one complete credential pair are set. The
+startup failure names each missing setting:
+
+```text
+DmsEducationOrganizationProjectionSettings:DmsBaseUrl must be set when JobSettings:WorkerEnabled is true, because job workers run the education organization refresh. Configure the DMS reader, or set JobSettings:WorkerEnabled=false on an instance that runs no jobs.
+DmsEducationOrganizationProjectionSettings:Credentials or at least one DmsEducationOrganizationProjectionSettings:TenantCredentials entry must be set when JobSettings:WorkerEnabled is true.
+```
+
+The reader credential is an application created through the Configuration Service itself, so a new deployment
+cannot be operational on its first start. It has two modes:
+
+| Mode | Settings | Behavior |
+| --- | --- | --- |
+| Bootstrap | `JobSettings:WorkerEnabled=false`; reader settings may be empty | The service starts and serves its API. Refresh requests and refresh schedules queue jobs, and **no job runs on this instance**, including managed data store jobs. At startup the service logs `JobWorkersDisabled` (Warning): "Job workers are disabled on this instance; queued jobs run only on instances with JobSettings:WorkerEnabled=true." Bootstrap is a setup state, **not an operational one**. |
+| Operational | `JobSettings:WorkerEnabled=true`, `DmsBaseUrl`, and a credential | Workers run queued jobs, including the education organization refresh. |
+
+Reader settings are validated on every instance, whatever the mode: a bound out of range, a half-set shared pair,
+an incomplete `TenantCredentials` entry, or an unsupported contract version stops startup even in bootstrap.
+
+To move from bootstrap to operational:
+
+1. Create the projection claim set and application, one per tenant in multi-tenant mode, as described in
+   [Provisioning the Configuration Service credential](./EDUCATION-ORGANIZATION-PROJECTION.md#provisioning-the-configuration-service-credential).
+2. Set the reader settings: `DmsBaseUrl` as reached from the Configuration Service, and the application's key and
+   secret as `Credentials` (single-tenant) or `TenantCredentials:<tenant>` entries (multi-tenant).
+3. Set `JobSettings:WorkerEnabled=true` and restart the service. Jobs queued during bootstrap then run.
+
+Every instance with workers on needs the reader settings; an instance with workers off logs the warning above and
+leaves its queued jobs to the others.
+
+#### Docker Compose
+
+| Variable | Setting | Unset value |
+| --- | --- | --- |
+| `CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED` | `JobSettings__WorkerEnabled` | `true` |
+| `CONFIGURATION_SERVICE_DMS_EDORG_BASE_URL` | `DmsEducationOrganizationProjectionSettings__DmsBaseUrl` | empty (absent) |
+| `CONFIGURATION_SERVICE_DMS_EDORG_CLIENT_ID` | `DmsEducationOrganizationProjectionSettings__Credentials__ClientId` | empty (absent) |
+| `CONFIGURATION_SERVICE_DMS_EDORG_CLIENT_SECRET` | `DmsEducationOrganizationProjectionSettings__Credentials__ClientSecret` | empty (absent) |
+
+Single-quote the client secret in `.env`, for example
+`CONFIGURATION_SERVICE_DMS_EDORG_CLIENT_SECRET='Ab$Cd...'`. Configuration Service generated secrets can contain
+`$`, and Compose interpolates `$NAME` and `${NAME}` in an unquoted or double-quoted `.env` value, which changes the
+secret or makes Compose reject the file. A single-quoted value is used literally.
+
+The Compose files keep the worker default `true`, so an existing `.env` without the variable keeps workers on.
+Only places that create a fresh installation set bootstrap explicitly:
+
+- `eng/docker-compose/.env.example` and `.env.multitenancy` set `CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED=false`
+  with empty reader variables, so a copied `.env` starts in bootstrap.
+- The repository's test and CI environment files (DMS, Instance Management and Configuration Service end-to-end
+  tests, smoke tests and template builds) set it to `false` because they configure no reader.
+  The Instance Management end-to-end environment starts in bootstrap only until setup has created the reader
+  credentials: `./build-dms.ps1 InstanceE2ETest` then recreates the Configuration Service with workers and the
+  reader on, which makes it operational. See the
+  [Instance Management E2E README](../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md#operational-configuration-service).
+- The Azure VM review stack (`eng/azure-vm/compose`) maps the same worker variable onto both Configuration
+  Services and gives each stack its own reader variables, `CONFIGURATION_SERVICE_ST_DMS_EDORG_*` and
+  `CONFIGURATION_SERVICE_MT_DMS_EDORG_*`; its `.env.example` sets bootstrap. Its setup scripts refuse `$` in any
+  `.env` value, quoted or not, so per-tenant credentials and any reader secret containing `$` go in its gitignored
+  `reader.compose.override.yml`, which the stack scripts load last
+  (see [UPDATE.md](../eng/azure-vm/provision/UPDATE.md)).
+
+Per-tenant credentials have no fixed variable, because the tenant name is part of the setting name. Add them to
+the Configuration Service environment in a Compose override, for example
+`DmsEducationOrganizationProjectionSettings__TenantCredentials__Tenant1__ClientId`. Compose interpolates the
+Compose files as well, and YAML quoting does not prevent it: write each literal `$` in a value there as `$$`
+(the secret `Ab$Cd` becomes `"Ab$$Cd"`).
+
+#### Upgrading a deployment that runs workers
+
+Workers default to on, and managed data stores need them, so most existing deployments upgrade into the
+operational requirement:
+
+1. Before upgrading, on the current release, create the projection claim set and application (the projection
+   service claim is present in Configuration Service databases at migration `0039` or later).
+2. Add the reader settings to the deployment's configuration (for Compose, the variables above in its `.env`).
+3. Upgrade. The service starts operational.
+
+An upgrade that skips steps 1 and 2 **fails at startup** with the messages above; workers are never turned off
+silently. To start without the reader, set `CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED=false` (or
+`JobSettings:WorkerEnabled=false`) explicitly. That stops every job on the instance, including managed data store
+create and delete jobs, until the reader is configured and workers are turned back on.
 
 ## Managed data store lifecycle
 
@@ -446,7 +535,7 @@ its normal cache refresh. Snapshot persistence and cleanup belong to DMS-1441, n
 
 ## DmsEducationOrganizationProjectionSettings
 
-The Configuration Service reads the DMS education-organization projection over HTTP (see [Education Organization Projection](./EDUCATION-ORGANIZATION-PROJECTION.md)). These settings say where DMS is and which client credentials to use (`appsettings.json` section `DmsEducationOrganizationProjectionSettings`; environment override `DmsEducationOrganizationProjectionSettings__<Parameter>`, for example `DmsEducationOrganizationProjectionSettings__TenantCredentials__Tenant1__ClientSecret`). The shipped section is empty: with no `DmsBaseUrl` the reader is not configured, nothing below is checked, and every read fails as not configured. When `DmsBaseUrl` is set, the service validates every value at startup and refuses to start, naming `DmsEducationOrganizationProjectionSettings:<Parameter>`, when one is invalid. Startup messages never contain the base URL or a credential value.
+The Configuration Service reads the DMS education-organization projection over HTTP (see [Education Organization Projection](./EDUCATION-ORGANIZATION-PROJECTION.md)). These settings say where DMS is and which client credentials to use (`appsettings.json` section `DmsEducationOrganizationProjectionSettings`; environment override `DmsEducationOrganizationProjectionSettings__<Parameter>`, for example `DmsEducationOrganizationProjectionSettings__TenantCredentials__Tenant1__ClientSecret`). The shipped section is empty: with no `DmsBaseUrl` the reader is not configured and every read fails as not configured. An instance whose job workers are on requires `DmsBaseUrl` and a credential; see [Bootstrap and operational modes](#bootstrap-and-operational-modes). The service validates every value at startup on every instance, whether or not `DmsBaseUrl` is set, and refuses to start, naming `DmsEducationOrganizationProjectionSettings:<Parameter>`, when one is invalid. The base URL's format is checked when it is set. Startup messages never contain the base URL or a credential value.
 
 | Parameter | Description | Default | Accepted values |
 | --- | --- | --- | --- |

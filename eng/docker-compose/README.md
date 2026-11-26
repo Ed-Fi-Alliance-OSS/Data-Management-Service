@@ -57,6 +57,14 @@ start up different configurations:
 7. `keycloak.compose.yml` runs KeyCloak (identity provider).
 8. `swagger-ui.compose.yml` covers SwaggerUI
 
+> [!NOTE]
+> A `.env` copied from `.env.example` starts the Configuration Service in **bootstrap**:
+> `CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED=false`, so it runs no background jobs (education
+> organization refreshes and managed data store jobs stay queued). An older `.env` without that
+> variable keeps workers on, and the Configuration Service then refuses to start until the DMS
+> reader variables (`CONFIGURATION_SERVICE_DMS_EDORG_*`) are set. See
+> [Bootstrap and operational modes](../../docs/CONFIGURATION.md#bootstrap-and-operational-modes).
+
 ### Selecting published images
 
 `DMS_IMAGE_TAG` selects a tag for both published images at once, which is what a

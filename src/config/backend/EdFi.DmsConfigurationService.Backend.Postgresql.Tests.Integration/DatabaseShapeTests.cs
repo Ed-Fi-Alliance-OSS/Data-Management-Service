@@ -29,6 +29,8 @@ public class Given_CMS_PostgreSQL_database_shape
         "DataStoreContext",
         "DataStoreDerivative",
         "DataStoreManage",
+        "EducationOrganizationSnapshot",
+        "EducationOrganizationSnapshotTarget",
         "Job",
         "JobSchedule",
         "OpenIddictApplication",
@@ -161,6 +163,8 @@ public class Given_CMS_PostgreSQL_database_shape
     /// TenantId foreign keys that reference Tenant.Id. Job.Id, Job.FencingToken, JobSchedule.Id, and
     /// JobSchedule.FencingToken (DMS-1437) are internal job-infrastructure identifiers with no Admin API
     /// counterpart, and Job.SourceScheduleId references JobSchedule.Id.
+    /// EducationOrganizationSnapshot holds Ed-Fi education organization and parent ids, which are int64,
+    /// and both snapshot tables hold internal generation counters with no Admin API counterpart.
     /// </summary>
     private static readonly (string TableName, string ColumnName)[] ExpectedBigintColumns =
     [
@@ -171,6 +175,14 @@ public class Given_CMS_PostgreSQL_database_shape
         ("ClaimsHierarchy", "Id"),
         ("DataStore", "TenantId"),
         ("DataStoreManage", "TenantId"),
+        ("EducationOrganizationSnapshot", "EducationOrganizationId"),
+        ("EducationOrganizationSnapshot", "Generation"),
+        ("EducationOrganizationSnapshot", "ParentId"),
+        ("EducationOrganizationSnapshot", "TenantId"),
+        ("EducationOrganizationSnapshotTarget", "ActiveGeneration"),
+        ("EducationOrganizationSnapshotTarget", "LastGeneration"),
+        ("EducationOrganizationSnapshotTarget", "LeaseGeneration"),
+        ("EducationOrganizationSnapshotTarget", "TenantId"),
         ("Job", "FencingToken"),
         ("Job", "Id"),
         ("Job", "SourceScheduleId"),

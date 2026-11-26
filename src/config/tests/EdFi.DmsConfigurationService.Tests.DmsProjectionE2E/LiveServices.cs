@@ -10,6 +10,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 
 namespace EdFi.DmsConfigurationService.Tests.DmsProjectionE2E;
 
@@ -31,6 +32,8 @@ public sealed class LiveServices : IDisposable
 
     /// <summary>The tenant of a single-tenant stack.</summary>
     public const string SingleTenant = "";
+
+    private static readonly JsonSerializerOptions _webJson = new(JsonSerializerDefaults.Web);
 
     private readonly ProjectionE2EEnvironment _environment;
     private readonly CleanupRegistry _cleanup;
@@ -386,6 +389,51 @@ public sealed class LiveServices : IDisposable
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using HttpResponseMessage response = await _http.SendAsync(request);
         return (response.StatusCode, await response.Content.ReadAsStringAsync());
+    }
+
+    /// <summary>The tenant's data stores with their published education organizations, as the Configuration Service serves them.</summary>
+    public async Task<TenantDetailsResponse> GetTenantAggregateAsync(string tenant)
+    {
+        using HttpResponseMessage response = await CmsSendAsync(
+            HttpMethod.Get,
+            tenant,
+            $"v3/tenants/{Uri.EscapeDataString(tenant)}/dataStores/edOrgs"
+        );
+        JsonNode aggregate = await RequireJsonAsync(
+            response,
+            HttpStatusCode.OK,
+            $"reading the education organizations of {tenant}"
+        );
+        return aggregate.Deserialize<TenantDetailsResponse>(_webJson)
+            ?? throw new InvalidOperationException($"the aggregate of {tenant} is empty.");
+    }
+
+    /// <summary>Requests a refresh of every data store of the tenant and returns the queued job's identifier.</summary>
+    public async Task<string> RequestRefreshOfEveryDataStoreAsync(string tenant)
+    {
+        using HttpResponseMessage response = await CmsSendAsync(
+            HttpMethod.Post,
+            tenant,
+            "v3/dataStores/edOrgs/refresh"
+        );
+        JsonNode queued = await RequireJsonAsync(
+            response,
+            HttpStatusCode.Accepted,
+            $"requesting a refresh of every data store of {tenant}"
+        );
+        return queued["jobId"]!.GetValue<string>();
+    }
+
+    /// <summary>A job's status, as <c>GET /v3/jobs/{jobId}</c> serves it to the job's tenant.</summary>
+    public async Task<string> GetJobStatusAsync(string tenant, string jobId)
+    {
+        using HttpResponseMessage response = await CmsSendAsync(
+            HttpMethod.Get,
+            tenant,
+            $"v3/jobs/{Uri.EscapeDataString(jobId)}"
+        );
+        JsonNode job = await RequireJsonAsync(response, HttpStatusCode.OK, $"reading job {jobId}");
+        return job["status"]!.GetValue<string>();
     }
 
     public void Dispose() => _http.Dispose();

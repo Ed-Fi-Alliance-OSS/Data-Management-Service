@@ -69,7 +69,7 @@ public partial class Given_data_store_namespace_reservations
         var repository = PublicationRepository();
         await using var connection = await Open();
         int client = await SeedDeletionClient(connection);
-        foreach (string table in new[] { "ApiClientDataStore", "DataStoreContext", "DataStoreDerivative" })
+        foreach (string table in DeletionDependentTables)
         {
             await InsertDeletionDependent(
                 connection,
@@ -316,7 +316,7 @@ public partial class Given_data_store_namespace_reservations
         var seed = await SeedDeleteHandler();
         await using var connection = await Open();
         int client = await SeedDeletionClient(connection);
-        foreach (string table in new[] { "ApiClientDataStore", "DataStoreContext", "DataStoreDerivative" })
+        foreach (string table in DeletionDependentTables)
         {
             await InsertDeletionDependent(
                 connection,

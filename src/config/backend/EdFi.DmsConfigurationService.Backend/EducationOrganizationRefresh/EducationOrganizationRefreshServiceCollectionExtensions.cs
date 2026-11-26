@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
+using EdFi.DmsConfigurationService.Backend.Jobs;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+
+namespace EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
+
+/// <summary>Registration of the education-organization refresh.</summary>
+public static class EducationOrganizationRefreshServiceCollectionExtensions
+{
+    /// <summary>
+    /// Binds <see cref="EducationOrganizationRefreshOptions"/> from the <c>AppSettings</c> section and validates it at
+    /// startup, registers the refresh's single job error codes and its composite code, and registers the refresh job
+    /// handler with its target refresher. The projection reader, whose error codes the composite lists, is registered
+    /// first. The handler needs the snapshot repository, which the datastore registration provides, and the job
+    /// options. When <c>JobSettings:WorkerEnabled</c> is on, <see cref="RefreshReaderRequiredValidator"/> makes a
+    /// configured reader a startup requirement. When <c>JobSettings:SchedulerEnabled</c> is on, whatever the data store
+    /// management setting is, the schedule reconciler is added as a hosted service; it needs
+    /// <see cref="JobRuntimeEnvironment"/>, which the host registers. Both switches are read while the services are
+    /// registered, as the host reads them for its own job services. Calling it more than once is harmless.
+    /// </summary>
+    public static IServiceCollection AddEducationOrganizationRefresh(
+        this IServiceCollection services,
+        IConfiguration configuration
+    )
+    {
+        if (services.Any(descriptor => descriptor.ServiceType == typeof(RegistrationMarker)))
+        {
+            return services;
+        }
+        services.AddSingleton<RegistrationMarker>();
+        services.AddDmsEducationOrganizationProjectionReader(configuration);
+
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IValidateOptions<EducationOrganizationRefreshOptions>,
+                EducationOrganizationRefreshOptionsValidator
+            >()
+        );
+        services
+            .AddOptions<EducationOrganizationRefreshOptions>()
+            .Bind(configuration.GetSection(EducationOrganizationRefreshOptions.SectionName))
+            .ValidateOnStart();
+
+        foreach ((string code, string message) in EducationOrganizationRefreshJobErrorCodes.All)
+        {
+            services.AddJobErrorCode(code, message);
+        }
+        services.AddJobCompositeErrorCode(
+            EducationOrganizationRefreshJobErrorCodes.Incomplete,
+            EducationOrganizationRefreshJobErrorCodes.IncompleteMessage,
+            EducationOrganizationRefreshJobErrorCodes.IncompleteCategories
+        );
+
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddTransient<EducationOrganizationTargetRefresher>();
+        services.AddJobHandler<
+            EducationOrganizationRefreshJobHandler,
+            EducationOrganizationRefreshPayload,
+            EducationOrganizationRefreshPayloadValidator
+        >(EducationOrganizationRefreshJobTypes.Refresh, EducationOrganizationRefreshJobTypes.PayloadVersion);
+
+        JobOptions jobs = configuration.GetSection(JobOptions.SectionName).Get<JobOptions>() ?? new();
+        if (jobs.WorkerEnabled)
+        {
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<
+                    IValidateOptions<DmsEducationOrganizationProjectionSettings>,
+                    RefreshReaderRequiredValidator
+                >()
+            );
+        }
+
+        if (jobs.SchedulerEnabled)
+        {
+            services.AddHostedService<EducationOrganizationRefreshScheduleReconciler>();
+        }
+
+        return services;
+    }
+
+    /// <summary>Marks the registration as done, so a second call adds nothing.</summary>
+    private sealed class RegistrationMarker;
+}

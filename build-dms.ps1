@@ -2050,6 +2050,513 @@ function Register-InstanceE2EFixture {
     }
 }
 
+function Import-InstanceE2EProjectionReadClaimSet {
+    <#
+    .SYNOPSIS
+        Imports, in one tenant, a claim set granting exactly Read on the DMS education organization projection claim,
+        reads it back, and returns its id. CMS skips a claim missing from its hierarchy instead of rejecting the import,
+        which would otherwise surface later as a 403 from DMS, so the export must show that one grant and nothing else.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $CmsUrl,
+
+        [Parameter(Mandatory)]
+        [string]
+        $AccessToken,
+
+        [Parameter(Mandatory)]
+        [string]
+        $TenantName,
+
+        [Parameter(Mandatory)]
+        [string]
+        $ClaimSetName
+    )
+
+    $projectionClaim = "http://ed-fi.org/identity/claims/services/educationOrganizationProjection"
+    $headers = @{ Authorization = "Bearer $AccessToken"; Tenant = $TenantName }
+    $body = ConvertTo-Json -Depth 6 -InputObject ([ordered]@{
+            claimSetName   = $ClaimSetName
+            resourceClaims = @(
+                [ordered]@{
+                    name      = "educationOrganizationProjection"
+                    claimName = $projectionClaim
+                    actions   = @([ordered]@{ name = "Read"; enabled = $true })
+                }
+            )
+        })
+
+    $imported = Invoke-WebRequest `
+        -Uri ([uri]::new([uri]$CmsUrl, "v3/claimSets/import").AbsoluteUri) `
+        -Method Post `
+        -Headers $headers `
+        -ContentType "application/json" `
+        -Body $body
+    $location = [string]($imported.Headers["Location"] | Select-Object -First 1)
+    if ([string]::IsNullOrWhiteSpace($location)) {
+        throw "Importing claim set '$ClaimSetName' in '$TenantName' returned no Location."
+    }
+    $claimSetId = [long]($location -split '/')[-1]
+
+    $export = Invoke-Api `
+        -BaseUrl $CmsUrl `
+        -RelativeUrl "v3/claimSets/$claimSetId/export" `
+        -Method Get `
+        -ContentType "application/json" `
+        -Headers $headers
+    $grants = @(
+        foreach ($resourceClaim in @($export.resourceClaims)) {
+            foreach ($action in @($resourceClaim.actions)) {
+                if ($action.enabled) { "$($resourceClaim.claimName)#$($action.name)" }
+            }
+        }
+    )
+    if ($grants.Count -ne 1 -or $grants[0] -ne "$projectionClaim#Read") {
+        throw "Claim set '$ClaimSetName' in '$TenantName' must grant exactly Read on the projection claim; it grants: $($grants -join ', ')."
+    }
+
+    return $claimSetId
+}
+
+function Register-InstanceE2EEducationOrganizationReader {
+    <#
+    .SYNOPSIS
+        Provisions the credential each fixture tenant's education organization refresh jobs read DMS with: a claim set
+        granting only Read on the projection claim and an application on it with no data stores or education
+        organizations, as docs/EDUCATION-ORGANIZATION-PROJECTION.md describes. Returns one record per tenant, in fixture
+        order. The client secrets are never written to host output.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal build orchestration helper; build-dms.ps1 does not expose -WhatIf end to end.')]
+    param(
+        [pscustomobject]
+        $InstanceE2ESettings,
+
+        [pscustomobject]
+        $Fixture
+    )
+
+    Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
+    Import-Module -Name "$PSScriptRoot/eng/Dms-Management.psm1" -Force
+
+    $environmentValues = $InstanceE2ESettings.EnvironmentValues
+    $cmsUrl = Resolve-CmsBaseUrl -EnvValues $environmentValues
+    $bootstrapAdmin = Resolve-BootstrapAdminClient -EnvValues $environmentValues
+    $accessToken = Get-CmsToken `
+        -CmsUrl $cmsUrl `
+        -ClientId $bootstrapAdmin.ClientId `
+        -ClientSecret $bootstrapAdmin.ClientSecret
+
+    return @(
+        foreach ($tenant in $Fixture.Tenants) {
+            $tenantName = [string]$tenant.TenantName
+            # The tenant name becomes part of a configuration key and a Compose interpolation, so it must stay plain.
+            if ($tenantName -notmatch '^[A-Za-z0-9_]+$') {
+                throw "Fixture tenant name '$tenantName' must contain only letters, digits and underscores."
+            }
+
+            # CMS claim set names are unique across tenants, so each tenant's has its own.
+            $claimSetName = "EdOrgRefreshE2E$tenantName"
+            $null = Import-InstanceE2EProjectionReadClaimSet `
+                -CmsUrl $cmsUrl `
+                -AccessToken $accessToken `
+                -TenantName $tenantName `
+                -ClaimSetName $claimSetName
+            $application = Add-Application `
+                -CmsUrl $cmsUrl `
+                -AccessToken $accessToken `
+                -Tenant $tenantName `
+                -ApplicationName "Education Organization Refresh E2E $tenantName" `
+                -ClaimSetName $claimSetName `
+                -VendorId $tenant.VendorId `
+                -EducationOrganizationIds @() `
+                -DataStoreIds @()
+
+            [pscustomobject]@{
+                TenantName    = $tenantName
+                ClaimSetName  = $claimSetName
+                ApplicationId = $application.Id
+                ClientId      = [string]$application.Key
+                ClientSecret  = [string]$application.Secret
+            }
+        }
+    )
+}
+
+function Get-InstanceE2EOperationalConfigServicePlan {
+    <#
+    .SYNOPSIS
+        Describes the operational Configuration Service the Instance E2E stack is recreated as: job workers and the
+        scheduler on, the DMS reader configured with each tenant's credential, and a one-minute refresh interval.
+
+    .DESCRIPTION
+        Returns three maps and the override file text:
+          - ProcessVariables: set in the process while Compose renders the service. The shipped variables
+            (CONFIGURATION_SERVICE_JOBS_*, CONFIGURATION_SERVICE_DMS_EDORG_BASE_URL) go through the shipped mappings in
+            local-config.compose.yml, so this exercises them; the rest feed the override.
+          - OverrideYaml: the settings that have no shipped variable (per-tenant credentials, whose names contain the
+            tenant, and the refresh interval). It holds only ${VARIABLE:?} references, never a value, so no secret is
+            written to disk.
+          - ExpectedEnvironment: every container environment variable the recreation is meant to change, with its
+            value. Any other environment difference from the bootstrap container is a defect
+            Assert-ConfigServiceEnvironmentChange reports; it compares environment variables only, not the image,
+            mounts or other container properties.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [object[]]
+        $Readers,
+
+        [Parameter(Mandatory)]
+        [string]
+        $DmsBaseUrl,
+
+        [int]
+        $RefreshIntervalMinutes = 1
+    )
+
+    $processVariables = [ordered]@{
+        CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED       = "true"
+        CONFIGURATION_SERVICE_JOBS_SCHEDULER_ENABLED    = "true"
+        CONFIGURATION_SERVICE_DMS_EDORG_BASE_URL        = $DmsBaseUrl
+        INSTANCE_E2E_EDORG_REFRESH_INTERVAL_MINUTES     = [string]$RefreshIntervalMinutes
+    }
+    $expectedEnvironment = [ordered]@{
+        JobSettings__WorkerEnabled                              = "true"
+        JobSettings__SchedulerEnabled                           = "true"
+        DmsEducationOrganizationProjectionSettings__DmsBaseUrl  = $DmsBaseUrl
+        AppSettings__EdOrgsRefreshIntervalInMins                = [string]$RefreshIntervalMinutes
+    }
+    $overrideLines = [System.Collections.Generic.List[string]]::new()
+    $overrideLines.Add("# Generated by build-dms.ps1 InstanceE2ETest. Values come from the process environment; none is stored here.")
+    $overrideLines.Add("services:")
+    $overrideLines.Add("  config:")
+    $overrideLines.Add("    environment:")
+    $overrideLines.Add('      AppSettings__EdOrgsRefreshIntervalInMins: ${INSTANCE_E2E_EDORG_REFRESH_INTERVAL_MINUTES:?set by build-dms.ps1}')
+
+    for ($index = 0; $index -lt $Readers.Count; $index++) {
+        $reader = $Readers[$index]
+        $tenantName = [string]$reader.TenantName
+        if ($tenantName -notmatch '^[A-Za-z0-9_]+$') {
+            throw "Reader tenant name '$tenantName' must contain only letters, digits and underscores."
+        }
+
+        $ordinal = $index + 1
+        foreach ($part in @(
+                @{ Setting = "ClientId"; Variable = "INSTANCE_E2E_EDORG_TENANT_$($ordinal)_CLIENT_ID"; Value = [string]$reader.ClientId },
+                @{ Setting = "ClientSecret"; Variable = "INSTANCE_E2E_EDORG_TENANT_$($ordinal)_CLIENT_SECRET"; Value = [string]$reader.ClientSecret }
+            )) {
+            $key = "DmsEducationOrganizationProjectionSettings__TenantCredentials__$($tenantName)__$($part.Setting)"
+            $processVariables[$part.Variable] = $part.Value
+            $expectedEnvironment[$key] = $part.Value
+            $overrideLines.Add("      $($key): `${$($part.Variable):?set by build-dms.ps1}")
+        }
+    }
+
+    return [pscustomobject]@{
+        ProcessVariables    = $processVariables
+        OverrideYaml        = ($overrideLines -join "`n") + "`n"
+        ExpectedEnvironment = $expectedEnvironment
+    }
+}
+
+function Assert-ConfigServiceEnvironmentChange {
+    <#
+    .SYNOPSIS
+        Fails unless the recreated Configuration Service container's environment equals the bootstrap container's,
+        except for exactly the expected settings, which must hold their expected values. The error names the settings
+        that differ and never a value, because values include credentials and connection strings.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]
+        $Before,
+
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]
+        $After,
+
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]
+        $Expected
+    )
+
+    # Copied into ordinal maps: the inputs may be hashtables, ordered dictionaries or generic dictionaries, which do not
+    # share a key lookup method, and environment names are case-sensitive.
+    $maps = foreach ($source in $Before, $After, $Expected) {
+        $map = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
+        foreach ($key in @($source.Keys)) { $map[[string]$key] = [string]$source[$key] }
+        , $map
+    }
+    $beforeMap, $afterMap, $expectedMap = $maps
+
+    $names = [System.Collections.Generic.SortedSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($map in $maps) { foreach ($key in $map.Keys) { [void]$names.Add($key) } }
+
+    $notApplied = [System.Collections.Generic.List[string]]::new()
+    $unexpected = [System.Collections.Generic.List[string]]::new()
+    foreach ($name in $names) {
+        if ($expectedMap.ContainsKey($name)) {
+            if (-not $afterMap.ContainsKey($name) -or $afterMap[$name] -cne $expectedMap[$name]) {
+                $notApplied.Add($name)
+            }
+        }
+        elseif ($beforeMap.ContainsKey($name) -ne $afterMap.ContainsKey($name) -or
+            ($beforeMap.ContainsKey($name) -and $beforeMap[$name] -cne $afterMap[$name])) {
+            $unexpected.Add($name)
+        }
+    }
+
+    $problems = @()
+    if ($notApplied.Count -gt 0) {
+        $problems += "not set as expected: $($notApplied -join ', ')"
+    }
+    if ($unexpected.Count -gt 0) {
+        $problems += "changed unexpectedly: $($unexpected -join ', ')"
+    }
+    if ($problems.Count -gt 0) {
+        throw "The recreated Configuration Service container's settings differ from the plan; $($problems -join '; ')."
+    }
+}
+
+function Get-ContainerEnvironment {
+    <#
+    .SYNOPSIS
+        Returns a container's configured environment as an ordinal dictionary. Values are secret-bearing and are never
+        written to host output.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $ContainerName
+    )
+
+    $json = docker inspect --format '{{json .Config.Env}}' $ContainerName
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not inspect container '$ContainerName' (exit code $LASTEXITCODE)."
+    }
+
+    $environment = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
+    foreach ($entry in @(ConvertFrom-Json -InputObject ($json -join "`n"))) {
+        $separator = $entry.IndexOf('=')
+        if ($separator -gt 0) {
+            $environment[$entry.Substring(0, $separator)] = $entry.Substring($separator + 1)
+        }
+    }
+
+    return $environment
+}
+
+function Enable-InstanceE2EOperationalConfigService {
+    <#
+    .SYNOPSIS
+        Recreates the Instance E2E Configuration Service, which setup started in bootstrap (workers off), as an
+        operational instance: workers and the scheduler on, the DMS reader configured with the tenants' credentials, and
+        a one-minute refresh interval. Only the Configuration Service container is recreated.
+
+    .DESCRIPTION
+        Compose re-renders the service from the files recorded on the running container (the set setup composed it
+        from), the resolved environment file, the plan's process variables and a generated override. The container's
+        environment before and after must differ in exactly the planned settings. Returns the recreated container's
+        environment and the refresh interval.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal build orchestration helper; build-dms.ps1 does not expose -WhatIf end to end.')]
+    param(
+        [pscustomobject]
+        $InstanceE2ESettings,
+
+        [object[]]
+        $Readers,
+
+        [int]
+        $RefreshIntervalMinutes = 1
+    )
+
+    $containerName = "ed-fi-api-config-service"
+    $labelsJson = docker inspect --format '{{json .Config.Labels}}' $containerName
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not inspect container '$containerName' (exit code $LASTEXITCODE)."
+    }
+    $labels = ConvertFrom-Json -InputObject ($labelsJson -join "`n")
+    $project = [string]$labels.'com.docker.compose.project'
+    $service = [string]$labels.'com.docker.compose.service'
+    $workingDirectory = [string]$labels.'com.docker.compose.project.working_dir'
+    $configFiles = @(([string]$labels.'com.docker.compose.project.config_files').Split(',') | Where-Object { $_ })
+    if (-not $project -or -not $service -or -not $workingDirectory -or $configFiles.Count -eq 0) {
+        throw "Container '$containerName' carries no Compose project labels; it was not started by Compose."
+    }
+
+    # The Configuration Service reaches DMS on the shared Docker network by the DMS host name and container port.
+    $dmsPort = Get-ComposeResolvedEnvValue -EnvironmentValues $InstanceE2ESettings.EnvironmentValues -Name "DMS_HTTP_PORTS" -DefaultValue "8080"
+    $plan = Get-InstanceE2EOperationalConfigServicePlan `
+        -Readers $Readers `
+        -DmsBaseUrl "http://ed-fi-api:$dmsPort/" `
+        -RefreshIntervalMinutes $RefreshIntervalMinutes
+
+    $before = Get-ContainerEnvironment -ContainerName $containerName
+    $overrideFile = Join-Path ([System.IO.Path]::GetTempPath()) "dms-instance-e2e-operational-config-$([guid]::NewGuid().ToString('N')).yml"
+    $previousState = @{}
+    foreach ($name in $plan.ProcessVariables.Keys) {
+        $previousState[$name] = [pscustomobject]@{
+            Existed = (Test-Path -LiteralPath "Env:$name")
+            Value   = [System.Environment]::GetEnvironmentVariable($name)
+        }
+    }
+
+    Write-Host "Recreating the Configuration Service with job workers, the scheduler and the DMS reader on..." -ForegroundColor Cyan
+    try {
+        Set-Content -LiteralPath $overrideFile -Value $plan.OverrideYaml -NoNewline -Encoding utf8
+        foreach ($name in $plan.ProcessVariables.Keys) {
+            Set-Item -LiteralPath "Env:$name" -Value ([string]$plan.ProcessVariables[$name])
+        }
+
+        $composeArguments = @("compose", "-p", $project, "--project-directory", $workingDirectory)
+        foreach ($file in $configFiles) { $composeArguments += @("-f", $file) }
+        $composeArguments += @(
+            "-f", $overrideFile,
+            "--env-file", $InstanceE2ESettings.ResolvedEnvironmentFile,
+            "up", "--detach", "--no-deps", "--force-recreate", $service
+        )
+        & docker @composeArguments
+        if ($LASTEXITCODE -ne 0) {
+            throw "Recreating the Configuration Service failed (exit code $LASTEXITCODE)."
+        }
+    }
+    finally {
+        foreach ($name in $plan.ProcessVariables.Keys) {
+            if ($previousState[$name].Existed) {
+                Set-Item -LiteralPath "Env:$name" -Value $previousState[$name].Value
+            }
+            else {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+        }
+        Remove-Item -LiteralPath $overrideFile -ErrorAction SilentlyContinue
+    }
+
+    $after = Get-ContainerEnvironment -ContainerName $containerName
+    Assert-ConfigServiceEnvironmentChange -Before $before -After $after -Expected $plan.ExpectedEnvironment
+
+    # A worker instance whose reader settings are invalid refuses to start, which this wait reports as a timeout; its
+    # startup messages name the settings and never their values (docker logs ed-fi-api-config-service).
+    Wait-ForConfigServiceAndClientRegistration
+
+    return [pscustomobject]@{
+        Environment            = $after
+        RefreshIntervalMinutes = $RefreshIntervalMinutes
+    }
+}
+
+function New-InstanceE2ECmsReadOnlyConnectionString {
+    <#
+    .SYNOPSIS
+        Creates a login that can only read dmscs.Tenant, dmscs.JobSchedule and dmscs.Job in the Instance E2E
+        Configuration Service database, and returns a host connection string for it. The test process uses it to find
+        the refresh schedule and the jobs it enqueued, which no API lists. Secret-bearing: never written to host output.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal build orchestration helper; build-dms.ps1 does not expose -WhatIf end to end.')]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]
+        $InstanceE2ESettings,
+
+        # The Configuration Service's own connection string, from its container; it names the database.
+        [Parameter(Mandatory)]
+        [string]
+        $ConfigServiceConnectionString
+    )
+
+    $databaseEngine = [string]$InstanceE2ESettings.DatabaseEngine
+    # Parsed directly: PowerShell adapts DbConnectionStringBuilder's entries as properties, which hides its Keys.
+    $databaseMatch = [regex]::Match($ConfigServiceConnectionString, '(?i)(?:^|;)\s*(?:database|initial catalog)\s*=\s*([^;]*)')
+    if (-not $databaseMatch.Success) {
+        throw "The Configuration Service connection string names no database."
+    }
+    $database = $databaseMatch.Groups[1].Value.Trim()
+    if ($database -notmatch '^[A-Za-z0-9_]+$') {
+        throw "The Configuration Service database name must contain only letters, digits and underscores."
+    }
+
+    $login = "edorg_refresh_e2e_reader"
+    $password = "E2e!" + [guid]::NewGuid().ToString("N")
+    $container = if ($databaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
+
+    # The SQL travels on standard input, so the password never appears in a process argument list.
+    if ($databaseEngine -eq "mssql") {
+        $sql = @"
+IF SUSER_ID(N'$login') IS NULL CREATE LOGIN [$login] WITH PASSWORD = N'$password', CHECK_POLICY = OFF;
+ELSE ALTER LOGIN [$login] WITH PASSWORD = N'$password';
+GO
+USE [$database];
+IF USER_ID(N'$login') IS NULL CREATE USER [$login] FOR LOGIN [$login];
+GRANT SELECT ON dmscs.Tenant TO [$login];
+GRANT SELECT ON dmscs.JobSchedule TO [$login];
+GRANT SELECT ON dmscs.Job TO [$login];
+GO
+"@
+        $sql | docker exec -i $container bash -c 'export SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"; exec /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -i /dev/stdin' | Out-Null
+    }
+    else {
+        $postgresUser = Get-ComposeResolvedEnvValue -EnvironmentValues $InstanceE2ESettings.EnvironmentValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+        # psql's \password command takes the new password as input, not as SQL: it computes the SCRAM verifier in the
+        # client and sends only the verifier, so the password is in no statement text that the server could log. Run
+        # without -t, psql has no terminal and reads the password twice from the next lines of standard input.
+        $sql = @"
+DO `$`$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '$login') THEN CREATE ROLE $login LOGIN; END IF;
+END `$`$;
+ALTER ROLE $login WITH LOGIN;
+\password $login
+$password
+$password
+ALTER ROLE $login SET default_transaction_read_only = on;
+GRANT CONNECT ON DATABASE "$database" TO $login;
+GRANT USAGE ON SCHEMA dmscs TO $login;
+GRANT SELECT ON dmscs."Tenant", dmscs."JobSchedule", dmscs."Job" TO $login;
+"@
+        # \password writes its two prompts to standard error, so psql's output is shown only when it fails.
+        $psqlOutput = $sql | docker exec -i $container psql -U $postgresUser -d $database -v ON_ERROR_STOP=1 -q 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $psqlOutput | ForEach-Object { Write-Host "$_" }
+        }
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "Creating the read-only Configuration Service database login failed (exit code $LASTEXITCODE)."
+    }
+
+    $hostPort = Get-InstanceE2EDatabaseHostPort -DatabaseEngine $databaseEngine
+
+    if ($databaseEngine -eq "mssql") {
+        return "Server=127.0.0.1,$hostPort;Database=$database;User Id=$login;Password=$password;TrustServerCertificate=true;"
+    }
+    return "Host=127.0.0.1;Port=$hostPort;Database=$database;Username=$login;Password=$password;"
+}
+
+function Get-InstanceE2EDatabaseHostPort {
+    <#
+    .SYNOPSIS
+        Returns the host port the Instance E2E database server is published on at 127.0.0.1, for example 5435. The
+        registered connection strings name the server as the Docker network reaches it; a test process on the host
+        reaches it through this port.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]
+        $DatabaseEngine
+    )
+
+    $container = if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
+    $containerPort = if ($DatabaseEngine -eq "mssql") { "1433" } else { "5432" }
+    $published = @(docker port $container $containerPort) | Where-Object { $_ -match '^127\.0\.0\.1:\d+$' } | Select-Object -First 1
+    if (-not $published) {
+        throw "Container '$container' publishes no 127.0.0.1 address for port $containerPort."
+    }
+
+    return [int](($published -split ':')[-1])
+}
+
 function Invoke-WithInstanceE2ETestProcessContext {
     param(
         [pscustomobject]
@@ -2109,6 +2616,13 @@ function Invoke-WithInstanceE2ETestProcessContext {
         "INSTANCE_E2E_CONFIG_SERVICE_URL"              = [string]$Fixture.ConfigServiceUrl
         "INSTANCE_E2E_CONFIG_ADMIN_CLIENT_ID"          = [string]$Fixture.ConfigAdminClientId
         "INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET"      = [string]$Fixture.ConfigAdminClientSecret
+        # The operational Configuration Service: its refresh interval, and a connection that can only read the
+        # tenant, schedule and job tables, which the scheduled-refresh test inspects. Secret-bearing.
+        "INSTANCE_E2E_EDORG_REFRESH_INTERVAL_MINUTES"  = [string]$Fixture.EducationOrganizationRefreshIntervalMinutes
+        "INSTANCE_E2E_CMS_READONLY_CONNECTION_STRING"  = [string]$Fixture.CmsReadOnlyConnectionString
+        # The host port of the route databases' server, where the live refresh tests create scratch Configuration
+        # Service databases with the route credentials.
+        "INSTANCE_E2E_DATABASE_HOST_PORT"              = [string]$Fixture.DatabaseHostPort
     }
 
     # Capture existence independently from value (PowerShell retains empty/whitespace variables) so the
@@ -2270,7 +2784,7 @@ function RunDmsProjectionReaderE2E {
         Assert-DmsProjectionReaderKeycloakTrxResults -TrxFile $trxFile
     }
     else {
-        Assert-DmsProjectionReaderTrxResults -TrxFile $trxFile -MinimumLiveTests 28
+        Assert-DmsProjectionReaderTrxResults -TrxFile $trxFile -MinimumLiveTests 54
     }
 }
 
@@ -2489,6 +3003,18 @@ function InstanceE2ETests {
     # Suite-owned fixture: register the three engine-correct data stores, route contexts, tenants,
     # vendors, and applications in CMS.
     $instanceFixture = Register-InstanceE2EFixture -InstanceE2ESettings $instanceSettings
+
+    # Setup started the Configuration Service in bootstrap (workers off), because its DMS reader credential can only be
+    # created through the running service. Provision each tenant's reader credential, then recreate the service as an
+    # operational instance (workers, scheduler and reader on, one-minute refresh interval), as an operator would.
+    $educationOrganizationReaders = Register-InstanceE2EEducationOrganizationReader -InstanceE2ESettings $instanceSettings -Fixture $instanceFixture
+    $operationalConfigService = Enable-InstanceE2EOperationalConfigService -InstanceE2ESettings $instanceSettings -Readers $educationOrganizationReaders
+    $cmsReadOnlyConnectionString = New-InstanceE2ECmsReadOnlyConnectionString `
+        -InstanceE2ESettings $instanceSettings `
+        -ConfigServiceConnectionString $operationalConfigService.Environment["DatabaseSettings__DatabaseConnection"]
+    $instanceFixture | Add-Member -NotePropertyName EducationOrganizationRefreshIntervalMinutes -NotePropertyValue $operationalConfigService.RefreshIntervalMinutes
+    $instanceFixture | Add-Member -NotePropertyName CmsReadOnlyConnectionString -NotePropertyValue $cmsReadOnlyConnectionString
+    $instanceFixture | Add-Member -NotePropertyName DatabaseHostPort -NotePropertyValue (Get-InstanceE2EDatabaseHostPort -DatabaseEngine $instanceSettings.DatabaseEngine)
 
     # Restart DMS exactly once AFTER registration so it picks up the registered route contexts, then
     # wait for DMS health (Restart-DmsContainer polls /health). There is no pre-registration or
