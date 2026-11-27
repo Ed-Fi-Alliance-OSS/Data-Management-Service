@@ -105,13 +105,16 @@ internal sealed class LaneHooks : IDmsProvisioningTestHooks
 
 /// <summary>
 /// The real SQL Server engine behind a record of every call and the database name it addressed, of every instance a
-/// staging drop, a session open or a compensation drop was handed, and of every restore and rename outcome. Two seams
-/// stand in for a lost result: <see cref="AfterRename"/> replaces the rename's outcome after the server ran it, and
-/// <see cref="InsteadOfMarker"/> answers for a marker that is never sent.
+/// staging drop, a session open or a compensation drop was handed, of every lock holder it handed out, and of every
+/// restore and rename outcome. Two seams stand in for a lost result: <see cref="AfterRename"/> replaces the rename's
+/// outcome after the server ran it, and <see cref="InsteadOfMarker"/> answers for a marker that is never sent.
 /// </summary>
 internal sealed class RecordingEngine(MssqlDmsTargetEngine inner) : IDmsTargetEngine
 {
     public List<(string Member, string? DatabaseName)> Calls { get; } = [];
+
+    /// <summary>Every lock holder an acquisition handed out, in order.</summary>
+    public List<IDmsTargetLockHolder> Holders { get; } = [];
 
     public List<DmsInstanceIdentity> DroppedStagingInstances { get; } = [];
 
@@ -152,14 +155,20 @@ internal sealed class RecordingEngine(MssqlDmsTargetEngine inner) : IDmsTargetEn
         return inner.ReadServerFactsAsync(cancellationToken);
     }
 
-    public Task<DmsTargetLockResult> AcquireTargetLockAsync(
+    public async Task<DmsTargetLockResult> AcquireTargetLockAsync(
         DmsTargetDatabaseName name,
         DmsOperationId operation,
         CancellationToken cancellationToken
     )
     {
         Calls.Add((nameof(AcquireTargetLockAsync), name.Value));
-        return inner.AcquireTargetLockAsync(name, operation, cancellationToken);
+        DmsTargetLockResult result = await inner.AcquireTargetLockAsync(name, operation, cancellationToken);
+        if (result is DmsTargetLockResult.Acquired acquired)
+        {
+            Holders.Add(acquired.Holder);
+        }
+
+        return result;
     }
 
     public Task<DmsLiveTargetState> InspectAsync(DmsDatabaseName name, CancellationToken cancellationToken)
@@ -468,7 +477,8 @@ internal sealed class Lane : IAsyncDisposable
     /// <summary>A delete of the lane's target under the record's expected identity.</summary>
     public DmsDataStoreDeleteRequest DeleteRequest => new(Target, Request.ExpectedSourceIdentity);
 
-    public Task<DmsDataStoreDeleteResult> DeleteAsync() => Service.DeleteAsync(DeleteRequest, default);
+    public Task<DmsDataStoreDeleteResult> DeleteAsync(CancellationToken cancellationToken = default) =>
+        Service.DeleteAsync(DeleteRequest, cancellationToken);
 
     /// <summary>Artifact bytes for a lane that only deletes: the catalog needs a package, a delete never restores it.</summary>
     public static byte[] DeleteOnlyArtifact => "TAPE\0delete-only lane\n"u8.ToArray();
