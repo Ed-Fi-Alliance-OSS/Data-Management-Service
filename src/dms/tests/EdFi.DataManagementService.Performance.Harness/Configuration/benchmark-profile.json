@@ -49,7 +49,7 @@
     },
     "injectionFactors": {
       "student-put-collection-update": 1.0,
-      "traditional-offset-zero/25": 1.0
+      "traditional-offset-deep/25": 1.0
     }
   },
   "requiredEnvironment": {
@@ -86,7 +86,7 @@
   "detection": {
     "scenarios": [
       "student-put-collection-update",
-      "traditional-offset-zero/25"
+      "traditional-offset-deep/25"
     ],
     "targetIncrease": 0.20,
     "tolerance": 0.02,
@@ -96,11 +96,11 @@
     "injectionFactors": {
       "postgresql": {
         "student-put-collection-update": null,
-        "traditional-offset-zero/25": null
+        "traditional-offset-deep/25": null
       },
       "mssql": {
         "student-put-collection-update": null,
-        "traditional-offset-zero/25": null
+        "traditional-offset-deep/25": null
       }
     }
   },

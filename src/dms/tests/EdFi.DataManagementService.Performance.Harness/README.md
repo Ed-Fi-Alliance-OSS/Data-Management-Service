@@ -594,8 +594,11 @@ Build logs (`build-<commit12>.log`) stay in the results directory.
 
 ### Calibration, sizing and qualification
 
-Detection is declared before any evidence run: a **+20%** client p50 increase on
-`student-put-collection-update` and `traditional-offset-zero/25`. A test-only
+Detection is declared before any qualification run: a **+20%** client p50 increase on
+`student-put-collection-update` and `traditional-offset-deep/25`. The read was
+`traditional-offset-zero/25` until 2026-11-27; it moved before qualification, because SQL
+Server measures that roughly 7.5 ms request too unevenly to demonstrate detection (see the
+qualification evidence). A test-only
 `IStartupFilter` injects it on candidate sides only, busy-waiting `factor × the request's own
 pipeline time` and counting the requests it affected. An injected run detects the declared
 slowdown only when all of these hold:
@@ -632,8 +635,11 @@ The procedure, for each provider, one provider at a time:
 
 1. Run one `Calibration` with at least 5 pairs.
 2. Size each demonstration scenario with 5-pair `Sizing` runs: start at factor 0.20, then use
-   each scenario's `nextFactor`. Stop when both are in band, after four runs, or after two
-   consecutive inconclusive runs for one scenario.
+   for each scenario the mean of the `suggestedFactor` of every run so far (an in-band run
+   counts its own factor; an inconclusive run counts nothing), not the last run's
+   `nextFactor` alone: one run's observed increase moves a few points at the same factor, so
+   following each run chases that noise. Stop when both are in band, after four runs, or after
+   two consecutive inconclusive runs for one scenario. Freeze the factor of the in-band run.
 3. Once both providers have in-band factors and every derived demonstration threshold is at
    most 13%, write all thresholds, fingerprints, and factors into the profile in one edit and
    bump `profileVersion` to 1.0.0.
@@ -751,6 +757,26 @@ round 4; without it, none did. The median rule tolerates one or two such pairs i
 calibration, but a `Sizing` or `Detection` run in which most pairs contain a slow side reads
 as a different increase each time. Benchmark sides now set `synchronous_commit = off`
 themselves (see what a side does, above), so this needs no prerequisite.
+
+**Demonstration read moved to `traditional-offset-deep/25`**, 2026-11-27. With the flush fix,
+PostgreSQL sized both original demonstration scenarios in band on its first run at factor 0.20
+(write +19.9%, offset-zero/25 +19.3%, pair ratios 1.18–1.22, nothing else flagged). SQL Server
+did not: after its calibration (offset-zero/25 9%, write 8%), three `Sizing` runs observed
+
+| Run | Write factor → increase | offset-zero/25 factor → increase |
+| --- | --- | --- |
+| 1 | 0.20 → 27.1% | 0.20 → 28.1% |
+| 2 | 0.1474 → 16.7% | 0.1423 → 22.4% |
+| 3 | 0.1769 → 23.8% | 0.1271 → 13.6% |
+
+The factor each run implies for +20% moved by about 20% between runs. Bootstrapping the SQL
+Server calibration's samples showed why for offset-zero/25: a side's p50 of 60 requests of
+about 7.5 ms carries a 3.4% sampling error and sides differ by 4.5%, against 0.8% and 1.9% for
+`traditional-offset-deep/25` (about 135 ms) and 0.3–0.4% and 1.7–1.8% for every PostgreSQL
+read. Five times the samples would still leave about 3.3%, so the read would miss the 18–25%
+detection band in most sets of three `Detection` runs. The deep page measures the same paging
+path with the noise of the reads that do size, so it became the demonstration read, and
+sizing switched to the mean factor above.
 
 **Environment:**
 

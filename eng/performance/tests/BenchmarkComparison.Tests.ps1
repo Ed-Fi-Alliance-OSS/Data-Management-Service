@@ -18,7 +18,7 @@ BeforeAll {
     $script:Digest = 'sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873'
     $script:ProfileFile = Join-Path $PSScriptRoot '../../../src/dms/tests/EdFi.DataManagementService.Performance.Harness/Configuration/benchmark-profile.json'
     $script:Write = 'student-put-collection-update'
-    $script:Read = 'traditional-offset-zero/25'
+    $script:Read = 'traditional-offset-deep/25'
     $script:Metrics = @('host-cpu-percent', 'host-available-mb', 'db-cpu-percent', 'db-memory-percent', 'db-block-io-bytes')
     $script:SavedPg = $env:ConnectionStrings__DatabaseConnection
     $script:SavedMssql = $env:ConnectionStrings__MssqlAdmin

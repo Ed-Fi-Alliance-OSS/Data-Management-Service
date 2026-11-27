@@ -136,11 +136,11 @@ public class Given_The_Committed_Benchmark_Profile
     }
 
     [Test]
-    public void It_demonstrates_detection_on_the_write_and_the_zero_offset_small_page()
+    public void It_demonstrates_detection_on_the_write_and_the_deep_offset_small_page()
     {
         _profile
             .Detection.Scenarios.Should()
-            .Equal("student-put-collection-update", "traditional-offset-zero/25");
+            .Equal("student-put-collection-update", "traditional-offset-deep/25");
         _profile.Detection.Scenarios.Should().BeSubsetOf(PerfBenchmarkScenarios.AllIds);
     }
 
@@ -223,7 +223,7 @@ public class Given_The_Committed_Benchmark_Profile
                 new Dictionary<string, decimal?>
                 {
                     ["student-put-collection-update"] = 1.0m,
-                    ["traditional-offset-zero/25"] = 1.0m,
+                    ["traditional-offset-deep/25"] = 1.0m,
                 }
             );
     }
@@ -278,11 +278,11 @@ public class Given_Demonstration_Thresholds_At_The_Margin
     {
         JsonObject profile = ProfileTestValues.Committed();
         profile["comparison"]!["p50Thresholds"]!["postgresql"]!["student-put-collection-update"] = 0.13m;
-        profile["comparison"]!["p50Thresholds"]!["mssql"]!["traditional-offset-zero/25"] = 0.13m;
+        profile["comparison"]!["p50Thresholds"]!["mssql"]!["traditional-offset-deep/25"] = 0.13m;
 
         ProfileTestValues
             .Load(profile)
-            .Profile.Comparison.P50Thresholds["mssql"]["traditional-offset-zero/25"]
+            .Profile.Comparison.P50Thresholds["mssql"]["traditional-offset-deep/25"]
             .Should()
             .Be(0.13m);
     }
@@ -495,12 +495,12 @@ public class Given_A_Frozen_Profile_Missing_A_Fingerprint : ProfileDefectFixture
 public class Given_A_Frozen_Profile_Missing_An_Injection_Factor : ProfileDefectFixture
 {
     protected override string ExpectedField =>
-        "detection.injectionFactors.postgresql.traditional-offset-zero/25";
+        "detection.injectionFactors.postgresql.traditional-offset-deep/25";
 
     protected override JsonObject Start() => ProfileTestValues.Frozen();
 
     protected override void Corrupt(JsonObject profile) =>
-        profile["detection"]!["injectionFactors"]!["postgresql"]!["traditional-offset-zero/25"] = null;
+        profile["detection"]!["injectionFactors"]!["postgresql"]!["traditional-offset-deep/25"] = null;
 }
 
 [TestFixture]

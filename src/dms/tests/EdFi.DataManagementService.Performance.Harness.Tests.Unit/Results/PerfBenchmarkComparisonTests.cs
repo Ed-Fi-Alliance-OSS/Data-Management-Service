@@ -594,11 +594,11 @@ public class Given_A_Sizing_Run
             Injection = new Dictionary<string, decimal>
             {
                 [ComparisonBuilder.Write] = factor,
-                [ComparisonBuilder.ZeroSmall] = 0.20m,
+                [ComparisonBuilder.DemonstrationRead] = 0.20m,
             },
         };
         builder.CandidateRatios[ComparisonBuilder.Write] = [writeRatio, writeRatio];
-        builder.CandidateRatios[ComparisonBuilder.ZeroSmall] = [readRatio, readRatio];
+        builder.CandidateRatios[ComparisonBuilder.DemonstrationRead] = [readRatio, readRatio];
         return builder;
     }
 
@@ -682,7 +682,7 @@ public class Given_Detection_And_Repeatability_Eligibility
             .. Enumerable.Repeat(purpose == PerfBenchmarkComparison.Detection ? 1.20m : 1m, pairs),
         ];
         builder.CandidateRatios[ComparisonBuilder.Write] = ratios;
-        builder.CandidateRatios[ComparisonBuilder.ZeroSmall] = ratios;
+        builder.CandidateRatios[ComparisonBuilder.DemonstrationRead] = ratios;
         builder.Profile = ComparisonProfiles.FrozenFor(builder);
         return builder;
     }
@@ -716,7 +716,7 @@ public class Given_Detection_And_Repeatability_Eligibility
                 new Dictionary<string, decimal>
                 {
                     [ComparisonBuilder.Write] = 0.5m,
-                    [ComparisonBuilder.ZeroSmall] = 0.4m,
+                    [ComparisonBuilder.DemonstrationRead] = 0.4m,
                 }
             )
             .Compare()
@@ -1954,7 +1954,10 @@ public class Given_An_Injected_Run
     {
         ComparisonBuilder builder = new() { Injection = ComparisonProfiles.FrozenInjection };
         builder.CandidateRatios[ComparisonBuilder.Write] = [.. Enumerable.Repeat(demonstrationRatio, 5)];
-        builder.CandidateRatios[ComparisonBuilder.ZeroSmall] = [.. Enumerable.Repeat(demonstrationRatio, 5)];
+        builder.CandidateRatios[ComparisonBuilder.DemonstrationRead] =
+        [
+            .. Enumerable.Repeat(demonstrationRatio, 5),
+        ];
         builder.CandidateRatios[ComparisonBuilder.DeepLarge] = [.. Enumerable.Repeat(otherRatio, 5)];
         return builder.Compare();
     }
@@ -2013,8 +2016,11 @@ public class Given_A_Sizing_Run_With_The_Read_Inconclusive_And_The_Write_Adjusti
             .Sizing(writeRatio: 1.10m, readRatio: 1.00m)
             .Compare();
 
-        result.Sizing(ComparisonBuilder.ZeroSmall).Status.Should().Be(PerfBenchmarkSizing.Inconclusive);
-        result.Sizing(ComparisonBuilder.ZeroSmall).NextFactor.Should().Be(0.20m);
+        result
+            .Sizing(ComparisonBuilder.DemonstrationRead)
+            .Status.Should()
+            .Be(PerfBenchmarkSizing.Inconclusive);
+        result.Sizing(ComparisonBuilder.DemonstrationRead).NextFactor.Should().Be(0.20m);
         result.Sizing(ComparisonBuilder.Write).Status.Should().Be(PerfBenchmarkSizing.Adjust);
         result.Sizing(ComparisonBuilder.Write).NextFactor.Should().Be(0.40m);
     }
@@ -2032,7 +2038,7 @@ public class Given_A_Sizing_Run_With_One_Scenario_In_Band
 
         result.Sizing(ComparisonBuilder.Write).Status.Should().Be(PerfBenchmarkSizing.InBand);
         result.Sizing(ComparisonBuilder.Write).NextFactor.Should().Be(0.20m);
-        result.Sizing(ComparisonBuilder.ZeroSmall).NextFactor.Should().Be(0.40m);
+        result.Sizing(ComparisonBuilder.DemonstrationRead).NextFactor.Should().Be(0.40m);
     }
 }
 

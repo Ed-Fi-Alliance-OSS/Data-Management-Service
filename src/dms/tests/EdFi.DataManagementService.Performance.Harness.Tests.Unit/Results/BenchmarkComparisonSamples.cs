@@ -57,7 +57,7 @@ internal static class ComparisonProfiles
         new Dictionary<string, decimal>
         {
             [PerfBenchmarkScenarios.StudentPutCollectionUpdate] = FrozenFactor,
-            [ComparisonBuilder.ZeroSmall] = FrozenFactor,
+            [ComparisonBuilder.DemonstrationRead] = FrozenFactor,
         };
 }
 
@@ -75,6 +75,11 @@ internal sealed class ComparisonBuilder
     public static readonly string HarnessCommit = new('d', 40);
     public const string RunId = "run-0001";
     public const string ZeroSmall = "traditional-offset-zero/25";
+
+    /// <summary>
+    /// The profile's demonstration read, beside <see cref="Write" />.
+    /// </summary>
+    public const string DemonstrationRead = "traditional-offset-deep/25";
     public const string DeepLarge = "traditional-offset-deep/500";
     public const string Write = PerfBenchmarkScenarios.StudentPutCollectionUpdate;
     public static readonly DateTimeOffset Origin = new(2026, 11, 23, 12, 0, 0, TimeSpan.Zero);

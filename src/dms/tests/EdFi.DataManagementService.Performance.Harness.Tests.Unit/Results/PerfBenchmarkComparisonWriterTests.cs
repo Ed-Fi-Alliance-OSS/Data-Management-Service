@@ -321,7 +321,7 @@ public class Given_A_Sizing_Comparison
         write["inputFactor"]!.GetValue<decimal>().Should().Be(0.20m);
         write["nextFactor"]!.GetValue<decimal>().Should().Be(0.40m);
         JsonObject read = sizing.Single(entry =>
-            entry["scenarioId"]!.GetValue<string>() == ComparisonBuilder.ZeroSmall
+            entry["scenarioId"]!.GetValue<string>() == ComparisonBuilder.DemonstrationRead
         );
         read["status"]!.GetValue<string>().Should().Be(PerfBenchmarkSizing.Inconclusive);
         read["nextFactor"]!.GetValue<decimal>().Should().Be(0.20m);
@@ -339,14 +339,14 @@ public class Given_A_Sizing_Comparison
             .Should()
             .Contain($"| {ComparisonBuilder.Write} | 0.2 | +10.0% | adjust | 0.4 | 0.4 | — |")
             .And.Contain(
-                $"| {ComparisonBuilder.ZeroSmall} | 0.2 | 0.0% | inconclusive | — | 0.2 | the observed increase is zero |"
+                $"| {ComparisonBuilder.DemonstrationRead} | 0.2 | 0.0% | inconclusive | — | 0.2 | the observed increase is zero |"
             );
         ComparisonReport
             .Section(markdown, "Identities")
             .Should()
             .Contain("| Not eligible because | purpose Sizing is a diagnostic |")
             .And.Contain(
-                $"| Injection (candidate sides) | {ComparisonBuilder.Write} × 0.2; {ComparisonBuilder.ZeroSmall} × 0.2 |"
+                $"| Injection (candidate sides) | {ComparisonBuilder.Write} × 0.2; {ComparisonBuilder.DemonstrationRead} × 0.2 |"
             );
     }
 }
