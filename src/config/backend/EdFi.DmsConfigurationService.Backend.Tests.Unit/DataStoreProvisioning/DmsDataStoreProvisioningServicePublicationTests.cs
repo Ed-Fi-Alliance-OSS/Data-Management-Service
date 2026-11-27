@@ -175,6 +175,116 @@ public class DmsDataStoreProvisioningServicePublicationTests
                 .Skip(1),
         ];
 
+    /// <summary>Where a create's holder is declared lost, relative to the rename's handoff to the driver.</summary>
+    private enum LossOrdering
+    {
+        /// <summary>At the <c>BeforeRename</c> hook: the scope refuses the rename before the engine is entered.</summary>
+        BeforeDispatch,
+
+        /// <summary>Inside the rename's command on the holder gate, once it was handed over; its result comes back unknown.</summary>
+        AtSend,
+    }
+
+    /// <summary>
+    /// A create whose holder was lost at a pinned point: its result, the renames its gated command sent, the holder's
+    /// release count when the holder session was first terminated after the hook (-1 when it never was), and every
+    /// engine call from the <c>BeforeRename</c> hook on.
+    /// </summary>
+    private sealed record HolderLoss(
+        Harness Harness,
+        DmsDataStoreCreateResult Result,
+        int RenamesSent,
+        int ReleasesAtTermination,
+        IReadOnlyList<string> SinceTheHook
+    );
+
+    /// <summary>
+    /// Runs a create whose holder is declared lost at <paramref name="ordering"/>. The rename runs on the real holder
+    /// gate, and its command counts the send and returns an unknown outcome. After the lock, the holder session is
+    /// proven gone unless <paramref name="holderGone"/> is false, and the target and staging names show
+    /// <paramref name="target"/> and <paramref name="staging"/>.
+    /// </summary>
+    private static async Task<HolderLoss> LoseHolderAsync(
+        LossOrdering ordering,
+        DmsLiveTargetState target,
+        DmsLiveTargetState staging,
+        bool holderGone = true
+    )
+    {
+        RecordingHooks hooks = new();
+        Harness harness = Scripted(
+            hooks,
+            targetInspection: inspection => inspection <= 2 ? new DmsLiveTargetState.Absent() : target,
+            stagingInspection: inspection => inspection == 1 ? new DmsLiveTargetState.Absent() : staging
+        );
+        int callsAtHook = -1;
+        int sent = 0;
+        int releasesAtTermination = -1;
+        hooks.OnPoint = point =>
+        {
+            if (point != DmsProvisioningHookPoint.BeforeRename)
+            {
+                return;
+            }
+
+            callsAtHook = harness.Engine.Calls.Count;
+            if (ordering == LossOrdering.BeforeDispatch)
+            {
+                harness.OnlyHolder.Lose();
+            }
+        };
+        harness.Engine.OnRenameIntoTarget = (_, _, _, token) =>
+            harness.OnlyHolder.RunAsync<DmsCommandOutcome<DmsInstanceIdentity>>(
+                _ =>
+                {
+                    sent++;
+                    if (ordering == LossOrdering.AtSend)
+                    {
+                        harness.OnlyHolder.Lose();
+                    }
+
+                    return Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
+                        new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(Session)
+                    );
+                },
+                CommandTimeout,
+                token
+            );
+        harness.Engine.OnTerminateSession = (session, _, _) =>
+        {
+            if (session == Session && callsAtHook >= 0 && releasesAtTermination < 0)
+            {
+                releasesAtTermination = harness.OnlyHolder.ReleaseCount;
+            }
+
+            return Task.FromResult<DmsSessionTermination>(
+                session == Session && !holderGone
+                    ? new DmsSessionTermination.NotTerminated(DmsSessionTerminationFailure.TimedOut)
+                    : new DmsSessionTermination.Terminated()
+            );
+        };
+        DmsDataStoreCreateResult result = await CreateAsync(harness);
+        return new HolderLoss(
+            harness,
+            result,
+            sent,
+            releasesAtTermination,
+            [.. harness.Engine.Calls.Skip(callsAtHook).Select(Describe)]
+        );
+    }
+
+    /// <summary>An engine call as its member and the name it addressed: <c>target</c>, <c>staging</c>, or none.</summary>
+    private static string Describe(SpyDmsTargetEngine.Call call) =>
+        call.DatabaseName switch
+        {
+            null => call.Member,
+            string name when name == TargetName => call.Member + ":target",
+            string name
+                when name.StartsWith(DmsOperationId.StagingDatabaseNamePrefix, StringComparison.Ordinal) =>
+                call.Member + ":staging",
+            _ => call.Member + ":other",
+        };
+
     private static (DmsProvisioningFailureCode, DmsProvisioningFailureCategory, string) Verdict(
         DmsDataStoreCreateResult result
     )
@@ -689,54 +799,91 @@ public class DmsDataStoreProvisioningServicePublicationTests
     }
 
     /// <summary>
-    /// F-03: the holder is declared lost while the rename it carried is in doubt. The loss is real, so the code stays
-    /// <c>LockLost</c>; its category follows settlement: transient only when the rename is proven not to have happened
-    /// and the target name is absent, an inspection failure when another database holds the name or the target was
-    /// renamed. The staging database follows the rename evidence alone.
+    /// F-03: the holder is declared lost inside the rename's command on the holder gate, after the rename was handed
+    /// to the driver, so the rename is in doubt and is settled after the lock is released: the holder session is
+    /// proven gone, then both names are read. The category follows settlement: transient only when the rename is
+    /// proven not to have happened and the target name is absent, an inspection failure otherwise. The code stays
+    /// <c>LockLost</c>, except when the settlement reads find the staging instance still under its own name and a
+    /// different online database under the target name: that is <c>InstanceChanged</c> at <c>ResolveRename</c>, as it
+    /// is when the holder kept its lock and only the rename's result was lost
+    /// (<see cref="Given_the_rename_outcome_is_unknown"/>). A protected, fenced, or not-online database under the name,
+    /// a rename found done, and a holder never proven gone keep their outcomes.
+    /// The staging database follows the rename evidence alone.
     /// </summary>
     [TestFixture]
     public class Given_the_holder_is_lost_while_the_rename_is_in_doubt
     {
-        private Harness _notRenamed = null!;
-        private Harness _foreignTarget = null!;
-        private Harness _renamed = null!;
-        private DmsDataStoreCreateResult _notRenamedResult = null!;
-        private DmsDataStoreCreateResult _foreignTargetResult = null!;
-        private DmsDataStoreCreateResult _renamedResult = null!;
+        private HolderLoss _notRenamed = null!;
+        private HolderLoss _takeover = null!;
+        private HolderLoss _protectedTarget = null!;
+        private HolderLoss _foreignFenced = null!;
+        private HolderLoss _foreignNotOnline = null!;
+        private HolderLoss _renamed = null!;
+        private HolderLoss _holderUnproven = null!;
 
-        private static Harness LostInDoubt(DmsLiveTargetState target, DmsLiveTargetState staging)
-        {
-            Harness harness = Scripted(
-                targetInspection: inspection => inspection <= 2 ? new DmsLiveTargetState.Absent() : target,
-                stagingInspection: inspection => inspection == 1 ? new DmsLiveTargetState.Absent() : staging
-            );
-            harness.Engine.OnRenameIntoTarget = (_, _, _, _) =>
-            {
-                harness.OnlyHolder.Lose();
-                return Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
-                    new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(Session)
-                );
-            };
-            return harness;
-        }
+        private IEnumerable<HolderLoss> All =>
+            [
+                _notRenamed,
+                _takeover,
+                _protectedTarget,
+                _foreignFenced,
+                _foreignNotOnline,
+                _renamed,
+                _holderUnproven,
+            ];
 
         [SetUp]
         public async Task Setup()
         {
-            _notRenamed = LostInDoubt(new DmsLiveTargetState.Absent(), PresentUnder(_stagingInstance));
-            _notRenamedResult = await CreateAsync(_notRenamed);
+            DmsLiveTargetState staged = PresentUnder(_stagingInstance);
+            _notRenamed = await LoseHolderAsync(LossOrdering.AtSend, new DmsLiveTargetState.Absent(), staged);
+            _takeover = await LoseHolderAsync(LossOrdering.AtSend, PresentUnder(_foreignInstance), staged);
+            _protectedTarget = await LoseHolderAsync(
+                LossOrdering.AtSend,
+                new DmsLiveTargetState.Protected(),
+                staged
+            );
+            _foreignFenced = await LoseHolderAsync(
+                LossOrdering.AtSend,
+                new DmsLiveTargetState.Fenced(_foreignInstance),
+                staged
+            );
+            _foreignNotOnline = await LoseHolderAsync(
+                LossOrdering.AtSend,
+                new DmsLiveTargetState.Present(_foreignInstance, DmsDatabaseState.Other),
+                staged
+            );
+            _renamed = await LoseHolderAsync(
+                LossOrdering.AtSend,
+                PresentUnder(_stagingInstance),
+                new DmsLiveTargetState.Absent()
+            );
+            _holderUnproven = await LoseHolderAsync(
+                LossOrdering.AtSend,
+                PresentUnder(_foreignInstance),
+                staged,
+                holderGone: false
+            );
+        }
 
-            _foreignTarget = LostInDoubt(PresentUnder(_foreignInstance), PresentUnder(_stagingInstance));
-            _foreignTargetResult = await CreateAsync(_foreignTarget);
-
-            _renamed = LostInDoubt(PresentUnder(_stagingInstance), new DmsLiveTargetState.Absent());
-            _renamedResult = await CreateAsync(_renamed);
+        [Test]
+        public void It_sends_the_rename_once_and_settles_it_only_after_releasing_the_lock()
+        {
+            foreach (HolderLoss loss in All)
+            {
+                (loss.RenamesSent, loss.ReleasesAtTermination).Should().Be((1, 1));
+                loss.SinceTheHook.Should()
+                    .StartWith([
+                        SpyDmsTargetEngine.RenameIntoTarget + ":target",
+                        SpyDmsTargetEngine.TerminateSession,
+                    ]);
+            }
         }
 
         [Test]
         public void It_reports_loss_as_transient_when_the_rename_did_not_happen_and_the_target_name_is_absent()
         {
-            Verdict(_notRenamedResult)
+            Verdict(_notRenamed.Result)
                 .Should()
                 .Be(
                     (
@@ -745,28 +892,59 @@ public class DmsDataStoreProvisioningServicePublicationTests
                         DmsDataStoreProvisioningService.RenameIntoTargetStep
                     )
                 );
-            CountOf(_notRenamed, SpyDmsTargetEngine.DropStaging).Should().Be(1);
+            CountOf(_notRenamed.Harness, SpyDmsTargetEngine.DropStaging).Should().Be(1);
         }
 
         [Test]
-        public void It_keeps_loss_an_inspection_failure_when_another_database_holds_the_target_name()
-        {
-            Verdict(_foreignTargetResult)
+        public void It_reports_the_takeover_as_an_instance_change_when_another_online_database_holds_the_target_name() =>
+            Verdict(_takeover.Result)
                 .Should()
                 .Be(
+                    (
+                        DmsProvisioningFailureCode.InstanceChanged,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.ResolveRenameStep
+                    )
+                );
+
+        [Test]
+        public void It_proves_the_holder_gone_then_reads_both_names_then_drops_its_staging_database_in_the_takeover()
+        {
+            _takeover
+                .SinceTheHook.Should()
+                .Equal(
+                    SpyDmsTargetEngine.RenameIntoTarget + ":target",
+                    SpyDmsTargetEngine.TerminateSession,
+                    SpyDmsTargetEngine.Inspect + ":target",
+                    SpyDmsTargetEngine.Inspect + ":staging",
+                    SpyDmsTargetEngine.DropStaging + ":staging"
+                );
+            CleanupOf(_takeover.Result).HasResidue.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_keeps_loss_an_inspection_failure_when_a_protected_fenced_or_not_online_database_holds_the_name()
+        {
+            new[] { _protectedTarget, _foreignFenced, _foreignNotOnline }
+                .Select(loss => Verdict(loss.Result))
+                .Should()
+                .AllBeEquivalentTo(
                     (
                         DmsProvisioningFailureCode.LockLost,
                         DmsProvisioningFailureCategory.OperatorInspectionRequired,
                         DmsDataStoreProvisioningService.RenameIntoTargetStep
                     )
                 );
-            CountOf(_foreignTarget, SpyDmsTargetEngine.DropStaging).Should().Be(1);
+            new[] { _protectedTarget, _foreignFenced, _foreignNotOnline }
+                .Select(loss => CountOf(loss.Harness, SpyDmsTargetEngine.DropStaging))
+                .Should()
+                .Equal(1, 1, 1);
         }
 
         [Test]
         public void It_keeps_loss_an_inspection_failure_with_the_unmarked_target_when_the_rename_happened()
         {
-            Verdict(_renamedResult)
+            Verdict(_renamed.Result)
                 .Should()
                 .Be(
                     (
@@ -775,9 +953,27 @@ public class DmsDataStoreProvisioningServicePublicationTests
                         DmsDataStoreProvisioningService.RenameIntoTargetStep
                     )
                 );
-            CleanupOf(_renamedResult)
+            CleanupOf(_renamed.Result)
                 .Residue.Should()
                 .Equal(new DmsCleanupResidue(DmsResidueKind.UnmarkedTarget, TargetName));
+        }
+
+        [Test]
+        public void It_leaves_the_rename_unresolved_and_the_staging_database_in_place_when_the_holder_is_not_proven_gone()
+        {
+            Verdict(_holderUnproven.Result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.OutcomeUnknown,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.ResolveRenameStep
+                    )
+                );
+            CountOf(_holderUnproven.Harness, SpyDmsTargetEngine.DropStaging).Should().Be(0);
+            CleanupOf(_holderUnproven.Result)
+                .Residue.Should()
+                .ContainSingle(residue => residue.Kind == DmsResidueKind.StagingDatabase);
         }
     }
 
@@ -904,30 +1100,27 @@ public class DmsDataStoreProvisioningServicePublicationTests
             CountOf(_renamed, SpyDmsTargetEngine.DropStaging).Should().Be(0);
     }
 
+    /// <summary>
+    /// The holder is lost at the <c>BeforeRename</c> hook, so the scope refuses the rename before the engine is
+    /// entered and nothing is in doubt. Another online database holds the target name by the time a settlement read
+    /// would run, yet nothing is settled after the lock: the loss is transient, and cleanup drops the staging database.
+    /// </summary>
     [TestFixture]
     public class Given_the_holder_is_lost_before_the_rename_is_dispatched
     {
-        private Harness _harness = null!;
-        private DmsDataStoreCreateResult _result = null!;
+        private HolderLoss _loss = null!;
 
         [SetUp]
-        public async Task Setup()
-        {
-            RecordingHooks hooks = new();
-            _harness = Scripted(hooks);
-            hooks.OnPoint = point =>
-            {
-                if (point == DmsProvisioningHookPoint.BeforeRename)
-                {
-                    _harness.OnlyHolder.Lose();
-                }
-            };
-            _result = await CreateAsync(_harness);
-        }
+        public async Task Setup() =>
+            _loss = await LoseHolderAsync(
+                LossOrdering.BeforeDispatch,
+                PresentUnder(_foreignInstance),
+                PresentUnder(_stagingInstance)
+            );
 
         [Test]
         public void It_ends_as_transient_lock_lost_at_the_rename() =>
-            Verdict(_result)
+            Verdict(_loss.Result)
                 .Should()
                 .Be(
                     (
@@ -940,17 +1133,27 @@ public class DmsDataStoreProvisioningServicePublicationTests
         [Test]
         public void It_sends_neither_the_rename_nor_the_marker() =>
             (
-                CountOf(_harness, SpyDmsTargetEngine.RenameIntoTarget),
-                CountOf(_harness, SpyDmsTargetEngine.AssignMarker)
+                _loss.RenamesSent,
+                CountOf(_loss.Harness, SpyDmsTargetEngine.RenameIntoTarget),
+                CountOf(_loss.Harness, SpyDmsTargetEngine.AssignMarker)
             )
                 .Should()
-                .Be((0, 0));
+                .Be((0, 0, 0));
+
+        [Test]
+        public void It_settles_no_rename_and_only_drops_the_staging_database_after_the_hook()
+        {
+            _loss.SinceTheHook.Should().Equal(SpyDmsTargetEngine.DropStaging + ":staging");
+            _loss
+                .ReleasesAtTermination.Should()
+                .Be(-1, "the holder session is never terminated after the hook");
+        }
 
         [Test]
         public void It_drops_the_staging_database_and_leaves_no_residue()
         {
-            CountOf(_harness, SpyDmsTargetEngine.DropStaging).Should().Be(1);
-            CleanupOf(_result).Residue.Should().BeEmpty();
+            CountOf(_loss.Harness, SpyDmsTargetEngine.DropStaging).Should().Be(1);
+            CleanupOf(_loss.Result).Residue.Should().BeEmpty();
         }
     }
 

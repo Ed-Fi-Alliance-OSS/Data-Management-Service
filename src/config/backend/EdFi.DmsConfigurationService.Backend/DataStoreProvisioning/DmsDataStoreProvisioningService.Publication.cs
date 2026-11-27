@@ -582,9 +582,12 @@ public sealed partial class DmsDataStoreProvisioningService
     /// target name absent: the lost result of a rename the holder still held is <c>Unknown</c>, a declared loss stays
     /// <c>LockLost</c>, both transient. A database that took the target name meanwhile (another instance, a protected
     /// database, a fenced one) is <c>InstanceChanged</c>, and a rename found done leaves an unmarked target,
-    /// <c>IdentityAssignmentFailed</c>; both require inspection, as a declared loss over them still does. A rename
-    /// still unresolved keeps the failure for the <c>OutcomeUnknown</c> settlement reports. Staging cleanup follows the
-    /// rename evidence alone (<see cref="Publication.ApplyTo"/>) and is not decided here.
+    /// <c>IdentityAssignmentFailed</c>; both require inspection, as a declared loss over them still does, keeping
+    /// <c>LockLost</c>. The one exception is a settlement read that finds the staging instance still under its own name
+    /// and a different online database under the target name: that is <c>InstanceChanged</c> whether the holder's loss
+    /// was declared or only the rename's result was lost. A rename still unresolved keeps the failure for the
+    /// <c>OutcomeUnknown</c> settlement reports. Staging cleanup follows the rename evidence alone
+    /// (<see cref="Publication.ApplyTo"/>) and is not decided here.
     /// </summary>
     private DmsDataStoreCreateResult? ReclassifyInDoubtRename(
         Publication publication,
@@ -614,10 +617,14 @@ public sealed partial class DmsDataStoreProvisioningService
                         DmsProvisioningFailureCategory.Transient,
                         failure.Detail.Diagnostic
                     ),
-            PublicationState.NotRenamed when outcomeLost => DmsProvisioningFailure.Create(
-                DmsProvisioningFailureCode.InstanceChanged,
-                DmsProvisioningDiagnostic.ForOperation(ResolveRenameStep)
-            ),
+            PublicationState.NotRenamed
+                when outcomeLost
+                    || publication.SettledTarget
+                        is DmsLiveTargetState.Present { State: DmsDatabaseState.Online } =>
+                DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.InstanceChanged,
+                    DmsProvisioningDiagnostic.ForOperation(ResolveRenameStep)
+                ),
             PublicationState.Renamed when outcomeLost => DmsProvisioningFailure.Create(
                 DmsProvisioningFailureCode.IdentityAssignmentFailed,
                 DmsProvisioningDiagnostic.ForOperation(RenameIntoTargetStep)

@@ -3,9 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Microsoft.Data.SqlClient;
 using static EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning.MssqlDeletionTests;
 using static EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning.MssqlProvisioningTestServer;
@@ -28,8 +30,101 @@ public class MssqlDeleteTests
     private static readonly TimeSpan _bound = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan _quietHeartbeat = TimeSpan.FromMinutes(30);
 
-    /// <summary>Holds the first operation that reaches <paramref name="point"/> until released; every other passes.</summary>
-    private sealed class Pause(DmsProvisioningHookPoint point)
+    /// <summary>A heartbeat that finds a killed holder session within seconds and declares the holder lost.</summary>
+    private static readonly TimeSpan _lossHeartbeat = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// One bound for a takeover sequence, started when the paused worker reaches its hook. Every step the setup takes
+    /// before it resumes the worker spends from it: work that takes the bound's token stops at the bound, work that
+    /// cannot is awaited to its own end, and a step that ends with the bound spent fails naming that step. The worker
+    /// is therefore resumed only within the bound, and no step's work is left running.
+    /// </summary>
+    private sealed class SequenceBound : IDisposable
+    {
+        private readonly CancellationTokenSource _expiry = new();
+        private long _started;
+
+        public CancellationToken Token => _expiry.Token;
+
+        public void Start()
+        {
+            if (Interlocked.CompareExchange(ref _started, Stopwatch.GetTimestamp(), 0) == 0)
+            {
+                _expiry.CancelAfter(_bound);
+            }
+        }
+
+        /// <summary>What is left of the bound; all of it until the sequence starts, never negative.</summary>
+        public TimeSpan Remaining
+        {
+            get
+            {
+                long started = Interlocked.Read(ref _started);
+                TimeSpan left = started == 0 ? _bound : _bound - Stopwatch.GetElapsedTime(started);
+                return left > TimeSpan.Zero ? left : TimeSpan.Zero;
+            }
+        }
+
+        /// <summary>
+        /// Runs <paramref name="step"/> on the bound's token and returns its result. The step fails, naming itself, when
+        /// the bound is spent before it starts, when it is cancelled by the bound, when one of its own waits times out,
+        /// or when it ends with the bound spent.
+        /// </summary>
+        public async Task<T> StepAsync<T>(string step, Func<CancellationToken, Task<T>> work)
+        {
+            EnsureWithin(step);
+            T result;
+            try
+            {
+                result = await work(Token);
+            }
+            catch (Exception exception)
+                when (exception is TimeoutException
+                    || (exception is OperationCanceledException && Token.IsCancellationRequested)
+                )
+            {
+                throw Expired(step);
+            }
+
+            EnsureWithin(step);
+            return result;
+        }
+
+        /// <summary>
+        /// Fails, naming <paramref name="step"/>, once the bound is spent: by the elapsed time, read directly, or by the
+        /// timer's cancellation, whichever shows it first, so a delayed timer callback cannot let a step start late.
+        /// </summary>
+        public void EnsureWithin(string step)
+        {
+            if (Token.IsCancellationRequested || Remaining == TimeSpan.Zero)
+            {
+                throw Expired(step);
+            }
+        }
+
+        public Task StepAsync(string step, Func<CancellationToken, Task> work) =>
+            StepAsync(
+                step,
+                async token =>
+                {
+                    await work(token);
+                    return true;
+                }
+            );
+
+        public void Dispose() => _expiry.Dispose();
+
+        private static TimeoutException Expired(string step) =>
+            new($"The takeover sequence passed its bound while {step}.");
+    }
+
+    /// <summary>
+    /// Holds the first operation that reaches <paramref name="point"/> until released; every other passes. With
+    /// <paramref name="sequence"/>, reaching the hook starts that bound, and the hold ends only when the sequence
+    /// releases it: when it resumes the worker, when its setup fails, or at teardown. Otherwise the hold ends after
+    /// <c>_bound</c>.
+    /// </summary>
+    private sealed class Pause(DmsProvisioningHookPoint point, SequenceBound? sequence = null)
     {
         private int _taken;
 
@@ -46,8 +141,9 @@ public class MssqlDeleteTests
                 return;
             }
 
+            sequence?.Start();
             Reached.SetResult(operation);
-            await Release.Task.WaitAsync(_bound);
+            await (sequence is null ? Release.Task.WaitAsync(_bound) : Release.Task);
         }
 
         /// <summary>The paused operation, or a failure naming why <paramref name="running"/> never reached the hook.</summary>
@@ -762,25 +858,101 @@ public class MssqlDeleteTests
     /// Takeover (round-3 finding 2), with a full create by the second worker: worker A is paused at a hook with a
     /// heartbeat too slow to notice anything; A's holder session is killed; worker B acquires the lock, replaces the
     /// target with the same record and writes a sentinel; A resumes and its next mutation runs on the dead holder, so
-    /// nothing it sends reaches the server and B's target is untouched.
+    /// nothing it sends reaches the server and B's target is untouched. The create paused before its rename instead
+    /// runs a heartbeat that finds the killed session, and A resumes only once its holder has declared the loss, so
+    /// the loss is observed before the rename is dispatched. One bound covers each sequence from the pause to A's
+    /// release; a setup that fails stops A and waits for it to end before reporting the failure.
     /// </summary>
     [TestFixture]
     public class Given_a_paused_worker_loses_its_holder_and_another_replaces_the_target
     {
-        /// <summary>Kills the paused operation's holder session and waits until the server no longer lists it.</summary>
-        private static async Task KillHolderAsync(DmsOperationId operation)
+        /// <summary>Kills the paused operation's holder session and waits, within the bound, until the server no longer lists it.</summary>
+        private static async Task KillHolderAsync(DmsOperationId operation, SequenceBound sequence)
         {
             int sessionId = await SessionIdNamedAsync(operation.HolderApplicationName);
             sessionId.Should().NotBe(0, "the paused operation holds the target lock");
             await KillAsync(sessionId);
-            (
-                await WaitUntilAsync(
+            if (
+                !await WaitUntilAsync(
                     async () => await SessionCountNamedAsync(operation.HolderApplicationName) == 0,
-                    _bound
+                    sequence.Remaining
                 )
             )
-                .Should()
-                .BeTrue();
+            {
+                throw new TimeoutException("The server still lists the killed holder session.");
+            }
+        }
+
+        /// <summary>Waits for the holder's own loss signal (its heartbeat finds the killed session) until <paramref name="cancellationToken"/> ends the wait.</summary>
+        private static async Task LossObservedAsync(
+            IDmsTargetLockHolder holder,
+            CancellationToken cancellationToken
+        )
+        {
+            TaskCompletionSource lost = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            await using CancellationTokenRegistration registration = holder.LostToken.Register(() =>
+                lost.TrySetResult()
+            );
+            await lost.Task.WaitAsync(cancellationToken);
+        }
+
+        /// <summary>Writes the sentinel, then waits within the bound until no session is left on the target.</summary>
+        private static async Task WriteSentinelAndDrainAsync(
+            DmsTargetDatabaseName target,
+            SequenceBound sequence
+        )
+        {
+            await WriteSentinelAsync(target);
+            if (!await NoSessionsOnWithinAsync(target.Value, sequence.Remaining))
+            {
+                throw new TimeoutException("A session stayed on the replaced target.");
+            }
+        }
+
+        /// <summary>
+        /// Worker A's run with the caller token and the pause it was started with, so a setup that fails can stop it
+        /// and wait for it to end before the lane is disposed.
+        /// </summary>
+        private sealed class WorkerA(Pause pause, CancellationTokenSource stop, Task<object> run)
+            : IAsyncDisposable
+        {
+            public Task<object> Run => run;
+
+            /// <summary>
+            /// Cancels A's caller token, then releases its pause and waits for A to end even when the cancellation
+            /// raises; from then on A's remaining work is bounded by the service's own deadlines. A's own outcome is
+            /// observed and not reported. Never throws, so the failure that made the setup stop A is the one reported;
+            /// a cancellation that raised is written to the test output by its type chain only.
+            /// </summary>
+            public async Task StopAsync()
+            {
+                try
+                {
+                    await stop.CancelAsync();
+                }
+                catch (Exception exception) when (exception is AggregateException or ObjectDisposedException)
+                {
+                    await TestContext.Out.WriteLineAsync(
+                        "Cancelling the paused worker raised "
+                            + DmsProvisioningDiagnostic.TypeChain(exception)
+                            + "; the paused worker was still released and awaited."
+                    );
+                }
+
+                pause.Release.TrySetResult();
+                await Task.WhenAny(run);
+                _ = run.Exception;
+            }
+
+            public async ValueTask DisposeAsync()
+            {
+                if (!run.IsCompleted)
+                {
+                    await StopAsync();
+                }
+
+                stop.Dispose();
+            }
         }
 
         /// <summary>Adds a sentinel table to the target that only the worker that created it could have written.</summary>
@@ -793,6 +965,7 @@ public class MssqlDeleteTests
             new TestDatabase(target.Value).ScalarAsync<int>("SELECT [value] FROM [dbo].[dms1438_sentinel];");
 
         private readonly List<Lane> _lanes = [];
+        private readonly List<WorkerA> _workers = [];
 
         private sealed record Takeover(
             Lane Lane,
@@ -800,7 +973,9 @@ public class MssqlDeleteTests
             int ReplacedDatabaseId,
             (bool Exists, int DatabaseId, string UserAccess) After,
             Guid Identity,
-            int Sentinel
+            int Sentinel,
+            bool LostAtResume,
+            IReadOnlyList<string> SinceThePause
         );
 
         private Takeover _beforeFence = null!;
@@ -809,22 +984,27 @@ public class MssqlDeleteTests
         private Takeover _afterRestore = null!;
 
         /// <summary>
-        /// Runs A until <paramref name="point"/>, kills its holder, lets <paramref name="replace"/> run as B, then
-        /// resumes A and gathers the evidence.
+        /// Runs A until <paramref name="point"/>, kills its holder, waits for A's holder to declare the loss when
+        /// <paramref name="resumeAfterLoss"/>, lets <paramref name="replace"/> run as B, then resumes A and gathers the
+        /// evidence: whether A's holder was lost when A resumed, and every engine call A made from the pause on. Every
+        /// step between the pause and A's release spends from one bound and is awaited to its end; A resumes only if
+        /// the bound still holds after the last of them.
         /// </summary>
         private async Task<Takeover> RunAsync(
             byte[] artifact,
             DmsProvisioningHookPoint point,
-            Func<Lane, Task<object>> runA,
-            Func<Lane, Lane.Deployment, Task> replace,
-            bool seedTarget
+            Func<Lane, CancellationToken, Task<object>> runA,
+            Func<Lane, Lane.Deployment, CancellationToken, Task> replace,
+            bool seedTarget,
+            bool resumeAfterLoss = false
         )
         {
-            Pause pause = new(point);
+            using SequenceBound sequence = new();
+            Pause pause = new(point, sequence);
             Lane lane = await Lane.BuildAsync(
                 artifact,
                 new LaneHooks { Probe = pause.ProbeAsync },
-                Engine(lockHeartbeatInterval: _quietHeartbeat)
+                Engine(lockHeartbeatInterval: resumeAfterLoss ? _lossHeartbeat : _quietHeartbeat)
             );
             _lanes.Add(lane);
             if (seedTarget)
@@ -832,40 +1012,82 @@ public class MssqlDeleteTests
                 await lane.SeedTargetAsync();
             }
 
-            Task<object> a = runA(lane);
-            DmsOperationId operation = await pause.ReachedAsync(a);
-            await KillHolderAsync(operation);
+            CancellationTokenSource stop = new();
+            WorkerA a = new(pause, stop, runA(lane, stop.Token));
+            _workers.Add(a);
+            try
+            {
+                DmsOperationId operation = await pause.ReachedAsync(a.Run);
+                int callsAtPause = lane.Engine.Calls.Count;
+                IDmsTargetLockHolder holder = lane.Engine.Holders.Should().ContainSingle().Subject;
+                await sequence.StepAsync(
+                    "killing the paused worker's holder session",
+                    _ => KillHolderAsync(operation, sequence)
+                );
+                if (resumeAfterLoss)
+                {
+                    await sequence.StepAsync(
+                        "waiting for the paused worker's holder to declare its loss",
+                        token => LossObservedAsync(holder, token)
+                    );
+                }
 
-            Lane.Deployment b = lane.WithEngine(Engine());
-            await replace(lane, b);
-            await WriteSentinelAsync(lane.Target);
-            await WaitForNoSessionsOnAsync(lane.Target.Value);
-            int replaced = (await lane.TargetCatalogAsync()).DatabaseId;
+                Lane.Deployment b = lane.WithEngine(Engine());
+                await sequence.StepAsync(
+                    "the second worker was replacing the target",
+                    token => replace(lane, b, token)
+                );
+                await sequence.StepAsync(
+                    "writing the sentinel and waiting for sessions on the target to end",
+                    _ => WriteSentinelAndDrainAsync(lane.Target, sequence)
+                );
+                int replaced = await sequence.StepAsync(
+                    "reading the replacement's catalog entry",
+                    async _ => (await lane.TargetCatalogAsync()).DatabaseId
+                );
 
-            pause.Release.SetResult();
-            object result = await a;
-            return new Takeover(
-                lane,
-                result,
-                replaced,
-                await lane.TargetCatalogAsync(),
-                await lane.TargetIdentityAsync(),
-                await SentinelAsync(lane.Target)
-            );
+                sequence.EnsureWithin("resuming the paused worker");
+                bool lostAtResume = holder.LostToken.IsCancellationRequested;
+                pause.Release.SetResult();
+                object result = await a.Run;
+                return new Takeover(
+                    lane,
+                    result,
+                    replaced,
+                    await lane.TargetCatalogAsync(),
+                    await lane.TargetIdentityAsync(),
+                    await SentinelAsync(lane.Target),
+                    lostAtResume,
+                    [.. lane.Engine.Calls.Skip(callsAtPause).Select(call => call.Member)]
+                );
+            }
+            catch
+            {
+                await a.StopAsync();
+                throw;
+            }
         }
 
-        private static async Task DeleteAndRecreateAsync(Lane lane, Lane.Deployment b)
+        private static async Task DeleteAndRecreateAsync(
+            Lane lane,
+            Lane.Deployment b,
+            CancellationToken cancellationToken
+        )
         {
-            (await b.Service.DeleteAsync(lane.DeleteRequest, default))
+            (await b.Service.DeleteAsync(lane.DeleteRequest, cancellationToken))
                 .Should()
                 .BeOfType<DmsDataStoreDeleteResult.Dropped>();
-            (await b.Service.CreateAsync(lane.Request, default))
+            (await b.Service.CreateAsync(lane.Request, cancellationToken))
                 .Should()
                 .BeOfType<DmsDataStoreCreateResult.Created>();
         }
 
-        private static async Task CreateAsync(Lane lane, Lane.Deployment b) =>
-            (await b.Service.CreateAsync(lane.Request, default))
+        private static async Task CreateAsync(
+            Lane lane,
+            Lane.Deployment b,
+            CancellationToken cancellationToken
+        ) =>
+            (await b.Service.CreateAsync(lane.Request, cancellationToken))
                 .Should()
                 .BeOfType<DmsDataStoreCreateResult.Created>();
 
@@ -878,7 +1100,7 @@ public class MssqlDeleteTests
             _beforeFence = await RunAsync(
                 artifact,
                 DmsProvisioningHookPoint.BeforeFence,
-                async lane => await lane.DeleteAsync(),
+                async (lane, token) => await lane.DeleteAsync(token),
                 DeleteAndRecreateAsync,
                 seedTarget: true
             );
@@ -888,29 +1110,32 @@ public class MssqlDeleteTests
             _beforeDrop = await RunAsync(
                 artifact,
                 DmsProvisioningHookPoint.BeforeDrop,
-                async lane => await lane.DeleteAsync(),
-                async (lane, b) =>
+                async (lane, token) => await lane.DeleteAsync(token),
+                async (lane, b, token) =>
                 {
                     await ExecuteOnServerAsync(
                         $"ALTER DATABASE {MssqlIdentifiers.Quote(lane.Target.Value)} SET MULTI_USER;"
                     );
-                    await DeleteAndRecreateAsync(lane, b);
+                    await DeleteAndRecreateAsync(lane, b, token);
                 },
                 seedTarget: true
             );
 
+            // A resumes only once its holder has declared the loss, so the loss is observed before the rename is
+            // dispatched.
             _beforeRename = await RunAsync(
                 artifact,
                 DmsProvisioningHookPoint.BeforeRename,
-                async lane => await lane.CreateAsync(),
+                async (lane, token) => await lane.CreateAsync(token),
                 CreateAsync,
-                seedTarget: false
+                seedTarget: false,
+                resumeAfterLoss: true
             );
 
             _afterRestore = await RunAsync(
                 artifact,
                 DmsProvisioningHookPoint.AfterRestoreStarted,
-                async lane => await lane.CreateAsync(),
+                async (lane, token) => await lane.CreateAsync(token),
                 CreateAsync,
                 seedTarget: false
             );
@@ -919,6 +1144,11 @@ public class MssqlDeleteTests
         [OneTimeTearDown]
         public async Task Teardown()
         {
+            foreach (WorkerA worker in _workers)
+            {
+                await worker.DisposeAsync();
+            }
+
             foreach (Lane lane in _lanes)
             {
                 await lane.DisposeAsync();
@@ -978,13 +1208,44 @@ public class MssqlDeleteTests
         private static DmsProvisioningFailure Detail(Takeover takeover) =>
             takeover.Result.Should().BeOfType<DmsDataStoreDeleteResult.Failure>().Subject.Detail;
 
+        /// <summary>
+        /// The loss is observed before the rename is dispatched: A's holder had declared it when A resumed, A ends with
+        /// a transient <c>LockLost</c> at the rename, and from the pause on A calls the engine only to drop its staging
+        /// database, so nothing is sent and nothing is settled. A failure names only the verdict's fixed values: the
+        /// code, the category, the operation, and the failing step. The result's other fields are never printed.
+        /// </summary>
         [Test]
-        public void It_ends_a_create_paused_before_the_rename_as_lock_lost() =>
-            _beforeRename
+        public void It_ends_a_create_paused_before_the_rename_as_lock_lost()
+        {
+            DmsProvisioningFailure detail = _beforeRename
                 .Result.Should()
                 .BeOfType<DmsDataStoreCreateResult.Failure>()
-                .Which.Detail.Code.Should()
-                .Be(DmsProvisioningFailureCode.LockLost);
+                .Subject.Detail;
+            using AssertionScope scope = new();
+            _beforeRename
+                .LostAtResume.Should()
+                .BeTrue("the paused worker resumes only once its holder has declared the loss");
+            (detail.Code, detail.Category, detail.Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCategory.Transient,
+                        DmsDataStoreProvisioningService.RenameIntoTargetStep
+                    ),
+                    "the create ended with code {0}, category {1}, operation {2}, failing step {3}",
+                    detail.Code,
+                    detail.Category,
+                    DmsDataStoreProvisioningService.CreateOperationName,
+                    detail.Diagnostic.Operation
+                );
+            _beforeRename
+                .SinceThePause.Should()
+                .Equal(
+                    [nameof(IDmsTargetEngine.DropStagingAsync)],
+                    "a loss observed before the rename sends nothing and leaves nothing to settle"
+                );
+        }
 
         [Test]
         public async Task It_drops_the_staging_database_of_every_create_and_never_marks_or_drops_the_target()

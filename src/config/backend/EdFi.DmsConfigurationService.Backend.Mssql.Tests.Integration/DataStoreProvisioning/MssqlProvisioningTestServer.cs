@@ -225,19 +225,22 @@ internal static partial class MssqlProvisioningTestServer
     /// </summary>
     public static async Task WaitForNoSessionsOnAsync(string database)
     {
-        bool gone = await WaitUntilAsync(
+        if (!await NoSessionsOnWithinAsync(database, TimeSpan.FromSeconds(20)))
+        {
+            throw new InvalidOperationException("A session stayed on the test database.");
+        }
+    }
+
+    /// <summary>Whether no session uses <paramref name="database"/> by the time <paramref name="timeout"/> passes.</summary>
+    public static Task<bool> NoSessionsOnWithinAsync(string database, TimeSpan timeout) =>
+        WaitUntilAsync(
             async () =>
                 await ScalarOnServerAsync<int>(
                     "SELECT COUNT(*) FROM sys.dm_exec_sessions WHERE database_id = DB_ID(@name);",
                     ("@name", database)
                 ) == 0,
-            TimeSpan.FromSeconds(20)
+            timeout
         );
-        if (!gone)
-        {
-            throw new InvalidOperationException("A session stayed on the test database.");
-        }
-    }
 
     /// <summary>
     /// Waits until the server's <c>datetime</c> clock reads later than <paramref name="instance"/>'s <c>create_date</c>
