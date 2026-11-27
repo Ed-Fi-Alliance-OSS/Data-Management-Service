@@ -67,10 +67,12 @@ public class MssqlDeleteTests
 
         /// <summary>
         /// Runs <paramref name="step"/> on the bound's token and returns its result. The step fails, naming itself, when
-        /// it is cancelled by the bound, when one of its own waits times out, or when it ends with the bound spent.
+        /// the bound is spent before it starts, when it is cancelled by the bound, when one of its own waits times out,
+        /// or when it ends with the bound spent.
         /// </summary>
         public async Task<T> StepAsync<T>(string step, Func<CancellationToken, Task<T>> work)
         {
+            EnsureWithin(step);
             T result;
             try
             {
@@ -84,7 +86,20 @@ public class MssqlDeleteTests
                 throw Expired(step);
             }
 
-            return Token.IsCancellationRequested ? throw Expired(step) : result;
+            EnsureWithin(step);
+            return result;
+        }
+
+        /// <summary>
+        /// Fails, naming <paramref name="step"/>, once the bound is spent: by the elapsed time, read directly, or by the
+        /// timer's cancellation, whichever shows it first, so a delayed timer callback cannot let a step start late.
+        /// </summary>
+        public void EnsureWithin(string step)
+        {
+            if (Token.IsCancellationRequested || Remaining == TimeSpan.Zero)
+            {
+                throw Expired(step);
+            }
         }
 
         public Task StepAsync(string step, Func<CancellationToken, Task> work) =>
@@ -1031,7 +1046,7 @@ public class MssqlDeleteTests
                     async _ => (await lane.TargetCatalogAsync()).DatabaseId
                 );
 
-                // The last step's check above is the bound's verification before A resumes.
+                sequence.EnsureWithin("resuming the paused worker");
                 bool lostAtResume = holder.LostToken.IsCancellationRequested;
                 pause.Release.SetResult();
                 object result = await a.Run;
