@@ -292,7 +292,7 @@ public sealed class DocumentCacheProjectionFailureBackoffState
         }
     }
 
-    public bool IsSuppressed(long documentId, DateTimeOffset observedAt)
+    public bool IsSuppressed(long documentId, DateTimeOffset observedAt, long? requiredContentVersion = null)
     {
         if (documentId <= 0)
         {
@@ -302,7 +302,14 @@ public sealed class DocumentCacheProjectionFailureBackoffState
         lock (_sync)
         {
             return _entries.TryGetValue(documentId, out FailureEntry? entry)
-                && entry.NextRetryAt > observedAt;
+                && entry.NextRetryAt > observedAt
+                && !(
+                    entry.Category
+                        == DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                    && requiredContentVersion is long queuedVersion
+                    && entry.RequiredContentVersion is long failedVersion
+                    && queuedVersion > failedVersion
+                );
         }
     }
 

@@ -35,6 +35,40 @@ public class Given_DocumentCacheProjectionItemProcessor
     );
 
     [Test]
+    public async Task It_records_native_limit_evidence_for_the_materialized_version_when_the_page_is_older()
+    {
+        var candidate = Candidate(101, contentVersion: 11);
+        var writer = new RecordingDocumentCacheWriter(
+            new DocumentCacheWriterResult.NeedsMaterialization(10),
+            DocumentCacheWriterResult.NativeJsonLimitExceeded.Instance
+        );
+        var materializer = new RecordingDocumentCacheMaterializer(
+            new DocumentCacheMaterializationResult.Success(candidate)
+        );
+        var target = RuntimeContext(materializer, writer);
+
+        var result = await CreateProcessor()
+            .ProcessItemAsync(Request(target, WorkItem(101, requiredContentVersion: 10)));
+
+        result.IsNativeJsonLimitFailure.Should().BeTrue();
+        writer.Calls.Should().HaveCount(2);
+        writer.Calls[1].Candidate.Should().BeSameAs(candidate);
+        target.FailureBackoffState.GetFailureCategory(101, 10).Should().BeNull();
+        target
+            .FailureBackoffState.GetFailureCategory(101, 11)
+            .Should()
+            .Be(DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded);
+        target
+            .FailureBackoffState.IsSuppressed(101, ObservedAt, requiredContentVersion: 11)
+            .Should()
+            .BeTrue();
+        target
+            .FailureBackoffState.IsSuppressed(101, ObservedAt, requiredContentVersion: 12)
+            .Should()
+            .BeFalse();
+    }
+
+    [Test]
     public async Task It_calls_the_writer_fast_path_first_with_null_candidate_and_clears_failure_on_acknowledgement()
     {
         RecordingDocumentCacheWriter writer = new(

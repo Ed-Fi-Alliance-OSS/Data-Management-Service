@@ -88,9 +88,20 @@ internal static class DocumentCacheReadAccelerationScenario
         (await CountCacheRowsAsync(harness, oversized.DocumentId)).Should().Be(0);
         (await CountProjectionWorkRowsAsync(harness, oversized.DocumentId)).Should().Be(1);
         harness
-            .DocumentCacheReadTelemetryRecorder!.CountTelemetryRecords("RecordDirectFill", "Failed")
+            .DocumentCacheReadTelemetryRecorder!.CountTelemetryRecords(
+                "RecordDirectFill",
+                "SkippedNativeJsonLimit"
+            )
             .Should()
             .Be(1);
+        harness
+            .DocumentCacheReadTelemetryRecorder!.CountTelemetryRecords("RecordDirectFill", "Attempted")
+            .Should()
+            .Be(0);
+        harness
+            .DocumentCacheReadTelemetryRecorder!.CountTelemetryRecords("RecordDirectFill", "Failed")
+            .Should()
+            .Be(0);
     }
 
     private sealed class OversizedCacheCandidateMaterializer(IDocumentCacheMaterializer inner)

@@ -259,7 +259,8 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         DocumentCacheWriterResult writerResult,
         bool materializationAllowed,
         DocumentCacheProjectionDrainInvocationKind invocationKind,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        long? attemptedContentVersion = null
     )
     {
         DateTimeOffset observedAt = _timeProvider.GetUtcNow();
@@ -334,7 +335,8 @@ internal sealed class DocumentCacheProjectionItemProcessor(
                         ? DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
                         : DocumentCacheProjectionDocumentDiagnosticCategory.WriterOutcome,
                     $"Cache writer outcome {writerResult.Outcome}.",
-                    observedAt
+                    observedAt,
+                    attemptedContentVersion
                 );
                 return writerResult is DocumentCacheWriterResult.NativeJsonLimitExceeded
                     ? DocumentCacheProjectionItemProcessResult.NativeJsonLimitFailure
@@ -463,7 +465,8 @@ internal sealed class DocumentCacheProjectionItemProcessor(
                     candidateResult.WriterResult!,
                     materializationAllowed: false,
                     invocationKind,
-                    cancellationToken
+                    cancellationToken,
+                    attemptedContentVersion: success.Candidate.ContentVersion
                 )
                 .ConfigureAwait(false);
         }
@@ -835,7 +838,8 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         DocumentProjectionWorkPageItem workItem,
         DocumentCacheProjectionDocumentDiagnosticCategory category,
         string message,
-        DateTimeOffset observedAt
+        DateTimeOffset observedAt,
+        long? attemptedContentVersion = null
     ) =>
         targetContext.FailureBackoffState.RecordFailure(
             workItem.DocumentId,
@@ -843,7 +847,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
             message,
             observedAt,
             targetContext.TargetExecutionContext.EffectiveSettings.ProjectorFailureBackoff,
-            workItem.RequiredContentVersion
+            attemptedContentVersion ?? workItem.RequiredContentVersion
         );
 
     private static void RecordDocumentDiagnostic(

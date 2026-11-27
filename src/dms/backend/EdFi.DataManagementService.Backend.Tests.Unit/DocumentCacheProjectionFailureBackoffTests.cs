@@ -35,6 +35,58 @@ public class Given_DocumentCacheProjectionFailureBackoff
         CacheAheadRecoveryRequired: false
     );
 
+    [TestCase(10, true)]
+    [TestCase(11, false)]
+    public async Task It_attempts_a_new_native_limit_version_without_waiting_for_backoff(
+        long queuedVersion,
+        bool suppressed
+    )
+    {
+        var target = RuntimeContext(RelationalProviderToken.SqlServer);
+        target.FailureBackoffState.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded,
+            "Native limit.",
+            ObservedAt,
+            TimeSpan.FromSeconds(10),
+            requiredContentVersion: 10
+        );
+        var pager = new ScriptedWorkPager(
+            RelationalProviderToken.SqlServer,
+            [Page(WorkItem(101, queuedVersion, FirstEnqueuedAt))]
+        );
+
+        var result = await CreateProcessor(pager)
+            .ProcessPageAsync(new(target, DocumentCacheProjectionDrainInvocationKind.Administrative));
+
+        result.ProcessedItemCount.Should().Be(suppressed ? 0 : 1);
+        if (suppressed)
+        {
+            result.SuppressedNativeLimitFailureIds.Should().Equal(101);
+        }
+        else
+        {
+            result.SuppressedDocumentIds.Should().BeEmpty();
+            target.FailureBackoffState.Count.Should().Be(0);
+        }
+    }
+
+    [Test]
+    public void It_preserves_ordinary_failure_backoff_when_the_content_version_advances()
+    {
+        var state = new DocumentCacheProjectionFailureBackoffState(1);
+        state.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure,
+            "Provider failure.",
+            ObservedAt,
+            TimeSpan.FromSeconds(10),
+            requiredContentVersion: 10
+        );
+
+        state.IsSuppressed(101, ObservedAt, requiredContentVersion: 11).Should().BeTrue();
+    }
+
     [Test]
     public void It_caps_failure_state_at_page_size_and_evicts_by_oldest_observation_then_document_id()
     {

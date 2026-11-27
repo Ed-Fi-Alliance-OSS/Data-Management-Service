@@ -179,7 +179,13 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
         {
             effectiveCancellationToken.ThrowIfCancellationRequested();
             targetContext.Cursor.Advance(item.FirstEnqueuedAt, item.DocumentId);
-            if (targetContext.FailureBackoffState.IsSuppressed(item.DocumentId, observedAt))
+            if (
+                targetContext.FailureBackoffState.IsSuppressed(
+                    item.DocumentId,
+                    observedAt,
+                    item.RequiredContentVersion
+                )
+            )
             {
                 suppressedDocumentIds.Add(item.DocumentId);
                 // Capture before another item can evict this bounded backoff entry.
