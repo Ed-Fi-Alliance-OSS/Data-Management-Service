@@ -267,6 +267,9 @@ internal sealed class DocumentCacheAdministrativeDrainer(
     ILogger<DocumentCacheAdministrativeDrainer> logger
 ) : IDocumentCacheAdministrativeDrainer
 {
+    private const int RepeatedPoisonPassThreshold = 2;
+    private const int MixedFailurePassThreshold = 4;
+
     public async Task<DocumentCacheAdministrativeDrainSliceResult> DrainBackpressureReliefSliceAsync(
         DocumentCacheAdministrativeCommandExecutionContext context,
         CancellationToken cancellationToken = default
@@ -363,6 +366,22 @@ internal sealed class DocumentCacheAdministrativeDrainer(
         var unproductiveOrdinaryFailurePassCount = 0;
         ImmutableArray<long> nativeLimitDocumentIds = [];
 
+        bool HasExhaustedPoisonRetries() =>
+            unproductivePoisonPassCount
+                >= (observedMixedPoisonFailures ? MixedFailurePassThreshold : RepeatedPoisonPassThreshold)
+            && (
+                !observedMixedPoisonFailures
+                || unproductiveOrdinaryFailurePassCount >= MixedFailurePassThreshold
+            );
+
+        void ResetPoisonRetries()
+        {
+            unproductivePoisonPassCount = 0;
+            observedMixedPoisonFailures = false;
+            unproductiveOrdinaryFailurePassCount = 0;
+            nativeLimitDocumentIds = [];
+        }
+
         while (true)
         {
             effectiveCancellationToken.ThrowIfCancellationRequested();
@@ -438,11 +457,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                     {
                         unproductivePoisonPassCount++;
                     }
-                    if (
-                        drainResult.ProcessedItemCount > 0
-                        && unproductivePoisonPassCount >= (observedMixedPoisonFailures ? 4 : 2)
-                        && (!observedMixedPoisonFailures || unproductiveOrdinaryFailurePassCount >= 4)
-                    )
+                    if (drainResult.ProcessedItemCount > 0 && HasExhaustedPoisonRetries())
                     {
                         return PersistentPoison(
                             context,
@@ -460,7 +475,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                     if (
                         drainResult.ProcessedItemCount > 0
                         && observedMixedPoisonFailures
-                        && unproductivePoisonPassCount >= 2
+                        && unproductivePoisonPassCount >= RepeatedPoisonPassThreshold
                     )
                     {
                         await delay
@@ -482,10 +497,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                     || drainResult.AcknowledgedOrRemovedItemCount > 0
                 )
                 {
-                    unproductivePoisonPassCount = 0;
-                    observedMixedPoisonFailures = false;
-                    unproductiveOrdinaryFailurePassCount = 0;
-                    nativeLimitDocumentIds = [];
+                    ResetPoisonRetries();
                 }
 
                 if (
@@ -529,10 +541,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                         if (currentPass.IsUnproductivePoisonPass || currentPass.ProcessedItemCount == 0)
                         {
                             unproductivePoisonPassCount++;
-                            if (
-                                unproductivePoisonPassCount >= (observedMixedPoisonFailures ? 4 : 2)
-                                && (!observedMixedPoisonFailures || unproductiveOrdinaryFailurePassCount >= 4)
-                            )
+                            if (HasExhaustedPoisonRetries())
                             {
                                 // The terminal suppressed scan observes the remaining work.
                                 // Older native failures may have disappeared via source deletion.
@@ -554,10 +563,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                             || currentPass.AcknowledgedOrRemovedItemCount > 0
                         )
                         {
-                            unproductivePoisonPassCount = 0;
-                            observedMixedPoisonFailures = false;
-                            unproductiveOrdinaryFailurePassCount = 0;
-                            nativeLimitDocumentIds = [];
+                            ResetPoisonRetries();
                         }
 
                         await DelayUntilAsync(drainResult.NextRetryAt.Value, effectiveCancellationToken)
@@ -566,10 +572,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                         continue;
                     }
 
-                    unproductivePoisonPassCount = 0;
-                    observedMixedPoisonFailures = false;
-                    unproductiveOrdinaryFailurePassCount = 0;
-                    nativeLimitDocumentIds = [];
+                    ResetPoisonRetries();
                     currentPass = NewPass(context);
                     logger.LogDebug(
                         "DocumentCache administrative drain for target {TargetKey} found durable work after an empty page and will poll again.",
