@@ -803,10 +803,11 @@ public class DmsDataStoreProvisioningServicePublicationTests
     /// to the driver, so the rename is in doubt and is settled after the lock is released: the holder session is
     /// proven gone, then both names are read. The category follows settlement: transient only when the rename is
     /// proven not to have happened and the target name is absent, an inspection failure otherwise. The code stays
-    /// <c>LockLost</c>, except when another online database holds the target name: that is a takeover another worker
-    /// completed, reported as <c>InstanceChanged</c> at <c>ResolveRename</c>, as it is when the holder kept its lock
-    /// and only the rename's result was lost (<see cref="Given_the_rename_outcome_is_unknown"/>). A protected, fenced,
-    /// or not-online database under the name, a rename found done, and a holder never proven gone keep their outcomes.
+    /// <c>LockLost</c>, except when the settlement reads find the staging instance still under its own name and a
+    /// different online database under the target name: that is <c>InstanceChanged</c> at <c>ResolveRename</c>, as it
+    /// is when the holder kept its lock and only the rename's result was lost
+    /// (<see cref="Given_the_rename_outcome_is_unknown"/>). A protected, fenced, or not-online database under the name,
+    /// a rename found done, and a holder never proven gone keep their outcomes.
     /// The staging database follows the rename evidence alone.
     /// </summary>
     [TestFixture]
@@ -849,7 +850,7 @@ public class DmsDataStoreProvisioningServicePublicationTests
             );
             _foreignNotOnline = await LoseHolderAsync(
                 LossOrdering.AtSend,
-                new DmsLiveTargetState.Present(_foreignInstance, DmsDatabaseState.Restoring),
+                new DmsLiveTargetState.Present(_foreignInstance, DmsDatabaseState.Other),
                 staged
             );
             _renamed = await LoseHolderAsync(

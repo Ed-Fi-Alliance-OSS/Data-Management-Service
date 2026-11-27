@@ -583,10 +583,11 @@ public sealed partial class DmsDataStoreProvisioningService
     /// <c>LockLost</c>, both transient. A database that took the target name meanwhile (another instance, a protected
     /// database, a fenced one) is <c>InstanceChanged</c>, and a rename found done leaves an unmarked target,
     /// <c>IdentityAssignmentFailed</c>; both require inspection, as a declared loss over them still does, keeping
-    /// <c>LockLost</c>. The one exception is another online database under the name: that is a takeover another worker
-    /// completed, and it is <c>InstanceChanged</c> whether the holder's loss was declared or only the rename's result
-    /// was lost. A rename still unresolved keeps the failure for the <c>OutcomeUnknown</c> settlement reports. Staging
-    /// cleanup follows the rename evidence alone (<see cref="Publication.ApplyTo"/>) and is not decided here.
+    /// <c>LockLost</c>. The one exception is a settlement read that finds the staging instance still under its own name
+    /// and a different online database under the target name: that is <c>InstanceChanged</c> whether the holder's loss
+    /// was declared or only the rename's result was lost. A rename still unresolved keeps the failure for the
+    /// <c>OutcomeUnknown</c> settlement reports. Staging cleanup follows the rename evidence alone
+    /// (<see cref="Publication.ApplyTo"/>) and is not decided here.
     /// </summary>
     private DmsDataStoreCreateResult? ReclassifyInDoubtRename(
         Publication publication,
