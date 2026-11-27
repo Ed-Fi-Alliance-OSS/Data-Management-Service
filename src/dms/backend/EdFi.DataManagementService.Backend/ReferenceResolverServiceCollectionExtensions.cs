@@ -413,7 +413,7 @@ public static class ReferenceResolverServiceCollectionExtensions
                     serviceProvider.GetRequiredService<IDocumentCacheProjectionTargetDiagnosticSink>(),
                     serviceProvider.GetRequiredService<TimeProvider>(),
                     serviceProvider.GetRequiredService<ILogger<DocumentCacheReadAccelerationCoordinator>>(),
-                    serviceProvider.GetRequiredService<IDocumentCacheProjectionSupervisor>()
+                    serviceProvider.GetService<IDocumentCacheProjectionSupervisor>()
                 );
             })
         );

@@ -830,6 +830,12 @@ public class Given_DocumentCacheAdministrativeDrain
         );
         diagnostic.AffectedDocumentIds.Should().Equal(mixedFailures ? [101L] : new long[] { 101, 102 });
         diagnostic.Message.Should().Contain("Update or remove");
+        if (mixedFailures)
+        {
+            diagnostic
+                .Message.Should()
+                .Contain("Other failed document IDs observed during this traversal (bounded): 102");
+        }
     }
 
     [Test]

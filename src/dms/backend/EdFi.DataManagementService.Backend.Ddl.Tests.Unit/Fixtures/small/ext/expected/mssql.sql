@@ -21,6 +21,7 @@ DECLARE @require_native_document_cache bit = 1;
 -- Callers declare @require_native_document_cache. Restore callers read the independent facts.
 
 DECLARE @document_cache_object_id int, @physical_marker_object_id int, @boundary_objects bigint;
+DECLARE @physical_marker_read_error int;
 SELECT
     @document_cache_object_id = MAX(CASE WHEN o.[name] = N'DocumentCache' THEN o.[object_id] END),
     @physical_marker_object_id = MAX(CASE WHEN o.[name] = N'MssqlPhysicalSchema' THEN o.[object_id] END),
@@ -120,6 +121,7 @@ BEGIN
             N'@valid bit OUTPUT', @valid = @physical_marker_valid OUTPUT;
     END TRY
     BEGIN CATCH
+        SET @physical_marker_read_error = ERROR_NUMBER();
         -- Only missing/changed columns or objects and denied SELECT are failed schema proof.
         -- Preserve provider failures, including deadlocks and lock timeouts, for caller retry.
         IF @require_native_document_cache = 0 OR ERROR_NUMBER() NOT IN (207, 208, 229, 230) THROW;

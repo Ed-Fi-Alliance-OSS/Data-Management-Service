@@ -5,7 +5,9 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -53,6 +55,55 @@ public class Given_The_Backend_And_Provider_Assemblies
 [Parallelizable]
 public class Given_ReferenceResolver_Service_Collection_Extensions
 {
+    [TestCase(true, false)]
+    [TestCase(false, false)]
+    [TestCase(true, true)]
+    [TestCase(false, true)]
+    public void It_resolves_enabled_provider_read_acceleration_with_an_optional_supervisor(
+        bool sqlServer,
+        bool registerSupervisor
+    )
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        if (sqlServer)
+        {
+            services.AddMssqlReferenceResolver();
+        }
+        else
+        {
+            services.AddPostgresqlReferenceResolver();
+        }
+        services.Configure<DocumentCacheOptions>(options => options.ReadAcceleration.Enabled = true);
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton(A.Fake<IDataStoreSelection>());
+        services.AddSingleton(A.Fake<IDocumentCacheTargetRegistry>());
+        services.AddSingleton(A.Fake<IDocumentCacheReadLookupAdapter>());
+        services.AddSingleton(A.Fake<IDocumentCacheMaterializer>());
+        services.AddSingleton(A.Fake<IDocumentCacheWriter>());
+        services.AddSingleton(A.Fake<IDocumentCacheReadTelemetry>());
+        services.AddSingleton(A.Fake<IDocumentCacheProjectionTargetDiagnosticSink>());
+        if (registerSupervisor)
+        {
+            services.AddSingleton(A.Fake<IDocumentCacheProjectionSupervisor>());
+        }
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true }
+        );
+        using var scope = provider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDocumentCacheReadAccelerationCoordinator>()
+            .Should()
+            .BeOfType<DocumentCacheReadAccelerationCoordinator>();
+        scope
+            .ServiceProvider.GetService<IDocumentCacheProjectionSupervisor>()
+            .Should()
+            .Be(
+                registerSupervisor ? provider.GetRequiredService<IDocumentCacheProjectionSupervisor>() : null
+            );
+    }
+
     [Test]
     public void It_registers_the_relational_access_seam_for_dialect_composition()
     {

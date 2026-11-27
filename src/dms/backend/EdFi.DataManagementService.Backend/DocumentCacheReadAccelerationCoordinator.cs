@@ -1228,17 +1228,21 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 targetContext.ConnectionInput.Value
             );
 
+            DocumentCacheProjectionFailureBackoffState? failureBackoffState =
+                targetContext.ProviderToken == RelationalProviderToken.SqlServer
+                    ? projectionSupervisor
+                        ?.CurrentTargetContexts.FirstOrDefault(context =>
+                            context.TargetKey == targetContext.TargetKey
+                            && context.Generation == targetContext.Generation
+                        )
+                        ?.FailureBackoffState
+                    : null;
+
             foreach (DocumentCacheReadAccelerationCandidate candidate in candidates)
             {
                 if (
-                    projectionSupervisor?.CurrentTargetContexts.Any(context =>
-                        context.TargetKey == targetContext.TargetKey
-                        && context.Generation == targetContext.Generation
-                        && context.FailureBackoffState.GetFailureCategory(
-                            candidate.DocumentId,
-                            candidate.ContentVersion
-                        ) == DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
-                    ) == true
+                    failureBackoffState?.GetFailureCategory(candidate.DocumentId, candidate.ContentVersion)
+                    == DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
                 )
                 {
                     RecordDirectFill(

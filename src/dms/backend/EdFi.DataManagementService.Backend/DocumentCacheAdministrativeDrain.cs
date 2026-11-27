@@ -416,6 +416,14 @@ internal sealed class DocumentCacheAdministrativeDrainer(
             ImmutableArray<long> currentNativeLimitDocumentIds = pageNativeLimitDocumentIds.AddRange(
                 suppressedNativeLimitDocumentIds
             );
+            ImmutableArray<long> GetOtherFailureDocumentIds() =>
+                currentPass
+                    .DiagnosticDocumentIds.Except(currentPass.NativeLimitDocumentIds)
+                    .Concat(drainResult.DocumentScopedFailureIds.Except(pageNativeLimitDocumentIds))
+                    .Concat(drainResult.SuppressedDocumentIds.Except(suppressedNativeLimitDocumentIds))
+                    .Distinct()
+                    .Take(context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize)
+                    .ToImmutableArray();
             bool completedCursorPass = CompletedCursorPass(startingCursor, endingCursor, drainResult);
 
             if (verifyingPendingNativeFailure)
@@ -430,7 +438,8 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                         context,
                         stats,
                         currentNativeLimitDocumentIds,
-                        nativeLimitConfirmed: true
+                        nativeLimitConfirmed: true,
+                        otherFailureDocumentIds: GetOtherFailureDocumentIds()
                     );
                 }
                 else if (completedCursorPass)
@@ -494,7 +503,8 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                                 context,
                                 stats,
                                 currentNativeLimitDocumentIds,
-                                nativeLimitConfirmed: true
+                                nativeLimitConfirmed: true,
+                                otherFailureDocumentIds: GetOtherFailureDocumentIds()
                             );
                         }
                         // A previous pass's native IDs can be stale after source deletion.
@@ -781,7 +791,8 @@ internal sealed class DocumentCacheAdministrativeDrainer(
         DocumentCacheAdministrativeCommandExecutionContext context,
         DocumentCacheAdministrativeDrainStats stats,
         ImmutableArray<long> diagnosticDocumentIds,
-        bool nativeLimitConfirmed = false
+        bool nativeLimitConfirmed = false,
+        ImmutableArray<long> otherFailureDocumentIds = default
     )
     {
         ImmutableArray<long> boundedDocumentIds = (
@@ -800,6 +811,11 @@ internal sealed class DocumentCacheAdministrativeDrainer(
             && !boundedDocumentIds.IsEmpty
             && nativeLimitConfirmed
                 ? "A document exceeds SQL Server native JSON storage limits. Its projection work is still pending. Update or remove the source document before retrying."
+                    + (
+                        otherFailureDocumentIds.IsDefaultOrEmpty
+                            ? string.Empty
+                            : $" Other failed document IDs observed during this traversal (bounded): {string.Join(", ", otherFailureDocumentIds)}."
+                    )
                 : "Administrative drain observed durable work that repeatedly produced only document-scoped failures after retry was due.",
             retryable: true,
             affectedDocumentIds: boundedDocumentIds

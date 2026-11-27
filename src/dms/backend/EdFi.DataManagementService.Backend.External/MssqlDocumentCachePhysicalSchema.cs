@@ -92,7 +92,9 @@ public static class MssqlDocumentCachePhysicalSchema
     // Provisioning retains its incompatible/unverifiable boundary diagnostic.
     public static string ObservedVersionSql { get; } =
         $"""
-            {NativeCatalogObservationSql.Replace("207, 208, 229, 230", "207, 208", StringComparison.Ordinal)}
+            {NativeCatalogObservationSql}
+            IF @physical_marker_read_error IN (229, 230)
+                THROW 51131, 'DocumentCache physical marker SELECT permission denied.', 1;
             SELECT @document_cache_physical_version AS physical_schema_version;
             """;
 }

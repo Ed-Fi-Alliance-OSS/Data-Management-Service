@@ -452,3 +452,14 @@ Describe 'Reusable package workflows and merge-or-tag workflows' {
         (script:Invoke-Pwsh -Script $script -Environment @{ RELEASE_REF = 'v8.0.0' } -WorkDir (script:New-WorkDir)).ExitCode | Should -Be 0
     }
 }
+
+Describe 'Shared catalog prerelease triggers' {
+    It 'includes the embedded catalog in the push filter for <File>' -ForEach @(
+        @{ File = 'on-dms-merge-or-tag.yml' }
+        @{ File = 'on-config-merge-or-tag.yml' }
+    ) {
+        $workflow = script:Read-Workflow $File
+        $push = [regex]::Match($workflow, '(?ms)^  push:\n.*?(?=^  [a-z_]+:|^[^\s#]|\z)').Value
+        $push | Should -Match '(?m)^      - "src/shared/MssqlDocumentCacheCatalog\.sql"$'
+    }
+}
