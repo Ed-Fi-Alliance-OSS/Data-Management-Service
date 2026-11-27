@@ -152,7 +152,8 @@ function Get-BenchmarkHostFact {
     $acOnline = $batteries.Count -eq 0 -or @($batteries | Where-Object BatteryStatus -EQ 2).Count -gt 0
 
     $info = (Invoke-BenchmarkDocker -ArgumentList @('info', '--format', '{{.NCPU}} {{.MemTotal}}')).Output -join ''
-    $vmCpus, $vmMemory = $info.Trim() -split '\s+'
+    $vmCpus, $memTotal = $info.Trim() -split '\s+'
+    $vmMemory = Get-BenchmarkDockerVmMemory -MemTotalBytes ([long]$memTotal)
     $dockerVersion = ((Invoke-BenchmarkDocker -ArgumentList @('version', '--format', '{{.Server.Version}}')).Output -join '').Trim()
     $mounts = ((Invoke-BenchmarkDocker -ArgumentList @('inspect', $ContainerName, '--format', '{{json .Mounts}}')).Output -join '') | ConvertFrom-Json
     # HostConfig.Tmpfs is absent (not null) when no tmpfs is configured.
@@ -434,6 +435,19 @@ function Get-BenchmarkDatabaseCpuset {
         [int]$first..[int]($last ?? $first)
     }
     return (@($cpus) | Sort-Object -Unique) -join ','
+}
+
+function Get-BenchmarkDockerVmMemory {
+    <#
+    .SYNOPSIS
+        The Docker VM's memory as the fingerprint records it: docker info's MemTotal rounded to
+        the nearest whole GiB. MemTotal moves by a few KiB when the VM restarts (16768901120 and
+        16768909312 bytes for the same 16 GB WSL2 allocation, DMS-1019), and the fingerprint
+        pins the allocation, not the kernel's bookkeeping; an allocation is set in whole GB or
+        larger steps, so a real change still moves it.
+    #>
+    param([Parameter(Mandatory)][long] $MemTotalBytes)
+    return [long]([Math]::Round($MemTotalBytes / 1GB, [MidpointRounding]::AwayFromZero) * 1GB)
 }
 
 function Read-BenchmarkProfile {
@@ -1013,5 +1027,6 @@ Export-ModuleMember -Function @(
     'Wait-BenchmarkCollectorTrailingSample',
     'Get-BenchmarkStorageMountType',
     'Get-BenchmarkDatabaseCpuLimit',
-    'Get-BenchmarkDatabaseCpuset'
+    'Get-BenchmarkDatabaseCpuset',
+    'Get-BenchmarkDockerVmMemory'
 )

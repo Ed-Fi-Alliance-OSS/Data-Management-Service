@@ -71,6 +71,17 @@ Describe 'Invoke-BenchmarkComparison' {
         New-Item -ItemType Directory -Path $script:SourceRoot | Out-Null
 
         $script:BenchmarkProfile = Get-Content -Raw -LiteralPath $script:ProfileFile | ConvertFrom-Json
+        # The cases start from the profile as it stood before qualification (provisional 10%
+        # thresholds, no factors, no fingerprints) and set what each one needs, so they don't
+        # depend on the calibrated values the committed profile carries.
+        $script:BenchmarkProfile.profileVersion = '0.3.0'
+        foreach ($profileProvider in 'postgresql', 'mssql') {
+            $thresholds = $script:BenchmarkProfile.comparison.p50Thresholds.$profileProvider
+            foreach ($profileScenario in @($thresholds.PSObject.Properties.Name)) { $thresholds.$profileScenario = 0.10 }
+            $factors = $script:BenchmarkProfile.detection.injectionFactors.$profileProvider
+            foreach ($profileScenario in @($factors.PSObject.Properties.Name)) { $factors.$profileScenario = $null }
+            $script:BenchmarkProfile.environment.qualifiedEnvironments.$profileProvider = $null
+        }
         $script:Clock = [DateTime]::new(2026, 11, 23, 12, 0, 0, [DateTimeKind]::Utc)
         $script:DotnetCalls = [Collections.Generic.List[object]]::new()
         $script:DirtySource = $false
@@ -627,6 +638,22 @@ Describe 'Get-BenchmarkDatabaseCpuLimit' {
     ) {
         $config = $HostConfig | ConvertFrom-Json
         Get-BenchmarkDatabaseCpuLimit -HostConfig $config -VmCpus 8 | Should -Be ([decimal]$Expected)
+    }
+}
+
+Describe 'Get-BenchmarkDockerVmMemory' {
+    It 'Given MemTotal <MemTotal>, it records <Expected>' -ForEach @(
+        # The same 16 GB WSL2 allocation before and after a Docker restart (DMS-1019).
+        @{ MemTotal = 16768901120; Expected = 17179869184 }
+        @{ MemTotal = 16768909312; Expected = 17179869184 }
+        @{ MemTotal = 12884901888; Expected = 12884901888 }
+        @{ MemTotal = 8321499136; Expected = 8589934592 }
+    ) {
+        Get-BenchmarkDockerVmMemory -MemTotalBytes $MemTotal | Should -Be $Expected
+    }
+
+    It 'Given a 12 GB allocation against a 16 GB one, the recorded memory differs' {
+        Get-BenchmarkDockerVmMemory -MemTotalBytes 12568901120 | Should -Not -Be (Get-BenchmarkDockerVmMemory -MemTotalBytes 16768901120)
     }
 }
 

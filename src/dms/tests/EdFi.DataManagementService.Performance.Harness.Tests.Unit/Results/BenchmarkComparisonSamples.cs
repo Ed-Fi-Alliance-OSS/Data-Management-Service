@@ -15,12 +15,16 @@ namespace EdFi.DataManagementService.Performance.Harness.Tests.Unit.Results;
 
 internal static class ComparisonProfiles
 {
-    public static PerfLoadedBenchmarkProfile Committed() =>
-        PerfBenchmarkProfileLoader.LoadFile(PerfBenchmarkProfileLoader.DefaultPath);
+    /// <summary>
+    /// The provisional profile every comparison test starts from (see
+    /// <see cref="ProfileTestValues.Provisional" />).
+    /// </summary>
+    public static PerfLoadedBenchmarkProfile Provisional() =>
+        ProfileTestValues.Load(ProfileTestValues.Provisional());
 
     public static PerfLoadedBenchmarkProfile Edited(Action<JsonObject> edit)
     {
-        JsonObject profile = ProfileTestValues.Committed();
+        JsonObject profile = ProfileTestValues.Provisional();
         edit(profile);
         return ProfileTestValues.Load(profile);
     }
@@ -84,7 +88,7 @@ internal sealed class ComparisonBuilder
     public const string Write = PerfBenchmarkScenarios.StudentPutCollectionUpdate;
     public static readonly DateTimeOffset Origin = new(2026, 11, 23, 12, 0, 0, TimeSpan.Zero);
 
-    public PerfLoadedBenchmarkProfile Profile { get; set; } = ComparisonProfiles.Committed();
+    public PerfLoadedBenchmarkProfile Profile { get; set; } = ComparisonProfiles.Provisional();
 
     /// <summary>
     /// The profile the report loads; the run's own profile when null.

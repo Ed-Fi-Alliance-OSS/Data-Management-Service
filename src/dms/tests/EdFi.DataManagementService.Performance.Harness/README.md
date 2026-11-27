@@ -442,6 +442,12 @@ invalidate a qualification: they change with routine servicing of the workstatio
 them would force a recalibration after every update. A new .NET major is a new platform, so it
 does.
 
+The Docker VM's memory is `docker info`'s MemTotal rounded to the nearest whole GiB, and so is
+the database container's memory limit when it has none of its own: MemTotal moved by 8 KiB
+for the same 16 GB WSL2 allocation when Docker restarted between two DMS-1019 runs, and an
+exact byte count would have invalidated the qualification after every restart. An explicit
+`--memory` limit is recorded exactly.
+
 The database container's CPU limit is the smallest of its `--cpus`, its CFS quota
 (`--cpu-quota` / `--cpu-period`), the number of CPUs its `--cpuset-cpus` allows, and the Docker
 VM's CPUs, so a quota or a CPU pinning changes the fingerprint even though Docker records them
@@ -530,9 +536,9 @@ frozen fingerprint keeps the old settings until the calibration replaces it.
 | `2` | `invalid`: a failed or missing side, the wrong workload, failed operations, a violated rule, or an incompatible environment |
 
 A scenario is a **suspected regression** when the median of its per-pair
-`candidate p50 / baseline p50` ratios exceeds `1 + threshold`. The provisional threshold is
-10% for every provider and scenario until calibration freezes per-scenario values. Each
-provider is compared only with its own baseline.
+`candidate p50 / baseline p50` ratios exceeds `1 + threshold`. Profile 1.0.0 carries each
+provider's calibrated per-scenario thresholds (see the qualification evidence); a provisional
+profile uses 10% everywhere. Each provider is compared only with its own baseline.
 
 ### Artifacts and interpretation
 
@@ -651,15 +657,21 @@ never evidence.
 
 ### Qualification evidence
 
-The profile is **not qualified**. Calibration and sizing ran in four rounds on both providers
-(DMS-1019, November 2026), and three of the four provider and demonstration-scenario
-combinations stayed above the 13% threshold limit or never sized into the band, so the
-profile was not frozen. It stays at the provisional version 0.3.0:
+**Frozen: profile 1.0.0**, 2026-11-27, after the commit-flush fix and the move of the
+demonstration read to `traditional-offset-deep/25` (both below). It carries:
 
-- comparisons are labelled `uncalibrated` and use the provisional 10% p50 threshold for every
-  provider and scenario, so their warnings are advisory only;
-- `Detection` and `BoundaryProbe` cannot start, because `detection.injectionFactors` is null;
-- a `Repeatability` run is a diagnostic, never qualification evidence.
+| | PostgreSQL | SQL Server |
+| --- | --- | --- |
+| Calibration run | `postgresql-Calibration-20261126T200832Z` | `mssql-Calibration-20261127T011706Z` |
+| p50 thresholds | 5% for every scenario | zero/25 9%, zero/500 6%, shallow/25 11%, shallow/500 6%, deep/25 5%, deep/500 5%, write 8% |
+| Write factor (sizing run → increase) | 0.20 (`20261127T130831Z` → 18.3%) | 0.1576 (`20261127T144924Z` → 20.7%) |
+| deep/25 factor (sizing run → increase) | 0.20 (`20261127T130831Z` → 20.3%) | 0.20 (`20261127T144924Z` → 21.5%) |
+| Qualified fingerprint | the calibration's observed fingerprint, Docker VM memory rounded to the GiB | the calibration's observed fingerprint, Docker VM memory rounded to the GiB |
+
+Rounds 1 to 4 below (profiles 0.1.0 to 0.3.0) did not qualify: three of the four provider and
+demonstration-scenario combinations stayed above the 13% threshold limit or never sized into
+the band. Until the freeze, comparisons were labelled `uncalibrated`, used the provisional 10%
+threshold, and could not run `Detection` or `BoundaryProbe`.
 
 Every run is kept, including the invalid ones, in the evidence archive attached to DMS-1019.
 Each run's `run-plan.json` records its harness commit and profile hash.

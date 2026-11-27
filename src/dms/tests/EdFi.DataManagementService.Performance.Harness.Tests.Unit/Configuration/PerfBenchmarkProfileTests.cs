@@ -18,6 +18,35 @@ internal static class ProfileTestValues
     public static JsonObject Committed() =>
         JsonNode.Parse(File.ReadAllText(PerfBenchmarkProfileLoader.DefaultPath))!.AsObject();
 
+    /// <summary>
+    /// The committed profile as it stood before qualification: version 0.3.0, a provisional
+    /// 10% threshold everywhere, and no fingerprint or factor. Tests of the comparison rules
+    /// start here, so they don't depend on the calibrated values.
+    /// </summary>
+    public static JsonObject Provisional()
+    {
+        JsonObject profile = Committed();
+        profile["profileVersion"] = "0.3.0";
+        foreach (string provider in new[] { "postgresql", "mssql" })
+        {
+            JsonObject thresholds = profile["comparison"]!["p50Thresholds"]![provider]!.AsObject();
+            foreach (string scenario in thresholds.Select(threshold => threshold.Key).ToList())
+            {
+                thresholds[scenario] = 0.10m;
+            }
+
+            JsonObject factors = profile["detection"]!["injectionFactors"]![provider]!.AsObject();
+            foreach (string scenario in factors.Select(factor => factor.Key).ToList())
+            {
+                factors[scenario] = null;
+            }
+
+            profile["environment"]!["qualifiedEnvironments"]![provider] = null;
+        }
+
+        return profile;
+    }
+
     public static PerfLoadedBenchmarkProfile Load(JsonObject profile) =>
         PerfBenchmarkProfileLoader.Load(Encoding.UTF8.GetBytes(profile.ToJsonString()));
 
@@ -27,7 +56,7 @@ internal static class ProfileTestValues
     /// </summary>
     public static JsonObject Frozen()
     {
-        JsonObject profile = Committed();
+        JsonObject profile = Provisional();
         profile["profileVersion"] = "1.0.0";
 
         foreach (string provider in new[] { "postgresql", "mssql" })
@@ -115,8 +144,30 @@ public class Given_The_Committed_Benchmark_Profile
         foreach (IReadOnlyDictionary<string, decimal> thresholds in _profile.Comparison.P50Thresholds.Values)
         {
             thresholds.Keys.Should().BeEquivalentTo(PerfBenchmarkScenarios.AllIds);
-            thresholds.Values.Should().AllSatisfy(threshold => threshold.Should().Be(0.10m));
         }
+    }
+
+    [Test]
+    public void It_carries_the_thresholds_the_2026_11_calibrations_derived()
+    {
+        // PostgreSQL: postgresql-Calibration-20261126T200832Z; SQL Server:
+        // mssql-Calibration-20261127T011706Z (median rule, DMS-1019 qualification evidence).
+        _profile.Comparison.P50Thresholds["postgresql"].Values.Should().AllBeEquivalentTo(0.05m);
+        _profile
+            .Comparison.P50Thresholds["mssql"]
+            .Should()
+            .BeEquivalentTo(
+                new Dictionary<string, decimal>
+                {
+                    ["traditional-offset-zero/25"] = 0.09m,
+                    ["traditional-offset-zero/500"] = 0.06m,
+                    ["traditional-offset-shallow/25"] = 0.11m,
+                    ["traditional-offset-shallow/500"] = 0.06m,
+                    ["traditional-offset-deep/25"] = 0.05m,
+                    ["traditional-offset-deep/500"] = 0.05m,
+                    ["student-put-collection-update"] = 0.08m,
+                }
+            );
     }
 
     [Test]
@@ -247,16 +298,29 @@ public class Given_The_Committed_Benchmark_Profile
     }
 
     [Test]
-    public void It_is_not_frozen_and_has_nothing_sized_or_qualified_yet()
+    public void It_is_frozen_with_each_providers_fingerprint_and_sized_factors()
     {
-        _profile.IsFrozen.Should().BeFalse();
+        _profile.IsFrozen.Should().BeTrue();
         _profile
             .Environment.QualifiedEnvironments.Values.Should()
-            .AllSatisfy(value => value.Should().BeNull());
+            .AllSatisfy(value => value.Should().NotBeNull());
         _profile
-            .Detection.InjectionFactors.Values.SelectMany(factors => factors.Values)
-            .Should()
-            .AllSatisfy(factor => factor.Should().BeNull());
+            .Detection.InjectionFactors.Should()
+            .BeEquivalentTo(
+                new Dictionary<string, Dictionary<string, decimal?>>
+                {
+                    ["postgresql"] = new()
+                    {
+                        ["student-put-collection-update"] = 0.20m,
+                        ["traditional-offset-deep/25"] = 0.20m,
+                    },
+                    ["mssql"] = new()
+                    {
+                        ["student-put-collection-update"] = 0.1576m,
+                        ["traditional-offset-deep/25"] = 0.20m,
+                    },
+                }
+            );
     }
 }
 
@@ -276,7 +340,7 @@ public class Given_Demonstration_Thresholds_At_The_Margin
     [Test]
     public void It_accepts_thirteen_percent()
     {
-        JsonObject profile = ProfileTestValues.Committed();
+        JsonObject profile = ProfileTestValues.Provisional();
         profile["comparison"]!["p50Thresholds"]!["postgresql"]!["student-put-collection-update"] = 0.13m;
         profile["comparison"]!["p50Thresholds"]!["mssql"]!["traditional-offset-deep/25"] = 0.13m;
 
@@ -307,7 +371,7 @@ public class Given_A_Smoke_Deep_Offset_At_The_Fixture_Maximum
 /// </summary>
 public abstract class ProfileDefectFixture
 {
-    protected virtual JsonObject Start() => ProfileTestValues.Committed();
+    protected virtual JsonObject Start() => ProfileTestValues.Provisional();
 
     protected abstract void Corrupt(JsonObject profile);
 

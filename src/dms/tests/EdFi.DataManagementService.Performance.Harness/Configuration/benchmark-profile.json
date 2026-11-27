@@ -1,5 +1,5 @@
 {
-  "profileVersion": "0.3.0",
+  "profileVersion": "1.0.0",
   "workloadDefinitionVersion": "1.0.0",
   "supportedRange": {
     "floorCommit": "df7e23425beef2de46fa98b3b5b48578cb2d3692"
@@ -64,22 +64,22 @@
     "p95WarningsEnabled": false,
     "p50Thresholds": {
       "postgresql": {
-        "traditional-offset-zero/25": 0.10,
-        "traditional-offset-zero/500": 0.10,
-        "traditional-offset-shallow/25": 0.10,
-        "traditional-offset-shallow/500": 0.10,
-        "traditional-offset-deep/25": 0.10,
-        "traditional-offset-deep/500": 0.10,
-        "student-put-collection-update": 0.10
+        "traditional-offset-zero/25": 0.05,
+        "traditional-offset-zero/500": 0.05,
+        "traditional-offset-shallow/25": 0.05,
+        "traditional-offset-shallow/500": 0.05,
+        "traditional-offset-deep/25": 0.05,
+        "traditional-offset-deep/500": 0.05,
+        "student-put-collection-update": 0.05
       },
       "mssql": {
-        "traditional-offset-zero/25": 0.10,
-        "traditional-offset-zero/500": 0.10,
-        "traditional-offset-shallow/25": 0.10,
-        "traditional-offset-shallow/500": 0.10,
-        "traditional-offset-deep/25": 0.10,
-        "traditional-offset-deep/500": 0.10,
-        "student-put-collection-update": 0.10
+        "traditional-offset-zero/25": 0.09,
+        "traditional-offset-zero/500": 0.06,
+        "traditional-offset-shallow/25": 0.11,
+        "traditional-offset-shallow/500": 0.06,
+        "traditional-offset-deep/25": 0.05,
+        "traditional-offset-deep/500": 0.05,
+        "student-put-collection-update": 0.08
       }
     }
   },
@@ -95,12 +95,12 @@
     "requiredRepeats": 3,
     "injectionFactors": {
       "postgresql": {
-        "student-put-collection-update": null,
-        "traditional-offset-deep/25": null
+        "student-put-collection-update": 0.20,
+        "traditional-offset-deep/25": 0.20
       },
       "mssql": {
-        "student-put-collection-update": null,
-        "traditional-offset-deep/25": null
+        "student-put-collection-update": 0.1576,
+        "traditional-offset-deep/25": 0.20
       }
     }
   },
@@ -115,8 +115,205 @@
     "maxDatabaseMemoryPercentOfLimit": 90,
     "minCompletenessPercent": 90,
     "qualifiedEnvironments": {
-      "postgresql": null,
-      "mssql": null
+      "postgresql": {
+        "osFamily": "Windows",
+        "architecture": "x64",
+        "dotnetRuntime": "10.0",
+        "machineFingerprint": "8a6a4d1c1fb7dda0",
+        "cpuModel": "Intel64 Family 6 Model 141 Stepping 1, GenuineIntel",
+        "logicalCores": 16,
+        "totalMemoryBytes": 34065952768,
+        "powerPlan": "Balanced",
+        "acPowerOnline": true,
+        "dockerVmCpus": 16,
+        "dockerVmMemoryBytes": 17179869184,
+        "databaseCpuLimit": 16.0,
+        "databaseMemoryLimitBytes": 17179869184,
+        "imageDigest": "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+        "serverVersion": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+        "databaseSettings": [
+          {
+            "name": "checkpoint_timeout",
+            "value": "300"
+          },
+          {
+            "name": "commit_delay",
+            "value": "0"
+          },
+          {
+            "name": "effective_cache_size",
+            "value": "524288"
+          },
+          {
+            "name": "effective_io_concurrency",
+            "value": "16"
+          },
+          {
+            "name": "enable_bitmapscan",
+            "value": "on"
+          },
+          {
+            "name": "enable_hashjoin",
+            "value": "on"
+          },
+          {
+            "name": "enable_indexonlyscan",
+            "value": "on"
+          },
+          {
+            "name": "enable_indexscan",
+            "value": "on"
+          },
+          {
+            "name": "enable_mergejoin",
+            "value": "on"
+          },
+          {
+            "name": "enable_nestloop",
+            "value": "on"
+          },
+          {
+            "name": "enable_seqscan",
+            "value": "on"
+          },
+          {
+            "name": "enable_sort",
+            "value": "on"
+          },
+          {
+            "name": "fsync",
+            "value": "on"
+          },
+          {
+            "name": "full_page_writes",
+            "value": "on"
+          },
+          {
+            "name": "jit",
+            "value": "on"
+          },
+          {
+            "name": "max_parallel_workers_per_gather",
+            "value": "2"
+          },
+          {
+            "name": "max_wal_size",
+            "value": "1024"
+          },
+          {
+            "name": "npgsql_auto_prepare_min_usages",
+            "value": "3"
+          },
+          {
+            "name": "npgsql_max_auto_prepare",
+            "value": "256"
+          },
+          {
+            "name": "plan_cache_mode",
+            "value": "auto"
+          },
+          {
+            "name": "random_page_cost",
+            "value": "4"
+          },
+          {
+            "name": "seq_page_cost",
+            "value": "1"
+          },
+          {
+            "name": "shared_buffers",
+            "value": "16384"
+          },
+          {
+            "name": "synchronous_commit",
+            "value": "off"
+          },
+          {
+            "name": "track_io_timing",
+            "value": "off"
+          },
+          {
+            "name": "wal_compression",
+            "value": "off"
+          },
+          {
+            "name": "wal_level",
+            "value": "logical"
+          },
+          {
+            "name": "wal_sync_method",
+            "value": "fdatasync"
+          },
+          {
+            "name": "work_mem",
+            "value": "4096"
+          }
+        ],
+        "storageMountType": "volume",
+        "connection": {
+          "pooling": true,
+          "minPoolSize": 0,
+          "maxPoolSize": 100,
+          "noResetOnClose": true,
+          "autoPrepareMinUsages": 3,
+          "maxAutoPrepare": 256
+        },
+        "databaseCpuset": ""
+      },
+      "mssql": {
+        "osFamily": "Windows",
+        "architecture": "x64",
+        "dotnetRuntime": "10.0",
+        "machineFingerprint": "8a6a4d1c1fb7dda0",
+        "cpuModel": "Intel64 Family 6 Model 141 Stepping 1, GenuineIntel",
+        "logicalCores": 16,
+        "totalMemoryBytes": 34065952768,
+        "powerPlan": "Balanced",
+        "acPowerOnline": true,
+        "dockerVmCpus": 16,
+        "dockerVmMemoryBytes": 17179869184,
+        "databaseCpuLimit": 16.0,
+        "databaseMemoryLimitBytes": 6442450944,
+        "imageDigest": "sha256:86cc6144ef39bb0fbed2329e1ad79b13ee82e7b2e4739213a0db0800e668a74a",
+        "serverVersion": "Microsoft SQL Server 2025 (RTM-CU7) (KB5096981) - 17.0.4065.4 (X64) \n\tJul  8 2026 23:26:08 \n\tCopyright (C) 2025 Microsoft Corporation\n\tEnterprise Developer Edition (64-bit) on Linux (Ubuntu 24.04.4 LTS) <X64>",
+        "databaseSettings": [
+          {
+            "name": "cost threshold for parallelism",
+            "value": "5"
+          },
+          {
+            "name": "delayed_durability_desc",
+            "value": "DISABLED"
+          },
+          {
+            "name": "edition",
+            "value": "Enterprise Developer Edition (64-bit)"
+          },
+          {
+            "name": "is_read_committed_snapshot_on",
+            "value": "0"
+          },
+          {
+            "name": "max degree of parallelism",
+            "value": "0"
+          },
+          {
+            "name": "max server memory (MB)",
+            "value": "2147483647"
+          },
+          {
+            "name": "snapshot_isolation_state_desc",
+            "value": "OFF"
+          }
+        ],
+        "storageMountType": "volume",
+        "connection": {
+          "pooling": true,
+          "minPoolSize": 0,
+          "maxPoolSize": 100
+        },
+        "databaseCpuset": ""
+      }
     }
   }
 }

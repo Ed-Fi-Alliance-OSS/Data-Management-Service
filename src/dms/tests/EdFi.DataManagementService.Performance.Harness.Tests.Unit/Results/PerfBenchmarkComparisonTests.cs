@@ -758,7 +758,7 @@ public class Given_Detection_And_Repeatability_Eligibility
     public void Given_A_Detection_Run_On_An_Unfrozen_Profile()
     {
         ComparisonBuilder builder = Eligible(PerfBenchmarkComparison.Detection);
-        builder.Profile = ComparisonProfiles.Committed();
+        builder.Profile = ComparisonProfiles.Provisional();
 
         PerfBenchmarkComparisonResult result = builder.Compare();
 
@@ -1292,7 +1292,7 @@ public class Given_A_Profile_Frozen_From_A_Calibration_Run
         );
         PerfBenchmarkComparisonResult result = later.Compare();
 
-        frozen.Sha256.Should().NotBe(ComparisonProfiles.Committed().Sha256);
+        frozen.Sha256.Should().NotBe(ComparisonProfiles.Provisional().Sha256);
         result.ShouldBeValid();
         result.Labels.Should().NotContain(PerfBenchmarkComparisonResult.UncalibratedLabel);
     }
