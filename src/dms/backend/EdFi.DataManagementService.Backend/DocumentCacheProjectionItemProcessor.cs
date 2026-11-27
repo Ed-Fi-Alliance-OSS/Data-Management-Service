@@ -91,6 +91,8 @@ internal sealed record DocumentCacheProjectionItemProcessResult
 
     public DocumentCacheAdministrativeDrainFailure? AdministrativeFailure { get; }
 
+    internal bool IsNativeJsonLimitFailure { get; private init; }
+
     public static DocumentCacheProjectionItemProcessResult Continue { get; } =
         new(
             DocumentCacheProjectionItemProcessOutcome.Continue,
@@ -117,6 +119,12 @@ internal sealed record DocumentCacheProjectionItemProcessResult
             documentScopedFailureRecorded: true,
             administrativeFailure: null
         );
+
+    public static DocumentCacheProjectionItemProcessResult NativeJsonLimitFailure { get; } =
+        DocumentScopedFailure with
+        {
+            IsNativeJsonLimitFailure = true,
+        };
 
     public static DocumentCacheProjectionItemProcessResult LifecycleFenced { get; } =
         new(
@@ -328,7 +336,9 @@ internal sealed class DocumentCacheProjectionItemProcessor(
                     $"Cache writer outcome {writerResult.Outcome}.",
                     observedAt
                 );
-                return DocumentCacheProjectionItemProcessResult.DocumentScopedFailure;
+                return writerResult is DocumentCacheWriterResult.NativeJsonLimitExceeded
+                    ? DocumentCacheProjectionItemProcessResult.NativeJsonLimitFailure
+                    : DocumentCacheProjectionItemProcessResult.DocumentScopedFailure;
 
             case DocumentCacheWriterResult.LifecycleOrLatchFenced:
                 LogContinuingWriterOutcome(targetContext, writerResult);

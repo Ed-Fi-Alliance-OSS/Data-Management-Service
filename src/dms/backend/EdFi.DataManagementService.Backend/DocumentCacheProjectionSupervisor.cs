@@ -131,6 +131,14 @@ public sealed class DocumentCacheProjectionFailureBackoffState
 
     public int Capacity { get; }
 
+    internal DocumentCacheProjectionDocumentDiagnosticCategory? GetFailureCategory(long documentId)
+    {
+        lock (_sync)
+        {
+            return _entries.TryGetValue(documentId, out FailureEntry? entry) ? entry.Category : null;
+        }
+    }
+
     public int Count
     {
         get

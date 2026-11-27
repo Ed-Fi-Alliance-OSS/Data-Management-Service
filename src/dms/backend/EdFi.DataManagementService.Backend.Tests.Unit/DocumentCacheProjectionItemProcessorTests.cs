@@ -248,12 +248,19 @@ public class Given_DocumentCacheProjectionItemProcessor
         result.Outcome.Should().Be(DocumentCacheProjectionItemProcessOutcome.Continue);
         result.AcknowledgedOrRemovedDurableWork.Should().BeFalse();
         result.DocumentScopedFailureRecorded.Should().BeTrue();
+        result
+            .IsNativeJsonLimitFailure.Should()
+            .Be(writerResult is DocumentCacheWriterResult.NativeJsonLimitExceeded);
         targetContext
             .FailureBackoffState.CreateFailureDiagnosticsSnapshot()
             .DocumentDiagnostics.Should()
             .ContainSingle()
             .Which.Category.Should()
-            .Be(DocumentCacheProjectionDocumentDiagnosticCategory.WriterOutcome);
+            .Be(
+                writerResult is DocumentCacheWriterResult.NativeJsonLimitExceeded
+                    ? DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                    : DocumentCacheProjectionDocumentDiagnosticCategory.WriterOutcome
+            );
     }
 
     [Test]
@@ -498,6 +505,9 @@ public class Given_DocumentCacheProjectionItemProcessor
 
     private static IEnumerable<TestCaseData> RetryExhaustionWriterOutcomes()
     {
+        yield return new TestCaseData(DocumentCacheWriterResult.NativeJsonLimitExceeded.Instance).SetName(
+            "NativeJsonLimitExceeded"
+        );
         yield return new TestCaseData(new DocumentCacheWriterResult.RetryBudgetExhausted(3)).SetName(
             "RetryBudgetExhausted"
         );

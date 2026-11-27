@@ -528,11 +528,42 @@ The [DMS-1271](https://edfi.atlassian.net/browse/DMS-1271) prepared schema manif
 supplies the logical fingerprint.
 
 For the first native-v2 publication, dispatch both MSSQL template workflows from the same
-reviewed commit with `publish_package` off and without a Data Standard filter. Record the
-run URLs, commit, package versions, SHA-256 digests, physical catalog checks and authenticated
-probe results for all four packages in the release record. Include the results from the
-matching restore consumers. After all four legs pass and the CDC release decision is
-recorded, release maintainers end the first-publication hold by setting
+reviewed commit with `publish_package` off and without a Data Standard filter. These runs
+produce unsigned packages. Their `verify-template-restore.ps1` results establish source and
+restored catalog checks and authenticated API probes for the exact package bytes, but do
+not exercise the guarded bootstrap or CMS package-restore consumers. The
+`run-dms-provisioning-integration-tests-mssql` job in `on-config-pullrequest.yml` separately
+builds Data Standard `5.2.0` packages and attests test copies with an ephemeral key; its
+results do not qualify the four dispatch artifacts or Data Standard `6.1.0`.
+
+Complete the restore-consumer gate against those four artifacts before ending the hold:
+
+1. Download each leg's `.nupkg` and verification evidence. Check its SHA-256 against that
+   leg's `verification.json`, and retain the reviewed commit, package ID/version and digest.
+2. For each artifact, add a detached development attestation with
+   `Write-TemplatePackageAttestation` from `eng/DatabaseTemplates/Template-Management.psm1`,
+   using a producer registered by `new-template-dev-trust.ps1 -Purpose Dev`. Preserve the
+   `.nupkg` bytes and recheck the digest after attesting. Follow
+   [bootstrap restore](../eng/docker-compose/README.md#restoring-the-datastore-from-a-database-template-bootstrap-restore)
+   with `-DatabaseEngine mssql`, the matching `-DataStandardVersion 5.2` or `6.1`,
+   `-RestoreTemplate Minimal` or `Populated`, and `-PackageDirectory` pointing to that
+   artifact and its sibling attestation. Use a disposable target and the matching reviewed
+   SchemaTools; retain the scratch-validation and completed restore results.
+3. For CMS, place the unchanged Minimal and Populated `.nupkg` pair for **one** Data Standard
+   in `DMS_TEMPLATE_PACKAGE_DIRECTORY`. Follow the
+   [SQL Server provisioning setup](RUNNING-LOCALLY.md#cms-dms-template-provisioning-integration-tests),
+   set `DMS_EXPECTED_EFFECTIVE_SCHEMA_HASH` to that pair's reviewed hash, and run the MSSQL
+   integration project's `MssqlRealPackageTests` with
+   `--filter "FullyQualifiedName~MssqlRealPackageTests&Category!=DmsProvisioningCrossEngine"`.
+   These fixtures copy and attest the supplied bytes without repacking them, then exercise
+   the real CMS catalog and restore engine. Require no failures or skips. Repeat with the
+   other Data Standard's pair in a separate directory; placing both standards together is
+   ambiguous because package selection is by engine and template kind.
+
+Record the run URLs, commit, package versions, SHA-256 digests, physical catalog checks,
+authenticated probe results and both restore-consumer results for all four packages in
+the release record. After all four packages pass these gates and the CDC release decision
+is recorded, release maintainers end the first-publication hold by setting
 `MSSQL_TEMPLATE_V2_PUBLICATION_ENABLED=true` and enabling attestation signing with
 `TEMPLATE_ATTESTATION_SIGNING_ENABLED=true`. Main and version-tag pushes still build and
 verify packages during the hold. An explicit publication dispatch from main or a version
@@ -544,7 +575,10 @@ current revision.
 
 The publishing runs build and verify their own package bytes. Record those runs and the
 digests of the exact attested packages that reach the feed, then confirm the four published
-versions before switching consumers. Coordinate the restore-job package and
+versions before switching consumers. Verify bootstrap restore with the release attestations
+and CMS restore with the release producer configured in its trust policy; the fixtures'
+ephemeral attestations establish package compatibility, not release-producer trust.
+Coordinate the restore-job package and
 allowlist updates with deployment of the matching DMS, SchemaTools and CMS consumers.
 Review scheduled and deployment jobs for legacy-pinned template packages or restore-tool
 images that only support format 1. Existing SQL Server databases require

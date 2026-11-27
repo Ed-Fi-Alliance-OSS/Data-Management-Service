@@ -52,6 +52,7 @@ on:
       - "src/dms/Directory.Build.targets"
       - "src/dms/Dockerfile"
       - "src/dms/backend/EdFi.DataManagementService.Backend.Ddl/**"
+      - "src/dms/backend/EdFi.DataManagementService.Backend.External/EdFi.DataManagementService.Backend.External.csproj"
       - "src/dms/backend/EdFi.DataManagementService.Backend.External/MssqlDocumentCachePhysicalSchema.cs"
       - "src/dms/backend/EdFi.DataManagementService.Backend.Mssql/**"
       - "src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/**"

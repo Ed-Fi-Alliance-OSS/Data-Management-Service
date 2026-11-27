@@ -309,7 +309,8 @@ category `DmsProvisioning` of
 `backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration` and
 `backend/EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration` (under
 `src/config`). The regular integration run excludes the category; CI runs it in
-the `run-dms-provisioning-integration-tests` job. Each lane reads its settings
+the `run-dms-provisioning-integration-tests` (PostgreSQL) and
+`run-dms-provisioning-integration-tests-mssql` (SQL Server) jobs. Each lane reads its settings
 from these variables:
 
 | Variable | Lane | Purpose |
@@ -325,8 +326,8 @@ Locally a test whose settings are missing is skipped. Under GitHub Actions
 (`GITHUB_ACTIONS=true`) it fails instead, so set that variable to check that a
 run skipped nothing. The PostgreSQL tests that replay a template need `psql`
 and a POSIX shell and skip on Windows, so run the whole PostgreSQL lane on
-Linux. The job in
-`.github/workflows/on-config-pullrequest.yml` shows a complete setup, including
+Linux. The jobs in
+`.github/workflows/on-config-pullrequest.yml` show a complete setup, including
 released PostgreSQL format-1 packages pinned by SHA-256 and workflow-local MSSQL
 format-2 packages built from the same ref.
 
@@ -335,7 +336,7 @@ format-2 packages built from the same ref.
 The Configuration Service stages a SQL Server template backup in a directory
 that it owns and the SQL Server service identity can only read: group = a
 staging group the server joins, mode `2750`. The CI lane
-(`run-dms-provisioning-integration-tests`) runs on a host bind mount. This
+(`run-dms-provisioning-integration-tests-mssql`) runs on a host bind mount. This
 recipe rebuilds the container topology locally with real, separate Linux
 identities. It works on Linux and on Docker Desktop, because a named volume
 keeps Linux permissions, whereas a Docker Desktop bind mount from Windows shows

@@ -170,6 +170,8 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
 
         List<long> suppressedDocumentIds = [];
         List<long> documentScopedFailureIds = [];
+        List<long> nativeLimitFailureIds = [];
+        List<long> suppressedNativeLimitFailureIds = [];
         int processedItemCount = 0;
         int acknowledgedOrRemovedItemCount = 0;
         int documentScopedFailureCount = 0;
@@ -180,6 +182,14 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
             if (targetContext.FailureBackoffState.IsSuppressed(item.DocumentId, observedAt))
             {
                 suppressedDocumentIds.Add(item.DocumentId);
+                // Capture before another item can evict this bounded backoff entry.
+                if (
+                    targetContext.FailureBackoffState.GetFailureCategory(item.DocumentId)
+                    == DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                )
+                {
+                    suppressedNativeLimitFailureIds.Add(item.DocumentId);
+                }
                 continue;
             }
 
@@ -209,6 +219,10 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
             {
                 documentScopedFailureCount++;
                 documentScopedFailureIds.Add(item.DocumentId);
+                if (itemResult.IsNativeJsonLimitFailure)
+                {
+                    nativeLimitFailureIds.Add(item.DocumentId);
+                }
             }
 
             if (itemResult.AdministrativeFailure is not null)
@@ -278,7 +292,11 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
             documentScopedFailureCount,
             documentScopedFailureIds.Take(page.PageSize).ToImmutableArray(),
             suppressedDocumentIds.ToImmutableArray()
-        );
+        ) with
+        {
+            NativeLimitFailureIds = nativeLimitFailureIds.ToImmutableArray(),
+            SuppressedNativeLimitFailureIds = suppressedNativeLimitFailureIds.ToImmutableArray(),
+        };
     }
 
     private Task<DocumentProjectionWorkPage> ReadPageAsync(

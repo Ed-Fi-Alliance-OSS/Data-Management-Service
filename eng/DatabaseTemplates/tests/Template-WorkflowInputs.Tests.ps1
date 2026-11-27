@@ -29,7 +29,12 @@ Describe "Assert-TemplateWorkflowInputs" {
                 Reusable        = ".github/workflows/build-minimal-template.yml"
                 BackendPath     = "src/dms/backend/EdFi.DataManagementService.Backend.Mssql/**"
                 ComposePath     = "eng/docker-compose/mssql.compose.yml"
-                ExtraPaths      = @("eng/docker-compose/.env.mssql", "src/shared/MssqlDocumentCacheCatalog.sql", "src/dms/backend/EdFi.DataManagementService.Backend.External/MssqlDocumentCachePhysicalSchema.cs")
+                ExtraPaths      = @(
+                    "eng/docker-compose/.env.mssql"
+                    "src/shared/MssqlDocumentCacheCatalog.sql"
+                    "src/dms/backend/EdFi.DataManagementService.Backend.External/EdFi.DataManagementService.Backend.External.csproj"
+                    "src/dms/backend/EdFi.DataManagementService.Backend.External/MssqlDocumentCachePhysicalSchema.cs"
+                )
                 ForkGuardCount  = 2
                 PackageNames    = @(
                     "EdFi.Api.Minimal.Template.MsSql.5.2.0",
@@ -53,7 +58,12 @@ Describe "Assert-TemplateWorkflowInputs" {
                 Reusable        = ".github/workflows/build-populated-template.yml"
                 BackendPath     = "src/dms/backend/EdFi.DataManagementService.Backend.Mssql/**"
                 ComposePath     = "eng/docker-compose/mssql.compose.yml"
-                ExtraPaths      = @("eng/docker-compose/.env.mssql", "src/shared/MssqlDocumentCacheCatalog.sql", "src/dms/backend/EdFi.DataManagementService.Backend.External/MssqlDocumentCachePhysicalSchema.cs")
+                ExtraPaths      = @(
+                    "eng/docker-compose/.env.mssql"
+                    "src/shared/MssqlDocumentCacheCatalog.sql"
+                    "src/dms/backend/EdFi.DataManagementService.Backend.External/EdFi.DataManagementService.Backend.External.csproj"
+                    "src/dms/backend/EdFi.DataManagementService.Backend.External/MssqlDocumentCachePhysicalSchema.cs"
+                )
                 ForkGuardCount  = 3
                 PackageNames    = @(
                     "EdFi.Api.Populated.Template.MsSql.5.2.0",

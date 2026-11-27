@@ -240,6 +240,10 @@ public sealed record DocumentCacheProjectionDrainPageResult
 
     internal ImmutableArray<long> SuppressedDocumentIds { get; }
 
+    internal ImmutableArray<long> NativeLimitFailureIds { get; init; } = [];
+
+    internal ImmutableArray<long> SuppressedNativeLimitFailureIds { get; init; } = [];
+
     public DocumentCacheAdministrativeDrainFailure? AdministrativeFailure { get; }
 
     public static DocumentCacheProjectionDrainPageResult PageProcessed(
