@@ -38,6 +38,64 @@ public class Given_DocumentCacheAdministrativeDrain
     );
 
     [Test]
+    public async Task It_rescans_new_work_after_an_empty_terminal_verification_page()
+    {
+        var clock = new MutableTimeProvider(ObservedAt);
+        var target = RuntimeContext(providerToken: RelationalProviderToken.SqlServer);
+        var pending = new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, false, "pending");
+        var context = CreateCommandContext(
+            new RecordingAdministrativePrimitives(
+                pending,
+                pending,
+                pending,
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, true, "empty")
+            ),
+            new RecordingMutexLease(),
+            target
+        );
+        var failed = DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [101]) with
+        {
+            NativeLimitFailureIds = [101],
+        };
+        var scheduler = new RecordingScheduler(
+            failed,
+            DocumentCacheProjectionDrainPageResult.NoEligibleWorkWithRetry(ObservedAt.AddSeconds(10)),
+            failed,
+            DocumentCacheProjectionDrainPageResult.NoEligibleWorkWithRetry(ObservedAt.AddSeconds(20)),
+            // The failed source disappears; a new write arrives after the empty page.
+            DocumentCacheProjectionDrainPageResult.NoEligibleWork,
+            DocumentCacheProjectionDrainPageResult.PageProcessed(1, 1),
+            DocumentCacheProjectionDrainPageResult.NoEligibleWork
+        );
+
+        var result = await CreateDrainer(scheduler, new RecordingDrainDelay(clock), clock)
+            .DrainToEmptyAsync(context);
+
+        result.Completed.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_requires_matching_content_version_for_native_limit_evidence()
+    {
+        var state = new DocumentCacheProjectionFailureBackoffState(2);
+        state.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded,
+            "Native limit.",
+            ObservedAt,
+            TimeSpan.FromSeconds(10),
+            requiredContentVersion: 10
+        );
+
+        state
+            .GetFailureCategory(101, 10)
+            .Should()
+            .Be(DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded);
+        state.GetFailureCategory(101, 11).Should().BeNull();
+        state.IsSuppressed(101, ObservedAt).Should().BeTrue();
+    }
+
+    [Test]
     public async Task It_completes_only_after_durable_work_is_observed_empty()
     {
         RecordingScheduler scheduler = new(
@@ -1549,7 +1607,8 @@ public class Given_DocumentCacheAdministrativeDrain
                     : DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure,
                 "Document projection failed.",
                 clock.GetUtcNow(),
-                TimeSpan.FromSeconds(10)
+                TimeSpan.FromSeconds(10),
+                request.WorkItem.RequiredContentVersion
             );
             return Task.FromResult(
                 nativeLimitFailure
@@ -1601,7 +1660,8 @@ public class Given_DocumentCacheAdministrativeDrain
                 category,
                 "Document projection failed.",
                 clock.GetUtcNow(),
-                TimeSpan.FromSeconds(10)
+                TimeSpan.FromSeconds(10),
+                request.WorkItem.RequiredContentVersion
             );
             return Task.FromResult(
                 category == DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded

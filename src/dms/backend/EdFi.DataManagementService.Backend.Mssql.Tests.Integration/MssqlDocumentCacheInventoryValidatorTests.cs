@@ -162,7 +162,7 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
             );
             var denied = await _validator.ValidateInventoryAsync(connectionString);
             denied.IsSatisfied.Should().BeFalse();
-            denied.Inventory.Message.Should().ContainEquivalentOf("reprovision");
+            denied.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Unreadable);
         }
         finally
         {

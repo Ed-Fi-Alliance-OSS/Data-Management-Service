@@ -359,7 +359,8 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     IDocumentCacheReadTelemetry readTelemetry,
     IDocumentCacheProjectionTargetDiagnosticSink targetDiagnosticSink,
     TimeProvider timeProvider,
-    ILogger<DocumentCacheReadAccelerationCoordinator> logger
+    ILogger<DocumentCacheReadAccelerationCoordinator> logger,
+    IDocumentCacheProjectionSupervisor? projectionSupervisor = null
 ) : IDocumentCacheReadAccelerationCoordinator
 {
     private readonly IDataStoreSelection _dataStoreSelection =
@@ -1229,6 +1230,25 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
 
             foreach (DocumentCacheReadAccelerationCandidate candidate in candidates)
             {
+                if (
+                    projectionSupervisor?.CurrentTargetContexts.Any(context =>
+                        context.TargetKey == targetContext.TargetKey
+                        && context.Generation == targetContext.Generation
+                        && context.FailureBackoffState.GetFailureCategory(
+                            candidate.DocumentId,
+                            candidate.ContentVersion
+                        ) == DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                    ) == true
+                )
+                {
+                    RecordDirectFill(
+                        targetContext,
+                        operation,
+                        resourceKind,
+                        DocumentCacheReadTelemetryLabel.SkippedNativeJsonLimit
+                    );
+                    continue;
+                }
                 if (directFillTimeout.IsCancellationRequested)
                 {
                     string cancellationOutcome = SelectDirectFillCancellationReason(

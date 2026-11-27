@@ -584,7 +584,7 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                         return DocumentCacheAdministrativeDrainToEmptyResult.Succeeded(stats);
                     }
 
-                    if (verifyingPendingNativeFailure)
+                    if (verifyingPendingNativeFailure && drainResult.NextRetryAt is not null)
                     {
                         return PersistentPoison(context, stats, currentPass.DiagnosticDocumentIds);
                     }

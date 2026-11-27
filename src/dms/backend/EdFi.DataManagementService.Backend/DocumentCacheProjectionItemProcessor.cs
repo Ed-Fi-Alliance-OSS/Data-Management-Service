@@ -842,7 +842,8 @@ internal sealed class DocumentCacheProjectionItemProcessor(
             category,
             message,
             observedAt,
-            targetContext.TargetExecutionContext.EffectiveSettings.ProjectorFailureBackoff
+            targetContext.TargetExecutionContext.EffectiveSettings.ProjectorFailureBackoff,
+            workItem.RequiredContentVersion
         );
 
     private static void RecordDocumentDiagnostic(

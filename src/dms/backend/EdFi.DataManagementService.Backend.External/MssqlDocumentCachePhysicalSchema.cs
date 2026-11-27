@@ -88,9 +88,11 @@ public static class MssqlDocumentCachePhysicalSchema
                 THROW {{IncompatibleSchemaError}}, '{{IncompatibleSchemaMessage}}', 1;
             """;
 
+    // Runtime inventory must surface permission errors to its Unreadable classifier.
+    // Provisioning retains its incompatible/unverifiable boundary diagnostic.
     public static string ObservedVersionSql { get; } =
         $"""
-            {NativeCatalogObservationSql}
+            {NativeCatalogObservationSql.Replace("207, 208, 229, 230", "207, 208", StringComparison.Ordinal)}
             SELECT @document_cache_physical_version AS physical_schema_version;
             """;
 }

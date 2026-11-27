@@ -184,8 +184,10 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
                 suppressedDocumentIds.Add(item.DocumentId);
                 // Capture before another item can evict this bounded backoff entry.
                 if (
-                    targetContext.FailureBackoffState.GetFailureCategory(item.DocumentId)
-                    == DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                    targetContext.FailureBackoffState.GetFailureCategory(
+                        item.DocumentId,
+                        item.RequiredContentVersion
+                    ) == DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
                 )
                 {
                     suppressedNativeLimitFailureIds.Add(item.DocumentId);

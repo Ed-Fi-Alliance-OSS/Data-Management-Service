@@ -131,11 +131,18 @@ public sealed class DocumentCacheProjectionFailureBackoffState
 
     public int Capacity { get; }
 
-    internal DocumentCacheProjectionDocumentDiagnosticCategory? GetFailureCategory(long documentId)
+    internal DocumentCacheProjectionDocumentDiagnosticCategory? GetFailureCategory(
+        long documentId,
+        long requiredContentVersion
+    )
     {
         lock (_sync)
         {
-            return _entries.TryGetValue(documentId, out FailureEntry? entry) ? entry.Category : null;
+            return
+                _entries.TryGetValue(documentId, out FailureEntry? entry)
+                && entry.RequiredContentVersion == requiredContentVersion
+                ? entry.Category
+                : null;
         }
     }
 
@@ -166,7 +173,8 @@ public sealed class DocumentCacheProjectionFailureBackoffState
         DocumentCacheProjectionDocumentDiagnosticCategory category,
         string message,
         DateTimeOffset observedAt,
-        TimeSpan failureBackoff
+        TimeSpan failureBackoff,
+        long? requiredContentVersion = null
     )
     {
         if (documentId <= 0)
@@ -207,7 +215,14 @@ public sealed class DocumentCacheProjectionFailureBackoffState
 
             _entries = _entries.SetItem(
                 documentId,
-                new FailureEntry(documentId, category, message, observedAt, nextRetryAt)
+                new FailureEntry(
+                    documentId,
+                    category,
+                    message,
+                    observedAt,
+                    nextRetryAt,
+                    RequiredContentVersion: requiredContentVersion
+                )
             );
             _diagnostics = _diagnostics.Remove(documentId);
             AppendPoisonTraversalDiagnostic(
@@ -493,7 +508,8 @@ public sealed class DocumentCacheProjectionFailureBackoffState
         DateTimeOffset ObservedAt,
         DateTimeOffset NextRetryAt,
         bool SkippedUntilRetryDiagnosticRecorded = false,
-        bool PageCapacityExhaustedDiagnosticRecorded = false
+        bool PageCapacityExhaustedDiagnosticRecorded = false,
+        long? RequiredContentVersion = null
     );
 
     private sealed record DiagnosticEntry(
