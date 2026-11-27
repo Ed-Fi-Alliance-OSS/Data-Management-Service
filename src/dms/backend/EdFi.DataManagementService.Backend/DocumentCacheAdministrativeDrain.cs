@@ -803,20 +803,28 @@ internal sealed class DocumentCacheAdministrativeDrainer(
             .Take(context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize)
             .ToImmutableArray();
 
+        string message =
+            "Administrative drain observed durable work that repeatedly produced only document-scoped failures after retry was due.";
+        if (
+            context.TargetContext.TargetExecutionContext.ProviderToken == RelationalProviderToken.SqlServer
+            && !boundedDocumentIds.IsEmpty
+            && nativeLimitConfirmed
+        )
+        {
+            message =
+                "A document exceeds SQL Server native JSON storage limits. Its projection work is still pending. Update or remove the source document before retrying.";
+            if (!otherFailureDocumentIds.IsDefaultOrEmpty)
+            {
+                message +=
+                    $" Other failed document IDs observed during this traversal (bounded): {string.Join(", ", otherFailureDocumentIds)}.";
+            }
+        }
+
         DocumentCacheAdministrativeCommandResult failureResult = context.Failed(
             DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
             DocumentCacheAdministrativeCommandClassification.PersistentPoison,
             DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison,
-            context.TargetContext.TargetExecutionContext.ProviderToken == RelationalProviderToken.SqlServer
-            && !boundedDocumentIds.IsEmpty
-            && nativeLimitConfirmed
-                ? "A document exceeds SQL Server native JSON storage limits. Its projection work is still pending. Update or remove the source document before retrying."
-                    + (
-                        otherFailureDocumentIds.IsDefaultOrEmpty
-                            ? string.Empty
-                            : $" Other failed document IDs observed during this traversal (bounded): {string.Join(", ", otherFailureDocumentIds)}."
-                    )
-                : "Administrative drain observed durable work that repeatedly produced only document-scoped failures after retry was due.",
+            message,
             retryable: true,
             affectedDocumentIds: boundedDocumentIds
         );
