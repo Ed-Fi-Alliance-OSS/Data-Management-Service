@@ -34,14 +34,25 @@ public class MssqlDeleteTests
     private static readonly TimeSpan _lossHeartbeat = TimeSpan.FromSeconds(1);
 
     /// <summary>
-    /// One bound for a takeover sequence, started when the paused worker reaches its hook: the hold, the wait for the
-    /// killed session, the wait for loss and the replacement all spend from it, so no step restarts the clock.
+    /// One bound for a takeover sequence, started when the paused worker reaches its hook. Every step the setup takes
+    /// before it resumes the worker spends from it: work that takes the bound's token stops at the bound, work that
+    /// cannot is awaited to its own end, and a step that ends with the bound spent fails naming that step. The worker
+    /// is therefore resumed only within the bound, and no step's work is left running.
     /// </summary>
-    private sealed class SequenceBound
+    private sealed class SequenceBound : IDisposable
     {
+        private readonly CancellationTokenSource _expiry = new();
         private long _started;
 
-        public void Start() => Interlocked.CompareExchange(ref _started, Stopwatch.GetTimestamp(), 0);
+        public CancellationToken Token => _expiry.Token;
+
+        public void Start()
+        {
+            if (Interlocked.CompareExchange(ref _started, Stopwatch.GetTimestamp(), 0) == 0)
+            {
+                _expiry.CancelAfter(_bound);
+            }
+        }
 
         /// <summary>What is left of the bound; all of it until the sequence starts, never negative.</summary>
         public TimeSpan Remaining
@@ -54,15 +65,49 @@ public class MssqlDeleteTests
             }
         }
 
-        /// <summary>The failure of a setup whose bound passed while <paramref name="step"/> was still waiting.</summary>
-        public static TimeoutException Expired(string step) =>
+        /// <summary>
+        /// Runs <paramref name="step"/> on the bound's token and returns its result. The step fails, naming itself, when
+        /// it is cancelled by the bound, when one of its own waits times out, or when it ends with the bound spent.
+        /// </summary>
+        public async Task<T> StepAsync<T>(string step, Func<CancellationToken, Task<T>> work)
+        {
+            T result;
+            try
+            {
+                result = await work(Token);
+            }
+            catch (Exception exception)
+                when (exception is TimeoutException
+                    || (exception is OperationCanceledException && Token.IsCancellationRequested)
+                )
+            {
+                throw Expired(step);
+            }
+
+            return Token.IsCancellationRequested ? throw Expired(step) : result;
+        }
+
+        public Task StepAsync(string step, Func<CancellationToken, Task> work) =>
+            StepAsync(
+                step,
+                async token =>
+                {
+                    await work(token);
+                    return true;
+                }
+            );
+
+        public void Dispose() => _expiry.Dispose();
+
+        private static TimeoutException Expired(string step) =>
             new($"The takeover sequence passed its bound while {step}.");
     }
 
     /// <summary>
     /// Holds the first operation that reaches <paramref name="point"/> until released; every other passes. With
-    /// <paramref name="sequence"/>, reaching the hook starts that bound and the hold ends with it; otherwise the hold
-    /// ends after <c>_bound</c>.
+    /// <paramref name="sequence"/>, reaching the hook starts that bound, and the hold ends only when the sequence
+    /// releases it: when it resumes the worker, when its setup fails, or at teardown. Otherwise the hold ends after
+    /// <c>_bound</c>.
     /// </summary>
     private sealed class Pause(DmsProvisioningHookPoint point, SequenceBound? sequence = null)
     {
@@ -83,7 +128,7 @@ public class MssqlDeleteTests
 
             sequence?.Start();
             Reached.SetResult(operation);
-            await Release.Task.WaitAsync(sequence?.Remaining ?? _bound);
+            await (sequence is null ? Release.Task.WaitAsync(_bound) : Release.Task);
         }
 
         /// <summary>The paused operation, or a failure naming why <paramref name="running"/> never reached the hook.</summary>
@@ -819,30 +864,39 @@ public class MssqlDeleteTests
                 )
             )
             {
-                throw SequenceBound.Expired("waiting for the server to drop the killed holder session");
+                throw new TimeoutException("The server still lists the killed holder session.");
             }
         }
 
-        /// <summary>Waits, within the bound, for the holder's own loss signal: its heartbeat finds the killed session.</summary>
-        private static async Task LossObservedAsync(IDmsTargetLockHolder holder, SequenceBound sequence)
+        /// <summary>Waits for the holder's own loss signal (its heartbeat finds the killed session) until <paramref name="cancellationToken"/> ends the wait.</summary>
+        private static async Task LossObservedAsync(
+            IDmsTargetLockHolder holder,
+            CancellationToken cancellationToken
+        )
         {
             TaskCompletionSource lost = new(TaskCreationOptions.RunContinuationsAsynchronously);
             await using CancellationTokenRegistration registration = holder.LostToken.Register(() =>
                 lost.TrySetResult()
             );
-            try
+            await lost.Task.WaitAsync(cancellationToken);
+        }
+
+        /// <summary>Writes the sentinel, then waits within the bound until no session is left on the target.</summary>
+        private static async Task WriteSentinelAndDrainAsync(
+            DmsTargetDatabaseName target,
+            SequenceBound sequence
+        )
+        {
+            await WriteSentinelAsync(target);
+            if (!await NoSessionsOnWithinAsync(target.Value, sequence.Remaining))
             {
-                await lost.Task.WaitAsync(sequence.Remaining);
-            }
-            catch (TimeoutException)
-            {
-                throw SequenceBound.Expired("waiting for the paused worker's holder to declare its loss");
+                throw new TimeoutException("A session stayed on the replaced target.");
             }
         }
 
         /// <summary>
         /// Worker A's run with the caller token and the pause it was started with, so a setup that fails can stop it
-        /// and wait for it to end.
+        /// and wait for it to end before the lane is disposed.
         /// </summary>
         private sealed class WorkerA(Pause pause, CancellationTokenSource stop, Task<object> run)
             : IAsyncDisposable
@@ -850,12 +904,26 @@ public class MssqlDeleteTests
             public Task<object> Run => run;
 
             /// <summary>
-            /// Cancels A's caller token, releases its pause, and waits for A to end; from then on A's remaining work is
-            /// bounded by the service's own deadlines. A's own outcome is observed and not reported.
+            /// Cancels A's caller token, then releases its pause and waits for A to end even when the cancellation
+            /// raises; from then on A's remaining work is bounded by the service's own deadlines. A's own outcome is
+            /// observed and not reported. Never throws, so the failure that made the setup stop A is the one reported;
+            /// a cancellation that raised is written to the test output by its type chain only.
             /// </summary>
             public async Task StopAsync()
             {
-                await stop.CancelAsync();
+                try
+                {
+                    await stop.CancelAsync();
+                }
+                catch (Exception exception) when (exception is AggregateException or ObjectDisposedException)
+                {
+                    await TestContext.Out.WriteLineAsync(
+                        "Cancelling the paused worker raised "
+                            + DmsProvisioningDiagnostic.TypeChain(exception)
+                            + "; the paused worker was still released and awaited."
+                    );
+                }
+
                 pause.Release.TrySetResult();
                 await Task.WhenAny(run);
                 _ = run.Exception;
@@ -903,7 +971,9 @@ public class MssqlDeleteTests
         /// <summary>
         /// Runs A until <paramref name="point"/>, kills its holder, waits for A's holder to declare the loss when
         /// <paramref name="resumeAfterLoss"/>, lets <paramref name="replace"/> run as B, then resumes A and gathers the
-        /// evidence: whether A's holder was lost when A resumed, and every engine call A made from the pause on.
+        /// evidence: whether A's holder was lost when A resumed, and every engine call A made from the pause on. Every
+        /// step between the pause and A's release spends from one bound and is awaited to its end; A resumes only if
+        /// the bound still holds after the last of them.
         /// </summary>
         private async Task<Takeover> RunAsync(
             byte[] artifact,
@@ -914,7 +984,7 @@ public class MssqlDeleteTests
             bool resumeAfterLoss = false
         )
         {
-            SequenceBound sequence = new();
+            using SequenceBound sequence = new();
             Pause pause = new(point, sequence);
             Lane lane = await Lane.BuildAsync(
                 artifact,
@@ -935,29 +1005,33 @@ public class MssqlDeleteTests
                 DmsOperationId operation = await pause.ReachedAsync(a.Run);
                 int callsAtPause = lane.Engine.Calls.Count;
                 IDmsTargetLockHolder holder = lane.Engine.Holders.Should().ContainSingle().Subject;
-                await KillHolderAsync(operation, sequence);
+                await sequence.StepAsync(
+                    "killing the paused worker's holder session",
+                    _ => KillHolderAsync(operation, sequence)
+                );
                 if (resumeAfterLoss)
                 {
-                    await LossObservedAsync(holder, sequence);
+                    await sequence.StepAsync(
+                        "waiting for the paused worker's holder to declare its loss",
+                        token => LossObservedAsync(holder, token)
+                    );
                 }
 
                 Lane.Deployment b = lane.WithEngine(Engine());
-                using (CancellationTokenSource replacing = new(sequence.Remaining))
-                {
-                    try
-                    {
-                        await replace(lane, b, replacing.Token);
-                    }
-                    catch (OperationCanceledException) when (replacing.IsCancellationRequested)
-                    {
-                        throw SequenceBound.Expired("the second worker was replacing the target");
-                    }
-                }
+                await sequence.StepAsync(
+                    "the second worker was replacing the target",
+                    token => replace(lane, b, token)
+                );
+                await sequence.StepAsync(
+                    "writing the sentinel and waiting for sessions on the target to end",
+                    _ => WriteSentinelAndDrainAsync(lane.Target, sequence)
+                );
+                int replaced = await sequence.StepAsync(
+                    "reading the replacement's catalog entry",
+                    async _ => (await lane.TargetCatalogAsync()).DatabaseId
+                );
 
-                await WriteSentinelAsync(lane.Target);
-                await WaitForNoSessionsOnAsync(lane.Target.Value);
-                int replaced = (await lane.TargetCatalogAsync()).DatabaseId;
-
+                // The last step's check above is the bound's verification before A resumes.
                 bool lostAtResume = holder.LostToken.IsCancellationRequested;
                 pause.Release.SetResult();
                 object result = await a.Run;
