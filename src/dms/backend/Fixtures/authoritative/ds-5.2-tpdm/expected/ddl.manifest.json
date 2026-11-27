@@ -5,7 +5,7 @@
     {
       "dialect": "mssql",
       "mssql_physical_schema_version": "v2",
-      "normalized_sql_sha256": "f53b1d80078ce58fd2e4ab9d16dd00947e3f3f527b3e3770c2410da165e305d1",
+      "normalized_sql_sha256": "30428bc4b70115fad3fd95bb046c17aba491366ae35dff147bcedda84ca99409",
       "statement_count": 4663
     },
     {

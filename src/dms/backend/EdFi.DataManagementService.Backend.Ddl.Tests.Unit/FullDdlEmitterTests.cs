@@ -11,6 +11,19 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 
 [TestFixture]
+public class Given_Mssql_FullDdlEmitter_Output
+{
+    [Test]
+    public void It_emits_exactly_one_final_newline_so_the_manifest_matches_the_written_SQL()
+    {
+        var schemaSet = SmallFixtureEffectiveSchemaSetLoader.Load("minimal");
+        (_, string sql) = DdlPipelineHelpers.BuildDdlForDialect(schemaSet, SqlDialect.Mssql, strict: false);
+
+        sql.ReplaceLineEndings("\n").Should().EndWith("\n").And.NotEndWith("\n\n");
+    }
+}
+
+[TestFixture]
 public class Given_JoinSegments_With_All_Segments_Having_Trailing_Newlines
 {
     private string _result = default!;

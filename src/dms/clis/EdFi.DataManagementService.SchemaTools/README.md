@@ -109,9 +109,9 @@ api-schema-tools ddl emit -s core/ApiSchema.json -s extensions/tpdm/ApiSchema.js
 |---|---|---|
 | `pgsql.sql` | `--dialect pgsql` or `both` | PostgreSQL DDL script, without a built-in transaction wrapper |
 | `mssql.sql` | `--dialect mssql` or `both` | SQL Server DDL script, without a built-in transaction wrapper |
-| `relational-model.{dialect}.manifest.json` | Per selected dialect | Effective-schema-derived relational model inventory; fixed `dms` inventory is emitted in SQL and affects the optional DDL manifest hashes/counts instead |
+| `relational-model.{dialect}.manifest.json` | Per selected dialect | Effective-schema-derived relational model inventory; the MSSQL file also records `mssql_physical_schema_version`. Fixed `dms` inventory is emitted in SQL and affects the optional DDL manifest hashes/counts instead |
 | `effective-schema.manifest.json` | Always | Schema fingerprint, components, and resource key seed summary |
-| `ddl.manifest.json` | Only with `--ddl-manifest` | Dialect-independent summary: normalized-SQL SHA-256 and statement count per dialect, for diagnostics |
+| `ddl.manifest.json` | Only with `--ddl-manifest` | Dialect-independent summary: normalized-SQL SHA-256 and statement count per dialect, plus `mssql_physical_schema_version` on the MSSQL entry, for diagnostics |
 
 All output files use Unix line endings (`\n`) for deterministic, byte-for-byte
 stable output across platforms. `ddl emit` writes standalone SQL; callers who apply the

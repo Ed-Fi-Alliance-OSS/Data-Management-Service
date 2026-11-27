@@ -120,7 +120,9 @@ BEGIN
             N'@valid bit OUTPUT', @valid = @physical_marker_valid OUTPUT;
     END TRY
     BEGIN CATCH
-        IF @require_native_document_cache = 0 THROW;
+        -- Only missing/changed columns or objects and denied SELECT are failed schema proof.
+        -- Preserve provider failures, including deadlocks and lock timeouts, for caller retry.
+        IF @require_native_document_cache = 0 OR ERROR_NUMBER() NOT IN (207, 208, 229, 230) THROW;
     END CATCH;
 END;
 

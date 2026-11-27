@@ -876,7 +876,10 @@ public class Given_Mssql_DocumentCache_Physical_Preflight
         var phaseZero = MssqlDatabaseProvisioner
             .SplitOnGoBatchSeparator(File.ReadAllText(_ddlFile))
             .First(batch =>
-                batch.Contains("-- Phase 0: Bounded Provisioning Guards", StringComparison.Ordinal)
+                batch.Contains(
+                    "-- Preflight: verify the DocumentCache physical baseline",
+                    StringComparison.Ordinal
+                )
             );
         MssqlDocumentProjectionTestSupport.ExecuteNonQuery(
             connection,

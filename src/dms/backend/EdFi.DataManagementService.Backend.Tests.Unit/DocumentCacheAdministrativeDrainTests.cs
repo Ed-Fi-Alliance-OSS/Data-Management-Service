@@ -675,6 +675,49 @@ public class Given_DocumentCacheAdministrativeDrain
         delay.Delays.Should().Equal(TimeSpan.FromSeconds(10));
     }
 
+    [Test]
+    public async Task It_reports_a_current_wrapping_failure_after_an_earlier_native_source_is_deleted()
+    {
+        MutableTimeProvider clock = new(ObservedAt);
+        var first = new DocumentProjectionWorkPage([WorkItem(101, 10)], pageSize: 1);
+        var second = new DocumentProjectionWorkPage([WorkItem(102, 10)], pageSize: 1);
+        var third = new DocumentProjectionWorkPage([WorkItem(103, 10)], pageSize: 1);
+        var empty = new DocumentProjectionWorkPage([], pageSize: 1);
+        // The source for 101 is deleted after pass two; the next wrap starts at 102.
+        var pager = new RecordingWorkPager(first, second, third, empty, first, second, third, empty, second)
+        {
+            ProviderToken = RelationalProviderToken.SqlServer,
+        };
+        var context = CreateCommandContext(
+            new RecordingAdministrativePrimitives(),
+            new RecordingMutexLease(),
+            RuntimeContext(pageSize: 1, providerToken: RelationalProviderToken.SqlServer)
+        );
+        var scheduler = CreateRealScheduler(
+            new DocumentCacheProjectionDrainPageProcessor(
+                pager,
+                new RetryingItemProcessor(
+                    clock,
+                    DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                ),
+                NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+                clock
+            )
+        );
+
+        var result = await CreateDrainer(scheduler, new RecordingDrainDelay(clock), clock)
+            .DrainToEmptyAsync(context);
+
+        result
+            .FailureResult!.Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.PersistentPoison);
+        var diagnostic = result.FailureResult.PhaseDiagnostics.Single(d =>
+            d.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
+        );
+        diagnostic.AffectedDocumentIds.Should().Equal(102L);
+        diagnostic.Message.Should().Contain("Update or remove");
+    }
+
     [TestCase(false)]
     [TestCase(true)]
     public async Task It_limits_native_json_remediation_advice_to_documents_with_native_limit_failures(
@@ -827,11 +870,90 @@ public class Given_DocumentCacheAdministrativeDrain
         );
     }
 
+    [TestCase(true, false, 2)]
+    [TestCase(false, false, 2)]
+    [TestCase(true, true, 2)]
+    [TestCase(false, true, 2)]
+    [TestCase(true, true, 3)]
+    [TestCase(false, true, 3)]
+    public async Task It_preserves_ordinary_retries_when_failure_deadlines_are_staggered(
+        bool nativeLimitFirst,
+        bool ordinaryRecovers,
+        int pageSize
+    )
+    {
+        await AssertMixedFailureDrainAsync(
+            nativeLimitFirst,
+            ordinaryRecovers,
+            pageSize,
+            staggerFailures: true
+        );
+    }
+
+    [TestCase(true, false)]
+    [TestCase(false, false)]
+    [TestCase(true, true)]
+    [TestCase(false, true)]
+    public async Task It_preserves_ordinary_retries_when_processing_takes_longer_than_backoff(
+        bool nativeLimitFirst,
+        bool ordinaryRecovers
+    )
+    {
+        await AssertMixedFailureDrainAsync(
+            nativeLimitFirst,
+            ordinaryRecovers,
+            pageSize: 2,
+            slowOrdinaryAttempts: true
+        );
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_does_not_spend_a_slow_ordinary_documents_retries_on_a_faster_ordinary_document(
+        bool ordinaryRecovers
+    )
+    {
+        await AssertMixedFailureDrainAsync(
+            true,
+            ordinaryRecovers,
+            pageSize: 3,
+            slowOrdinaryAttempts: true,
+            additionalOrdinaryFailure: true
+        );
+    }
+
+    [Test]
+    public async Task It_bounds_native_poison_after_the_ordinary_source_is_deleted()
+    {
+        await AssertMixedFailureDrainAsync(
+            true,
+            ordinaryRecovers: false,
+            pageSize: 2,
+            deleteOrdinaryBeforeRetry: true
+        );
+    }
+
+    [Test]
+    public async Task It_omits_a_native_failure_deleted_before_the_terminal_suppressed_scan()
+    {
+        await AssertMixedFailureDrainAsync(
+            nativeLimitFirst: true,
+            ordinaryRecovers: false,
+            pageSize: 2,
+            deleteNativeBeforeTerminalScan: true
+        );
+    }
+
     private static async Task AssertMixedFailureDrainAsync(
         bool nativeLimitFirst,
         bool ordinaryRecovers,
         int pageSize,
-        bool deleteFirstNativeAfterFirstPass = false
+        bool deleteFirstNativeAfterFirstPass = false,
+        bool staggerFailures = false,
+        bool deleteNativeBeforeTerminalScan = false,
+        bool slowOrdinaryAttempts = false,
+        bool additionalOrdinaryFailure = false,
+        bool deleteOrdinaryBeforeRetry = false
     )
     {
         MutableTimeProvider clock = new(ObservedAt);
@@ -841,7 +963,12 @@ public class Given_DocumentCacheAdministrativeDrain
             nativeLimitFirst,
             ordinaryRecovers,
             attemptLimit,
-            deleteFirstNativeAfterFirstPass
+            deleteFirstNativeAfterFirstPass,
+            staggerFailures,
+            deleteNativeBeforeTerminalScan,
+            slowOrdinaryAttempts,
+            additionalOrdinaryFailure,
+            deleteOrdinaryBeforeRetry
         );
         var target = RuntimeContext(pageSize: pageSize, providerToken: RelationalProviderToken.SqlServer);
         var context = CreateCommandContext(
@@ -849,7 +976,7 @@ public class Given_DocumentCacheAdministrativeDrain
                 Enumerable
                     .Repeat(
                         new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, false, "pending"),
-                        10
+                        additionalOrdinaryFailure ? 20 : 10
                     )
                     .ToArray()
             ),
@@ -872,7 +999,11 @@ public class Given_DocumentCacheAdministrativeDrain
             result = await CreateDrainer(scheduler, delay, clock)
                 .DrainToEmptyAsync(context, attemptLimit.Token);
 
-        await drain.Should().NotThrowAsync("mixed poison must be identified within twenty item attempts");
+        await drain
+            .Should()
+            .NotThrowAsync(
+                $"mixed poison must be identified within {(additionalOrdinaryFailure ? 40 : 20)} item attempts"
+            );
 
         result!
             .FailureResult!.Classification.Should()
@@ -887,9 +1018,28 @@ public class Given_DocumentCacheAdministrativeDrain
         {
             nativeDocumentId = 103L;
         }
-        diagnostic.AffectedDocumentIds.Should().Equal(nativeDocumentId);
-        diagnostic.Message.Should().Contain("Update or remove");
-        queue.PendingDocumentIds.Should().Contain(nativeDocumentId);
+        if (deleteNativeBeforeTerminalScan)
+        {
+            diagnostic.AffectedDocumentIds.Should().Equal(102L);
+            diagnostic.Message.Should().NotContain("Update or remove");
+            queue.PendingDocumentIds.Should().Equal(102L);
+        }
+        else
+        {
+            if (diagnostic.Message.Contains("Update or remove", StringComparison.Ordinal))
+            {
+                diagnostic.AffectedDocumentIds.Should().Equal(nativeDocumentId);
+            }
+            else
+            {
+                // An ordinary-only wrapping page proves its own failure is still pending.
+                diagnostic
+                    .AffectedDocumentIds.Should()
+                    .NotBeEmpty()
+                    .And.OnlyContain(id => queue.PendingDocumentIds.Contains(id) && id != nativeDocumentId);
+            }
+            queue.PendingDocumentIds.Should().Contain(nativeDocumentId);
+        }
         if (deleteFirstNativeAfterFirstPass)
         {
             queue.PendingDocumentIds.Should().NotContain(101);
@@ -902,15 +1052,30 @@ public class Given_DocumentCacheAdministrativeDrain
         }
         else
         {
-            queue.OrdinaryAttemptCount.Should().BeGreaterThanOrEqualTo(4);
+            if (deleteOrdinaryBeforeRetry)
+            {
+                queue.OrdinaryAttemptCount.Should().Be(1);
+            }
+            else
+            {
+                queue.OrdinaryAttemptCount.Should().BeGreaterThanOrEqualTo(4);
+            }
             result.AcknowledgedOrRemovedItemCount.Should().Be(0);
-            queue.PendingDocumentIds.Should().HaveCount(2);
+            int expectedPendingCount = additionalOrdinaryFailure ? 3 : 2;
+            if (deleteNativeBeforeTerminalScan || deleteOrdinaryBeforeRetry)
+            {
+                expectedPendingCount = 1;
+            }
+            queue.PendingDocumentIds.Should().HaveCount(expectedPendingCount);
         }
         if (pageSize == 1)
         {
             target.FailureBackoffState.EvictionCount.Should().BeGreaterThan(0);
         }
-        delay.Delays.Should().NotBeEmpty().And.OnlyContain(value => value == TimeSpan.FromSeconds(10));
+        delay
+            .Delays.Should()
+            .NotBeEmpty()
+            .And.OnlyContain(value => value > TimeSpan.Zero && value <= TimeSpan.FromSeconds(10));
     }
 
     [TestCase(true)]
@@ -1149,11 +1314,16 @@ public class Given_DocumentCacheAdministrativeDrain
     }
 
     private sealed class MixedFailureWorkQueue(
-        TimeProvider clock,
+        MutableTimeProvider clock,
         bool nativeLimitFirst,
         bool ordinaryRecovers,
         CancellationTokenSource attemptLimit,
-        bool deleteFirstNativeAfterFirstPass = false
+        bool deleteFirstNativeAfterFirstPass = false,
+        bool staggerFailures = false,
+        bool deleteNativeBeforeTerminalScan = false,
+        bool slowOrdinaryAttempts = false,
+        bool additionalOrdinaryFailure = false,
+        bool deleteOrdinaryBeforeRetry = false
     ) : IDocumentProjectionWorkPager, IDocumentCacheProjectionItemProcessor
     {
         private int _attemptCount;
@@ -1178,6 +1348,19 @@ public class Given_DocumentCacheAdministrativeDrain
                 // Model the work-row cascade from deleting the canonical source document.
                 _pendingDocumentIds.Remove(101);
             }
+            if (additionalOrdinaryFailure)
+            {
+                _pendingDocumentIds.Add(100);
+            }
+            if (!request.Cursor.HasValue && OrdinaryAttemptCount >= 1 && deleteOrdinaryBeforeRetry)
+            {
+                _pendingDocumentIds.Remove(nativeLimitFirst ? 102L : 101L);
+            }
+            if (!request.Cursor.HasValue && OrdinaryAttemptCount >= 4 && deleteNativeBeforeTerminalScan)
+            {
+                // Delete after the last processing pass, before any terminal suppressed scan.
+                _pendingDocumentIds.Remove(101);
+            }
             return Task.FromResult(
                 new DocumentProjectionWorkPage(
                     _pendingDocumentIds
@@ -1194,7 +1377,7 @@ public class Given_DocumentCacheAdministrativeDrain
             CancellationToken cancellationToken = default
         )
         {
-            if (++_attemptCount > 20)
+            if (++_attemptCount > (additionalOrdinaryFailure ? 40 : 20))
             {
                 attemptLimit.Cancel();
                 cancellationToken.ThrowIfCancellationRequested();
@@ -1202,7 +1385,15 @@ public class Given_DocumentCacheAdministrativeDrain
 
             long id = request.WorkItem.DocumentId;
             bool nativeLimitFailure = id == (nativeLimitFirst ? 101 : 102) || id == 103;
-            if (!nativeLimitFailure && ++OrdinaryAttemptCount > 3 && ordinaryRecovers)
+            if (staggerFailures && _attemptCount == 2)
+            {
+                clock.Advance(TimeSpan.FromSeconds(2));
+            }
+            if (!nativeLimitFailure && id != 100 && slowOrdinaryAttempts)
+            {
+                clock.Advance(TimeSpan.FromSeconds(15));
+            }
+            if (!nativeLimitFailure && id != 100 && ++OrdinaryAttemptCount > 3 && ordinaryRecovers)
             {
                 _pendingDocumentIds.Remove(id);
                 request.TargetContext.FailureBackoffState.ClearFailure(id);

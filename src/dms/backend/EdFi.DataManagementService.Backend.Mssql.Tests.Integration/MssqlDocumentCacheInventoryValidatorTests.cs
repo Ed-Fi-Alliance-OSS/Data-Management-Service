@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -60,6 +61,35 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
         result.IsSatisfied.Should().BeTrue(result.Inventory.Message);
         result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Satisfied);
         result.EnqueueTrigger.Status.Should().Be(DocumentCacheEnqueueTriggerStatus.Satisfied);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_preserves_marker_lock_timeouts_as_provider_errors(bool provisioning)
+    {
+        await using var database = await CreateDatabaseAsync();
+        await using var blocker = new SqlConnection(database.ConnectionString);
+        await blocker.OpenAsync();
+        await using var transaction = (SqlTransaction)await blocker.BeginTransactionAsync();
+        await using var lockCommand = blocker.CreateCommand();
+        lockCommand.Transaction = transaction;
+        lockCommand.CommandText = "SELECT SingletonId FROM dms.MssqlPhysicalSchema WITH (TABLOCKX, HOLDLOCK)";
+        await lockCommand.ExecuteScalarAsync();
+
+        await using var observer = new SqlConnection(database.ConnectionString);
+        await observer.OpenAsync();
+        await using var command = observer.CreateCommand();
+        command.CommandText =
+            "SET LOCK_TIMEOUT 0;\n"
+            + (
+                provisioning
+                    ? MssqlDocumentCachePhysicalSchema.ProvisioningGuardSql
+                    : MssqlDocumentCachePhysicalSchema.ObservedVersionSql
+            );
+
+        Func<Task> observe = async () => await command.ExecuteScalarAsync();
+        var failure = await observe.Should().ThrowAsync<SqlException>();
+        failure.Which.Number.Should().Be(1222, "contention must not become a schema incompatibility");
     }
 
     [TestCase("DELETE FROM dms.MssqlPhysicalSchema")]

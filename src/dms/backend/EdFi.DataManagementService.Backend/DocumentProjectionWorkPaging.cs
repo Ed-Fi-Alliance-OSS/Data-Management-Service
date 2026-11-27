@@ -276,7 +276,8 @@ internal sealed class DocumentCacheProjectionDrainPageProcessor(
             processedItemCount,
             acknowledgedOrRemovedItemCount,
             documentScopedFailureCount,
-            documentScopedFailureIds.Take(page.PageSize).ToImmutableArray()
+            documentScopedFailureIds.Take(page.PageSize).ToImmutableArray(),
+            suppressedDocumentIds.ToImmutableArray()
         );
     }
 

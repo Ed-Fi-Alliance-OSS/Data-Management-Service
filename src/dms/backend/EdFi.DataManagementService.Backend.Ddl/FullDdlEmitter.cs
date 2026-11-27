@@ -60,17 +60,20 @@ public static class FullDdlEmitter
             coreEmission.CdcSourceInventory
         );
 
-        return new FullDdlEmission(
-            JoinSegments(
-                dialect.RenderScriptPrologue(),
-                preflightDdl,
-                coreEmission.Sql,
-                relationalDdl,
-                seedDml
-            ),
-            coreEmission.CdcSourceInventory,
-            cdcDmsManagedTableInventory
+        string combinedSql = JoinSegments(
+            dialect.RenderScriptPrologue(),
+            preflightDdl,
+            coreEmission.Sql,
+            relationalDdl,
+            seedDml
         );
+        if (dialect.Rules.Dialect == SqlDialect.Mssql)
+        {
+            // Match the single final newline in written SQL snapshots on every platform.
+            combinedSql = combinedSql.TrimEnd('\r', '\n') + "\n";
+        }
+
+        return new FullDdlEmission(combinedSql, coreEmission.CdcSourceInventory, cdcDmsManagedTableInventory);
     }
 
     private static string WrapPhase0(string preflightSql)
