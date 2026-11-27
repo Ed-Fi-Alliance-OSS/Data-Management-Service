@@ -978,13 +978,28 @@ public class MssqlDeleteTests
         private static DmsProvisioningFailure Detail(Takeover takeover) =>
             takeover.Result.Should().BeOfType<DmsDataStoreDeleteResult.Failure>().Subject.Detail;
 
+        /// <summary>
+        /// A failure names only the verdict's fixed values: the code, the category, the operation, and the failing
+        /// step. The result's other fields are never printed.
+        /// </summary>
         [Test]
-        public void It_ends_a_create_paused_before_the_rename_as_lock_lost() =>
-            _beforeRename
+        public void It_ends_a_create_paused_before_the_rename_as_lock_lost()
+        {
+            DmsProvisioningFailure detail = _beforeRename
                 .Result.Should()
                 .BeOfType<DmsDataStoreCreateResult.Failure>()
-                .Which.Detail.Code.Should()
-                .Be(DmsProvisioningFailureCode.LockLost);
+                .Subject.Detail;
+            detail
+                .Code.Should()
+                .Be(
+                    DmsProvisioningFailureCode.LockLost,
+                    "the create ended with code {0}, category {1}, operation {2}, failing step {3}",
+                    detail.Code,
+                    detail.Category,
+                    DmsDataStoreProvisioningService.CreateOperationName,
+                    detail.Diagnostic.Operation
+                );
+        }
 
         [Test]
         public async Task It_drops_the_staging_database_of_every_create_and_never_marks_or_drops_the_target()
