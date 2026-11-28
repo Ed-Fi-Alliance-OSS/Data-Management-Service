@@ -28,4 +28,4 @@ Authorization remains out of scope.
 - `DMS-1016` — `01-referentialidentity-watchdog.md` — Sampling-based online verification (optional self-heal)
 - `DMS-1017` — `02-instrumentation.md` — Metrics/logs for cascades, stamps/journals, and retries
 - `DMS-1018` — `03-guardrails.md` — Bounds/limits for identity-update fan-out and retry behavior
-- `DMS-1019` — `04-performance-benchmarks.md` — Benchmark harness for read/write hot paths
+- `DMS-1019` — `04-performance-benchmarks.md` — Repeatable read/write benchmarks with baseline comparison

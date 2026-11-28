@@ -28,15 +28,53 @@ namespace EdFi.DataManagementService.Performance.Harness.Measurement;
 /// </summary>
 public static class PerfEnvironmentCapture
 {
+    /// <summary>
+    /// An explicit allowlist of the settings that change what a benchmark measures. Settings
+    /// are never captured by their source: an override such as <c>primary_conninfo</c> can carry
+    /// credentials, and these values are written to evidence artifacts.
+    /// <c>pg_settings</c> reports each setting's effective value for the session, so a change
+    /// through <c>ALTER SYSTEM</c>, a <c>-c</c> flag, <c>ALTER DATABASE</c> or
+    /// <c>ALTER ROLE</c> is captured too.
+    /// </summary>
     private static readonly string[] _postgresqlSettingNames =
     [
+        // Memory, JIT and timing (the paging reads).
         "shared_buffers",
         "work_mem",
         "jit",
         "track_io_timing",
         "max_parallel_workers_per_gather",
         "plan_cache_mode",
+        // The commit and WAL path (the measured write).
+        "fsync",
+        "synchronous_commit",
+        "full_page_writes",
+        "wal_sync_method",
+        "wal_level",
+        "wal_compression",
+        "commit_delay",
+        // Checkpoint timing.
+        "checkpoint_timeout",
+        "max_wal_size",
+        // The planner (the measured reads).
+        "random_page_cost",
+        "seq_page_cost",
+        "effective_cache_size",
+        "effective_io_concurrency",
+        "enable_seqscan",
+        "enable_indexscan",
+        "enable_indexonlyscan",
+        "enable_bitmapscan",
+        "enable_hashjoin",
+        "enable_mergejoin",
+        "enable_nestloop",
+        "enable_sort",
     ];
+
+    /// <summary>
+    /// The PostgreSQL settings captured, in the order <c>pg_settings</c> is read.
+    /// </summary>
+    public static IReadOnlyList<string> PostgresqlSettingNames => _postgresqlSettingNames;
 
     public static async Task<PerfEnvironmentIdentity> CaptureAsync(
         DbConnection connection,
@@ -84,19 +122,28 @@ public static class PerfEnvironmentCapture
                     )
                 )
             );
-            settings.Add(
-                new PerfSetting(
-                    "is_read_committed_snapshot_on",
-                    await ScalarStringAsync(
-                        connection,
-                        """
-                        SELECT CAST(is_read_committed_snapshot_on AS nvarchar(5))
-                        FROM sys.databases
-                        WHERE name = DB_NAME();
-                        """
-                    )
-                )
-            );
+            // The database options that change what a read or a commit costs: row versioning
+            // for reads, version-store writes, and whether a commit waits for its log flush.
+            await using (DbCommand options = connection.CreateCommand())
+            {
+                options.CommandText = """
+                    SELECT CAST(is_read_committed_snapshot_on AS nvarchar(5)),
+                        snapshot_isolation_state_desc,
+                        delayed_durability_desc
+                    FROM sys.databases
+                    WHERE name = DB_NAME();
+                    """;
+                await using DbDataReader row = await options.ExecuteReaderAsync();
+                if (!await row.ReadAsync())
+                {
+                    throw new PerfObservationException("The current database is not in sys.databases.");
+                }
+
+                settings.Add(new PerfSetting("is_read_committed_snapshot_on", row.GetString(0)));
+                settings.Add(new PerfSetting("snapshot_isolation_state_desc", row.GetString(1)));
+                settings.Add(new PerfSetting("delayed_durability_desc", row.GetString(2)));
+            }
+
             await using DbCommand command = connection.CreateCommand();
             command.CommandText = """
                 SELECT name, CAST(value_in_use AS nvarchar(64))

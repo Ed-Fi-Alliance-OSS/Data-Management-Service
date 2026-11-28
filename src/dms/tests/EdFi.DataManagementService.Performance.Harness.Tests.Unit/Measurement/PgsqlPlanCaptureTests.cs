@@ -106,12 +106,35 @@ public class Given_The_Hydration_Batch_Splitter
         statements.Should().HaveCount(1);
         statements[0].Sql.Should().Be("SELECT \"a;b\" FROM \"t\"");
     }
+
+    [Test]
+    public void It_keeps_the_descriptor_uri_projection_literal()
+    {
+        IReadOnlyList<PgsqlBatchStatement> statements = PgsqlPlanCapture.SplitHydrationBatch(
+            "SELECT d.\"Namespace\" || '#' || d.\"CodeValue\" FROM \"dms\".\"Descriptor\" d;"
+        );
+        statements.Should().HaveCount(1);
+        statements[0]
+            .Sql.Should()
+            .Be("SELECT d.\"Namespace\" || '#' || d.\"CodeValue\" FROM \"dms\".\"Descriptor\" d");
+    }
+
+    [Test]
+    public void It_keeps_a_semicolon_and_an_escaped_quote_inside_a_string_literal()
+    {
+        IReadOnlyList<PgsqlBatchStatement> statements = PgsqlPlanCapture.SplitHydrationBatch(
+            "SELECT 'a;''b'; SELECT 2;"
+        );
+        statements.Select(statement => statement.Sql).Should().Equal("SELECT 'a;''b'", "SELECT 2");
+    }
 }
 
 [TestFixture]
 public class Given_Unsupported_Hydration_Batch_Constructs
 {
-    [TestCase("SELECT 'literal';", "*string literal*")]
+    [TestCase("SELECT E'a\\';b';", "*prefixed string literal*")]
+    [TestCase("SELECT U&'d\\0061t';", "*prefixed string literal*")]
+    [TestCase("SELECT 'unterminated;", "*unterminated string literal*")]
     [TestCase("SELECT $$x$$;", "*dollar quoting*")]
     [TestCase("SELECT 1 -- trailing;", "*line comment*")]
     [TestCase("SELECT 1 /* block */;", "*block comment*")]

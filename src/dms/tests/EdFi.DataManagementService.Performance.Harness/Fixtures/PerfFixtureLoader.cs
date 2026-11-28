@@ -112,6 +112,17 @@ public static class PerfFixtureLoader
         await VerifyAsync(connection, provider, definition);
     }
 
+    /// <summary>
+    /// Compacts a loaded PostgreSQL fixture (see <see cref="PgsqlPerfFixtureLoaderSql.CompactionSqls" />).
+    /// </summary>
+    public static async Task CompactPostgresqlAsync(DbConnection connection)
+    {
+        foreach (string compactionSql in PgsqlPerfFixtureLoaderSql.CompactionSqls)
+        {
+            await ExecuteNonQueryAsync(connection, compactionSql);
+        }
+    }
+
     public static async Task VerifyAsync(
         DbConnection connection,
         PerfProvider provider,

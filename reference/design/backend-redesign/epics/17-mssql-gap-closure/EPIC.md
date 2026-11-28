@@ -70,7 +70,7 @@ cross-cutting local and CI workflows that do not have another active home.
 
 ## Related Cross-Epic Work
 
-- [`DMS-1019` — Benchmark Harness for Read/Write Hot Paths](../12-ops-guardrails/04-performance-benchmarks.md)
+- [`DMS-1019` — Repeatable Read/Write Benchmarks with Baseline Comparison](../12-ops-guardrails/04-performance-benchmarks.md)
 - [`DMS-1023` — Cross-Engine Parity Tests and Shared Fixtures](../13-test-migration/02-parity-and-fixtures.md)
 - [`DMS-1065` — Further Performance Optimizations](../14-authorization/16-further-performance-optimizations.md)
 - `DMS-1127` — SQL Server native-cascade update-tracking validation, governed by

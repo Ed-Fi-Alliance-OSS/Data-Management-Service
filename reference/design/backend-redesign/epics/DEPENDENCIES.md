@@ -389,7 +389,7 @@ Epic: `12-ops-guardrails/EPIC.md`
 | E12-S01 | [`01-referentialidentity-watchdog.md`](12-ops-guardrails/01-referentialidentity-watchdog.md) | E12-S00 | — | Online sampling verification + optional self-heal |
 | E12-S02 | [`02-instrumentation.md`](12-ops-guardrails/02-instrumentation.md) | E07-S03, E09-S03 | — | Metrics/logs for cascades, stamps/journals, retries |
 | E12-S03 | [`03-guardrails.md`](12-ops-guardrails/03-guardrails.md) | E09-S03 | — | Guardrails for identity-update fan-out and retry behavior |
-| E12-S04 | [`04-performance-benchmarks.md`](12-ops-guardrails/04-performance-benchmarks.md) | E07-S03, E08-S00 | — | Benchmark harness for read/write hot paths |
+| E12-S04 | [`04-performance-benchmarks.md`](12-ops-guardrails/04-performance-benchmarks.md) | E07-S03, E08-S00 | — | Repeatable read/write benchmarks with baseline comparison |
 
 ### E13 — Test Strategy & Migration (Runtime + E2E)
 

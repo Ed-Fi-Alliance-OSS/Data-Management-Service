@@ -26,6 +26,9 @@
         <ProjectReference Include="..\EdFi.DataManagementService.Tests.Integration\EdFi.DataManagementService.Tests.Integration.csproj" />
     </ItemGroup>
     <ItemGroup>
+        <None Update="Configuration\benchmark-profile.json" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+    <ItemGroup>
         <Using Include="NUnit.Framework" />
     </ItemGroup>
 </Project>
