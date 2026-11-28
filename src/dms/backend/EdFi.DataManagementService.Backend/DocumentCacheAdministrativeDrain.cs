@@ -418,8 +418,9 @@ internal sealed class DocumentCacheAdministrativeDrainer(
             );
             ImmutableArray<long> GetOtherFailureDocumentIds() =>
                 currentPass
-                    .DiagnosticDocumentIds.Except(currentPass.NativeLimitDocumentIds)
-                    .Concat(drainResult.DocumentScopedFailureIds.Except(pageNativeLimitDocumentIds))
+                    .OrdinaryFailureDocumentIds.Concat(
+                        drainResult.DocumentScopedFailureIds.Except(pageNativeLimitDocumentIds)
+                    )
                     .Concat(drainResult.SuppressedDocumentIds.Except(suppressedNativeLimitDocumentIds))
                     .Distinct()
                     .Take(context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize)
@@ -903,6 +904,7 @@ internal sealed class DocumentCacheAdministrativeDrainPass(int diagnosticCapacit
 {
     private ImmutableArray<long> _diagnosticDocumentIds = [];
     private ImmutableArray<long> _nativeLimitDocumentIds = [];
+    private ImmutableArray<long> _ordinaryFailureDocumentIds = [];
     private int _suppressedFailureCount;
 
     public int ProcessedItemCount { get; private set; }
@@ -926,6 +928,8 @@ internal sealed class DocumentCacheAdministrativeDrainPass(int diagnosticCapacit
         && SuppressedOrdinaryFailureCount == 0;
 
     public ImmutableArray<long> NativeLimitDocumentIds => _nativeLimitDocumentIds;
+
+    public ImmutableArray<long> OrdinaryFailureDocumentIds => _ordinaryFailureDocumentIds;
 
     public bool IsUnproductiveNativeLimitPass =>
         IsUnproductivePoisonPass && NativeLimitFailureCount == DocumentScopedFailureCount;
@@ -962,6 +966,26 @@ internal sealed class DocumentCacheAdministrativeDrainPass(int diagnosticCapacit
         ProcessedItemCount += result.ProcessedItemCount;
         AcknowledgedOrRemovedItemCount += result.AcknowledgedOrRemovedItemCount;
         DocumentScopedFailureCount += result.DocumentScopedFailureCount;
+
+        // Filter each page before applying the cap so native failures cannot crowd out
+        // ordinary failures encountered on later pages of the same traversal.
+        _ordinaryFailureDocumentIds = _ordinaryFailureDocumentIds
+            .AddRange(
+                result.DocumentScopedFailureIds.Where(id =>
+                    nativeLimitFailureIds.IsDefaultOrEmpty || !nativeLimitFailureIds.Contains(id)
+                )
+            )
+            .AddRange(
+                includeSuppressedDiagnostics
+                    ? result.SuppressedDocumentIds.Where(id =>
+                        suppressedNativeLimitFailureIds.IsDefaultOrEmpty
+                        || !suppressedNativeLimitFailureIds.Contains(id)
+                    )
+                    : []
+            )
+            .Distinct()
+            .Take(diagnosticCapacity)
+            .ToImmutableArray();
 
         _diagnosticDocumentIds = _diagnosticDocumentIds
             .AddRange(result.DocumentScopedFailureIds)

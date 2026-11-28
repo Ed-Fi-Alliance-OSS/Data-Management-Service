@@ -37,6 +37,37 @@ public class Given_DocumentCacheAdministrativeDrain
         CacheAheadRecoveryRequired: false
     );
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public void It_retains_a_bounded_ordinary_failure_list_when_native_failures_fill_earlier_pages(
+        bool suppressed
+    )
+    {
+        var pass = new DocumentCacheAdministrativeDrainPass(1);
+        pass.Record(
+            suppressed
+                ? DocumentCacheProjectionDrainPageResult.PageProcessed(0, suppressedDocumentIds: [101])
+                : DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [101]),
+            nativeLimitFailureIds: suppressed ? [] : [101],
+            suppressedNativeLimitFailureIds: suppressed ? [101] : [],
+            includeSuppressedDiagnostics: true
+        );
+        pass.Record(
+            suppressed
+                ? DocumentCacheProjectionDrainPageResult.PageProcessed(0, suppressedDocumentIds: [102])
+                : DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [102]),
+            includeSuppressedDiagnostics: true
+        );
+        pass.Record(
+            DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [103]),
+            includeSuppressedDiagnostics: true
+        );
+
+        pass.DiagnosticDocumentIds.Should().Equal(101);
+        pass.NativeLimitDocumentIds.Should().Equal(101);
+        pass.OrdinaryFailureDocumentIds.Should().Equal(102);
+    }
+
     [Test]
     public async Task It_rescans_new_work_after_an_empty_terminal_verification_page()
     {
@@ -1209,6 +1240,20 @@ public class Given_DocumentCacheAdministrativeDrain
         var diagnostic = result.FailureResult.PhaseDiagnostics.Single(d =>
             d.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
         );
+        if (
+            !ordinaryRecovers
+            && !deleteNativeBeforeTerminalScan
+            && !deleteOrdinaryBeforeRetry
+            && !additionalOrdinaryFailure
+        )
+        {
+            long ordinaryDocumentId = nativeLimitFirst ? 102L : 101L;
+            diagnostic
+                .Message.Should()
+                .Contain(
+                    $"Other failed document IDs observed during this traversal bounded: {ordinaryDocumentId}"
+                );
+        }
         long nativeDocumentId = nativeLimitFirst ? 101L : 102L;
         if (deleteFirstNativeAfterFirstPass)
         {
