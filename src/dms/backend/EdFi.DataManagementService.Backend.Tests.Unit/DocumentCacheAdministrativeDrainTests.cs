@@ -834,7 +834,7 @@ public class Given_DocumentCacheAdministrativeDrain
         {
             diagnostic
                 .Message.Should()
-                .Contain("Other failed document IDs observed during this traversal (bounded): 102");
+                .Contain("Other failed document IDs observed during this traversal bounded: 102");
         }
     }
 
