@@ -316,7 +316,7 @@ public class Given_The_Committed_Benchmark_Profile
                     },
                     ["mssql"] = new()
                     {
-                        ["student-put-collection-update"] = 0.1576m,
+                        ["student-put-collection-update"] = 0.1653m,
                         ["traditional-offset-deep/25"] = 0.20m,
                     },
                 }

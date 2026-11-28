@@ -658,15 +658,39 @@ never evidence.
 ### Qualification evidence
 
 **Frozen: profile 1.0.0**, 2026-11-27, after the commit-flush fix and the move of the
-demonstration read to `traditional-offset-deep/25` (both below). It carries:
+demonstration read to `traditional-offset-deep/25` (both below); **1.0.1**, 2026-11-28,
+re-sized the SQL Server write factor after two failed `Detection` runs (see the qualification
+runs). It carries:
 
 | | PostgreSQL | SQL Server |
 | --- | --- | --- |
 | Calibration run | `postgresql-Calibration-20261126T200832Z` | `mssql-Calibration-20261127T011706Z` |
 | p50 thresholds | 5% for every scenario | zero/25 9%, zero/500 6%, shallow/25 11%, shallow/500 6%, deep/25 5%, deep/500 5%, write 8% |
-| Write factor (sizing run → increase) | 0.20 (`20261127T130831Z` → 18.3%) | 0.1576 (`20261127T144924Z` → 20.7%) |
+| Write factor (sizing run → increase) | 0.20 (`20261127T130831Z` → 18.3%) | 0.1653, the mean implied factor of six runs (1.0.0: 0.1576, `20261127T144924Z` → 20.7%) |
 | deep/25 factor (sizing run → increase) | 0.20 (`20261127T130831Z` → 20.3%) | 0.20 (`20261127T144924Z` → 21.5%) |
 | Qualified fingerprint | the calibration's observed fingerprint, Docker VM memory rounded to the GiB | the calibration's observed fingerprint, Docker VM memory rounded to the GiB |
+
+**Qualification runs.** PostgreSQL, profile 1.0.0:
+
+| Run | Result |
+| --- | --- |
+| `Repeatability` `20261127T183901Z` | acceptable in every scenario (−0.4% to +0.9%); qualification eligible |
+| `Detection` `20261127T220059Z` | passed: write +23.1%, deep/25 +19.2%, nothing else flagged |
+| `Detection` `20261127T234153Z` | passed: write +20.9%, deep/25 +19.8%, nothing else flagged |
+| `Detection` `20261128T012251Z` | passed: write +22.3%, deep/25 +19.2%, nothing else flagged |
+| `BoundaryProbe` `20261128T030336Z` | factors × 0.05 / 0.20: deep/25 +5.1% flagged, write +5.0% not flagged (the rule is strictly above the 5% threshold) |
+| Invalid, kept | `Repeatability` `20261127T165838Z` (a 3 s gap in the host samples); `Detection` `20261127T201908Z` (idle host CPU 48.9%, a background process) |
+
+SQL Server, profile 1.0.0: `Repeatability` `20261128T044506Z` was acceptable in every scenario
+(−2.5% to +1.2%) and qualification eligible. Both `Detection` runs failed the frozen rule on the
+write alone: `20261128T064202Z` write +17.5%, deep/25 +20.5%; `20261128T083929Z` write +16.9%,
+deep/25 +19.8%. The write was flagged each time, well above its 8% threshold, but under the
+band's 18% floor, and nothing else was flagged. The remaining runs at that factor were not
+made. The six SQL Server runs at a known write factor implied 0.1476, 0.1765, 0.1487, 0.1523,
+0.1801 and 0.1865 for +20% (mean 0.1653, standard deviation 0.0176, about ±2.1 points of
+observed increase), so profile 1.0.1 sets the mean. Its thresholds and fingerprints are those
+of 1.0.0, so the injection-free `Repeatability` run stands; the three `Detection` runs and the
+`BoundaryProbe` run are repeated under 1.0.1.
 
 Rounds 1 to 4 below (profiles 0.1.0 to 0.3.0) did not qualify: three of the four provider and
 demonstration-scenario combinations stayed above the 13% threshold limit or never sized into

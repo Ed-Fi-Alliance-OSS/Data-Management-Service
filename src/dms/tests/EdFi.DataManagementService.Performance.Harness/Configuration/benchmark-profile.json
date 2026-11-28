@@ -1,5 +1,5 @@
 {
-  "profileVersion": "1.0.0",
+  "profileVersion": "1.0.1",
   "workloadDefinitionVersion": "1.0.0",
   "supportedRange": {
     "floorCommit": "df7e23425beef2de46fa98b3b5b48578cb2d3692"
@@ -99,7 +99,7 @@
         "traditional-offset-deep/25": 0.20
       },
       "mssql": {
-        "student-put-collection-update": 0.1576,
+        "student-put-collection-update": 0.1653,
         "traditional-offset-deep/25": 0.20
       }
     }
