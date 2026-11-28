@@ -107,7 +107,13 @@ public sealed partial class DmsDataStoreProvisioningService
             );
             if (verdict is DmsTargetValidation.Invalid invalid)
             {
-                throw StepFailed(invalid.Code, ReconcileValidateStep + "." + invalid.Check);
+                throw new DmsProvisioningFailedException(
+                    DmsProvisioningFailure.ForTargetValidation(
+                        invalid,
+                        ReconcileValidateStep,
+                        artifact.Manifest.DatabaseEngine
+                    )
+                );
             }
         }
 

@@ -81,6 +81,7 @@ public enum DocumentCacheProjectionDocumentDiagnosticCategory
     ProviderFailure = 6,
     DeterministicInvariantFailure = 7,
     PossibleUnseededBaseline = 8,
+    NativeJsonLimitExceeded = 9,
 }
 
 public enum DocumentCacheProjectionPoisonTraversalDiagnosticCategory

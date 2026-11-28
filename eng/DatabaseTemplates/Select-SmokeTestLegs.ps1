@@ -118,6 +118,7 @@ $pathPatternMap = [ordered]@{
     "eng/smoke_test/**"                              = $allLegIndices
     "eng/sdkGen/**"                                  = $allLegIndices
     "eng/DatabaseTemplates/**"                       = $allLegIndices
+    "src/shared/MssqlDocumentCacheCatalog.sql"       = @($legMssql52, $legMssql61)
     "eng/docker-compose/start-local-dms.ps1"         = $allLegIndices
     "eng/docker-compose/local-dms.compose.yml"               = $allLegIndices
     "eng/docker-compose/local-config.compose.yml"            = $allLegIndices

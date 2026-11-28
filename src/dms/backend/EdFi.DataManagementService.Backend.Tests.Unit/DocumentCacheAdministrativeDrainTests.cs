@@ -37,6 +37,95 @@ public class Given_DocumentCacheAdministrativeDrain
         CacheAheadRecoveryRequired: false
     );
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public void It_retains_a_bounded_ordinary_failure_list_when_native_failures_fill_earlier_pages(
+        bool suppressed
+    )
+    {
+        var pass = new DocumentCacheAdministrativeDrainPass(1);
+        pass.Record(
+            suppressed
+                ? DocumentCacheProjectionDrainPageResult.PageProcessed(0, suppressedDocumentIds: [101])
+                : DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [101]),
+            nativeLimitFailureIds: suppressed ? [] : [101],
+            suppressedNativeLimitFailureIds: suppressed ? [101] : [],
+            includeSuppressedDiagnostics: true
+        );
+        pass.Record(
+            suppressed
+                ? DocumentCacheProjectionDrainPageResult.PageProcessed(0, suppressedDocumentIds: [102])
+                : DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [102]),
+            includeSuppressedDiagnostics: true
+        );
+        pass.Record(
+            DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [103]),
+            includeSuppressedDiagnostics: true
+        );
+
+        pass.DiagnosticDocumentIds.Should().Equal(101);
+        pass.NativeLimitDocumentIds.Should().Equal(101);
+        pass.OrdinaryFailureDocumentIds.Should().Equal(102);
+    }
+
+    [Test]
+    public async Task It_rescans_new_work_after_an_empty_terminal_verification_page()
+    {
+        var clock = new MutableTimeProvider(ObservedAt);
+        var target = RuntimeContext(providerToken: RelationalProviderToken.SqlServer);
+        var pending = new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, false, "pending");
+        var context = CreateCommandContext(
+            new RecordingAdministrativePrimitives(
+                pending,
+                pending,
+                pending,
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, true, "empty")
+            ),
+            new RecordingMutexLease(),
+            target
+        );
+        var failed = DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [101]) with
+        {
+            NativeLimitFailureIds = [101],
+        };
+        var scheduler = new RecordingScheduler(
+            failed,
+            DocumentCacheProjectionDrainPageResult.NoEligibleWorkWithRetry(ObservedAt.AddSeconds(10)),
+            failed,
+            DocumentCacheProjectionDrainPageResult.NoEligibleWorkWithRetry(ObservedAt.AddSeconds(20)),
+            // The failed source disappears; a new write arrives after the empty page.
+            DocumentCacheProjectionDrainPageResult.NoEligibleWork,
+            DocumentCacheProjectionDrainPageResult.PageProcessed(1, 1),
+            DocumentCacheProjectionDrainPageResult.NoEligibleWork
+        );
+
+        var result = await CreateDrainer(scheduler, new RecordingDrainDelay(clock), clock)
+            .DrainToEmptyAsync(context);
+
+        result.Completed.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_requires_matching_content_version_for_native_limit_evidence()
+    {
+        var state = new DocumentCacheProjectionFailureBackoffState(2);
+        state.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded,
+            "Native limit.",
+            ObservedAt,
+            TimeSpan.FromSeconds(10),
+            requiredContentVersion: 10
+        );
+
+        state
+            .GetFailureCategory(101, 10)
+            .Should()
+            .Be(DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded);
+        state.GetFailureCategory(101, 11).Should().BeNull();
+        state.IsSuppressed(101, ObservedAt).Should().BeTrue();
+    }
+
     [Test]
     public async Task It_completes_only_after_durable_work_is_observed_empty()
     {
@@ -550,6 +639,722 @@ public class Given_DocumentCacheAdministrativeDrain
             );
     }
 
+    [Test]
+    public async Task It_bounds_poison_passes_when_failures_exceed_the_suppression_capacity()
+    {
+        MutableTimeProvider clock = new(ObservedAt);
+        var first = new DocumentProjectionWorkPage([WorkItem(101, 10)], pageSize: 1);
+        var second = new DocumentProjectionWorkPage([WorkItem(102, 10)], pageSize: 1);
+        var empty = new DocumentProjectionWorkPage([], pageSize: 1);
+        var pager = new RecordingWorkPager(first, second, empty, first, second, empty, first)
+        {
+            ProviderToken = RelationalProviderToken.SqlServer,
+        };
+        DocumentCacheProjectionTargetRuntimeContext target = RuntimeContext(
+            pageSize: 1,
+            providerToken: RelationalProviderToken.SqlServer
+        );
+        var primitives = new RecordingAdministrativePrimitives();
+        var context = CreateCommandContext(primitives, new RecordingMutexLease(), target);
+        context.MarkMutated(RebuildingLifecycle);
+        var scheduler = CreateRealScheduler(
+            new DocumentCacheProjectionDrainPageProcessor(
+                pager,
+                new RetryingItemProcessor(
+                    clock,
+                    DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                ),
+                NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+                clock
+            )
+        );
+        var delay = new RecordingDrainDelay(clock);
+
+        var result = await CreateDrainer(scheduler, delay, clock).DrainToEmptyAsync(context);
+
+        result.Completed.Should().BeFalse();
+        result.ProcessedItemCount.Should().Be(5);
+        result.AcknowledgedOrRemovedItemCount.Should().Be(0);
+        result
+            .FailureResult!.Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.PersistentPoison);
+        result.FailureResult.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
+        result.FailureResult.Lifecycle.Should().Be(DocumentCacheLifecycleState.Rebuilding);
+        result
+            .FailureResult.PhaseDiagnostics.Should()
+            .Contain(d =>
+                d.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
+                && d.AffectedDocumentIds.SequenceEqual(new long[] { 101 })
+            );
+        target.FailureBackoffState.Count.Should().Be(1);
+        target.FailureBackoffState.EvictionCount.Should().Be(4);
+        delay.Delays.Should().BeEmpty();
+        primitives.EmptinessReadCount.Should().Be(0);
+    }
+
+    [TestCase(RelationalProviderToken.PostgresqlValue)]
+    [TestCase(RelationalProviderToken.SqlServerValue)]
+    public async Task It_retries_transient_failures_beyond_two_cursor_wraps_when_suppression_capacity_is_exceeded(
+        string provider
+    )
+    {
+        RelationalProviderToken providerToken =
+            provider == RelationalProviderToken.SqlServerValue
+                ? RelationalProviderToken.SqlServer
+                : RelationalProviderToken.Postgresql;
+        MutableTimeProvider clock = new(ObservedAt);
+        var first = new DocumentProjectionWorkPage([WorkItem(101, 10)], pageSize: 1);
+        var second = new DocumentProjectionWorkPage([WorkItem(102, 10)], pageSize: 1);
+        var empty = new DocumentProjectionWorkPage([], pageSize: 1);
+        var pager = new RecordingWorkPager(
+            first,
+            second,
+            empty,
+            first,
+            second,
+            empty,
+            first,
+            second,
+            empty,
+            first,
+            second,
+            empty,
+            second,
+            empty,
+            second,
+            empty,
+            empty
+        )
+        {
+            ProviderToken = providerToken,
+        };
+        var target = RuntimeContext(pageSize: 1, providerToken: providerToken);
+        var context = CreateCommandContext(
+            new RecordingAdministrativePrimitives(
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, false, "pending"),
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, true, "empty")
+            ),
+            new RecordingMutexLease(),
+            target
+        );
+        context.MarkMutated(RebuildingLifecycle);
+        var scheduler = CreateRealScheduler(
+            new DocumentCacheProjectionDrainPageProcessor(
+                pager,
+                new RetryingItemProcessor(
+                    clock,
+                    DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure,
+                    failureCount: 6
+                ),
+                NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+                clock
+            )
+        );
+
+        var delay = new RecordingDrainDelay(clock);
+        var result = await CreateDrainer(scheduler, delay, clock).DrainToEmptyAsync(context);
+
+        result.Completed.Should().BeTrue();
+        result.FailureResult.Should().BeNull();
+        result.ProcessedItemCount.Should().Be(8);
+        result.DocumentScopedFailureCount.Should().Be(6);
+        result.AcknowledgedOrRemovedItemCount.Should().Be(2);
+        target.FailureBackoffState.Count.Should().Be(0);
+        target.FailureBackoffState.EvictionCount.Should().Be(5);
+        delay.Delays.Should().Equal(TimeSpan.FromSeconds(10));
+    }
+
+    [Test]
+    public async Task It_reports_a_current_wrapping_failure_after_an_earlier_native_source_is_deleted()
+    {
+        MutableTimeProvider clock = new(ObservedAt);
+        var first = new DocumentProjectionWorkPage([WorkItem(101, 10)], pageSize: 1);
+        var second = new DocumentProjectionWorkPage([WorkItem(102, 10)], pageSize: 1);
+        var third = new DocumentProjectionWorkPage([WorkItem(103, 10)], pageSize: 1);
+        var empty = new DocumentProjectionWorkPage([], pageSize: 1);
+        // The source for 101 is deleted after pass two; the next wrap starts at 102.
+        var pager = new RecordingWorkPager(first, second, third, empty, first, second, third, empty, second)
+        {
+            ProviderToken = RelationalProviderToken.SqlServer,
+        };
+        var context = CreateCommandContext(
+            new RecordingAdministrativePrimitives(),
+            new RecordingMutexLease(),
+            RuntimeContext(pageSize: 1, providerToken: RelationalProviderToken.SqlServer)
+        );
+        var scheduler = CreateRealScheduler(
+            new DocumentCacheProjectionDrainPageProcessor(
+                pager,
+                new RetryingItemProcessor(
+                    clock,
+                    DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                ),
+                NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+                clock
+            )
+        );
+
+        var result = await CreateDrainer(scheduler, new RecordingDrainDelay(clock), clock)
+            .DrainToEmptyAsync(context);
+
+        result
+            .FailureResult!.Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.PersistentPoison);
+        var diagnostic = result.FailureResult.PhaseDiagnostics.Single(d =>
+            d.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
+        );
+        diagnostic.AffectedDocumentIds.Should().Equal(102L);
+        diagnostic.Message.Should().Contain("Update or remove");
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_limits_native_json_remediation_advice_to_documents_with_native_limit_failures(
+        bool mixedFailures
+    )
+    {
+        MutableTimeProvider clock = new(ObservedAt);
+        var target = RuntimeContext(providerToken: RelationalProviderToken.SqlServer);
+        target.FailureBackoffState.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded,
+            "Native JSON storage limit exceeded.",
+            ObservedAt,
+            TimeSpan.FromSeconds(10)
+        );
+        target.FailureBackoffState.RecordFailure(
+            102,
+            mixedFailures
+                ? DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure
+                : DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded,
+            "Document failure.",
+            ObservedAt,
+            TimeSpan.FromSeconds(10)
+        );
+        var context = CreateCommandContext(
+            new RecordingAdministrativePrimitives(
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, false, "pending"),
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, false, "pending")
+            ),
+            new RecordingMutexLease(),
+            target
+        );
+        context.MarkMutated(RebuildingLifecycle);
+        var failedPage = DocumentCacheProjectionDrainPageResult.PageProcessed(2, 0, 2, [101, 102]) with
+        {
+            NativeLimitFailureIds = mixedFailures ? [101] : [101, 102],
+        };
+        var scheduler = new RecordingScheduler(
+            failedPage,
+            DocumentCacheProjectionDrainPageResult.NoEligibleWorkWithRetry(ObservedAt.AddSeconds(10)),
+            failedPage,
+            DocumentCacheProjectionDrainPageResult.NoEligibleWorkWithRetry(ObservedAt.AddSeconds(20)),
+            failedPage
+        );
+
+        var result = await CreateDrainer(scheduler, new RecordingDrainDelay(clock), clock)
+            .DrainToEmptyAsync(context);
+
+        result.Completed.Should().BeFalse();
+        var diagnostic = result.FailureResult!.PhaseDiagnostics.Single(d =>
+            d.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
+        );
+        diagnostic.AffectedDocumentIds.Should().Equal(mixedFailures ? [101L] : new long[] { 101, 102 });
+        diagnostic.Message.Should().Contain("Update or remove");
+        if (mixedFailures)
+        {
+            diagnostic
+                .Message.Should()
+                .Contain("Other failed document IDs observed during this traversal bounded: 102");
+        }
+    }
+
+    [Test]
+    public async Task It_keeps_draining_when_the_wrapping_page_acknowledges_work_after_poison_passes()
+    {
+        var first = new DocumentProjectionWorkPage([WorkItem(101, 10)], pageSize: 1);
+        var second = new DocumentProjectionWorkPage([WorkItem(102, 10)], pageSize: 1);
+        var empty = new DocumentProjectionWorkPage([], pageSize: 1);
+        var pager = new RecordingWorkPager(
+            first,
+            second,
+            empty,
+            first,
+            second,
+            empty,
+            first,
+            second,
+            empty,
+            second,
+            empty,
+            second,
+            empty,
+            empty
+        )
+        {
+            ProviderToken = RelationalProviderToken.SqlServer,
+        };
+        MutableTimeProvider clock = new(ObservedAt);
+        var scheduler = CreateRealScheduler(
+            new DocumentCacheProjectionDrainPageProcessor(
+                pager,
+                new RetryingItemProcessor(
+                    clock,
+                    DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded,
+                    failureCount: 4
+                ),
+                NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+                clock
+            )
+        );
+        var context = CreateCommandContext(
+            new RecordingAdministrativePrimitives(
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, false, "pending"),
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, true, "empty")
+            ),
+            new RecordingMutexLease(),
+            RuntimeContext(pageSize: 1, providerToken: RelationalProviderToken.SqlServer)
+        );
+
+        var result = await CreateDrainer(scheduler, new RecordingDrainDelay(clock), clock)
+            .DrainToEmptyAsync(context);
+
+        result.Completed.Should().BeTrue();
+        result.ProcessedItemCount.Should().Be(6);
+        result.AcknowledgedOrRemovedItemCount.Should().Be(2);
+    }
+
+    [TestCase(true, 1)]
+    [TestCase(false, 1)]
+    [TestCase(true, 2)]
+    [TestCase(false, 2)]
+    [TestCase(true, 3)]
+    [TestCase(false, 3)]
+    public async Task It_bounds_mixed_failures_after_allowing_ordinary_retries_in_either_order(
+        bool nativeLimitFirst,
+        int pageSize
+    )
+    {
+        await AssertMixedFailureDrainAsync(nativeLimitFirst, ordinaryRecovers: false, pageSize);
+    }
+
+    [TestCase(true, 1)]
+    [TestCase(false, 1)]
+    [TestCase(true, 2)]
+    [TestCase(false, 2)]
+    [TestCase(true, 3)]
+    [TestCase(false, 3)]
+    public async Task It_acknowledges_a_recovering_ordinary_document_before_reporting_native_poison_in_either_order(
+        bool nativeLimitFirst,
+        int pageSize
+    )
+    {
+        await AssertMixedFailureDrainAsync(nativeLimitFirst, ordinaryRecovers: true, pageSize);
+    }
+
+    [Test]
+    public async Task It_reports_the_remaining_native_failure_after_a_document_is_deleted_between_passes()
+    {
+        await AssertMixedFailureDrainAsync(
+            nativeLimitFirst: true,
+            ordinaryRecovers: false,
+            pageSize: 1,
+            deleteFirstNativeAfterFirstPass: true
+        );
+    }
+
+    [TestCase(true, false, 2)]
+    [TestCase(false, false, 2)]
+    [TestCase(true, true, 2)]
+    [TestCase(false, true, 2)]
+    [TestCase(true, true, 3)]
+    [TestCase(false, true, 3)]
+    public async Task It_preserves_ordinary_retries_when_failure_deadlines_are_staggered(
+        bool nativeLimitFirst,
+        bool ordinaryRecovers,
+        int pageSize
+    )
+    {
+        await AssertMixedFailureDrainAsync(
+            nativeLimitFirst,
+            ordinaryRecovers,
+            pageSize,
+            staggerFailures: true
+        );
+    }
+
+    [TestCase(true, 3)]
+    [TestCase(false, 3)]
+    [TestCase(true, 4)]
+    [TestCase(false, 4)]
+    public async Task It_retries_staggered_ordinary_failures_after_initial_healthy_progress(
+        bool ordinaryRecovers,
+        int pageSize
+    )
+    {
+        await AssertMixedFailureDrainAsync(
+            true,
+            ordinaryRecovers,
+            pageSize,
+            staggerFailures: true,
+            initialHealthyDocument: true
+        );
+    }
+
+    [TestCase(true, 3)]
+    [TestCase(false, 3)]
+    [TestCase(true, 4)]
+    [TestCase(false, 4)]
+    public async Task It_bounds_two_independently_staggered_ordinary_failures(
+        bool nativeLimitFirst,
+        int pageSize
+    )
+    {
+        await AssertMixedFailureDrainAsync(
+            nativeLimitFirst,
+            ordinaryRecovers: false,
+            pageSize,
+            staggerFailures: true,
+            additionalOrdinaryFailure: true
+        );
+    }
+
+    [Test]
+    public async Task It_retains_native_classifications_when_tied_timestamps_evict_failures_within_a_page()
+    {
+        var clock = new MutableTimeProvider(ObservedAt);
+        var target = RuntimeContext(pageSize: 2, providerToken: RelationalProviderToken.SqlServer);
+        foreach (long id in new long[] { 201, 202 })
+        {
+            target.FailureBackoffState.RecordFailure(
+                id,
+                DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded,
+                "Native limit.",
+                ObservedAt,
+                TimeSpan.FromSeconds(10)
+            );
+        }
+        var pager = new RecordingWorkPager(
+            new DocumentProjectionWorkPage([WorkItem(101, 10), WorkItem(102, 10)], pageSize: 2)
+        )
+        {
+            ProviderToken = RelationalProviderToken.SqlServer,
+        };
+        var processor = new DocumentCacheProjectionDrainPageProcessor(
+            pager,
+            new RetryingItemProcessor(
+                clock,
+                DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+            ),
+            NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+            clock
+        );
+
+        var result = await processor.ProcessPageAsync(
+            new DocumentCacheProjectionDrainPageRequest(
+                target,
+                DocumentCacheProjectionDrainInvocationKind.Administrative
+            )
+        );
+
+        target.FailureBackoffState.CreateFailureDiagnosticsSnapshot().DocumentIds.Should().NotContain(101);
+        result.NativeLimitFailureIds.Should().Equal(101, 102);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_preserves_provider_specific_diagnostics_when_the_first_suppressed_source_disappears(
+        bool isSqlServer
+    )
+    {
+        var clock = new MutableTimeProvider(ObservedAt);
+        var target = RuntimeContext(
+            providerToken: isSqlServer
+                ? RelationalProviderToken.SqlServer
+                : RelationalProviderToken.Postgresql
+        );
+        target.FailureBackoffState.RecordFailure(
+            101,
+            DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure,
+            "First failure.",
+            ObservedAt,
+            TimeSpan.FromSeconds(10)
+        );
+        target.FailureBackoffState.RecordFailure(
+            102,
+            DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure,
+            "Second failure.",
+            ObservedAt,
+            TimeSpan.FromSeconds(20)
+        );
+        // The second traversal represents a source deletion; retained diagnostics can
+        // still include the deleted source while the durable pager no longer returns it.
+        var scheduler = new RecordingScheduler(
+            DocumentCacheProjectionDrainPageResult.PageProcessed(0, suppressedDocumentIds: [101, 102]),
+            DocumentCacheProjectionDrainPageResult.NoEligibleWorkWithRetry(ObservedAt.AddSeconds(10)),
+            DocumentCacheProjectionDrainPageResult.PageProcessed(0, suppressedDocumentIds: [102]),
+            DocumentCacheProjectionDrainPageResult.NoEligibleWorkWithRetry(ObservedAt.AddSeconds(20))
+        );
+        var context = CreateCommandContext(
+            new RecordingAdministrativePrimitives(
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, false, "pending"),
+                new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, false, "pending")
+            ),
+            new RecordingMutexLease(),
+            target
+        );
+
+        var result = await CreateDrainer(scheduler, new RecordingDrainDelay(clock), clock)
+            .DrainToEmptyAsync(context);
+
+        result
+            .FailureResult!.PhaseDiagnostics.Single(d =>
+                d.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
+            )
+            .AffectedDocumentIds.Should()
+            .Equal(isSqlServer ? [102L] : new long[] { 101, 102 });
+    }
+
+    [TestCase(true, false)]
+    [TestCase(false, false)]
+    [TestCase(true, true)]
+    [TestCase(false, true)]
+    public async Task It_preserves_ordinary_retries_when_processing_takes_longer_than_backoff(
+        bool nativeLimitFirst,
+        bool ordinaryRecovers
+    )
+    {
+        await AssertMixedFailureDrainAsync(
+            nativeLimitFirst,
+            ordinaryRecovers,
+            pageSize: 2,
+            slowOrdinaryAttempts: true
+        );
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_does_not_spend_a_slow_ordinary_documents_retries_on_a_faster_ordinary_document(
+        bool ordinaryRecovers
+    )
+    {
+        await AssertMixedFailureDrainAsync(
+            true,
+            ordinaryRecovers,
+            pageSize: 3,
+            slowOrdinaryAttempts: true,
+            additionalOrdinaryFailure: true
+        );
+    }
+
+    [Test]
+    public async Task It_bounds_native_poison_after_the_ordinary_source_is_deleted()
+    {
+        await AssertMixedFailureDrainAsync(
+            true,
+            ordinaryRecovers: false,
+            pageSize: 2,
+            deleteOrdinaryBeforeRetry: true
+        );
+    }
+
+    [Test]
+    public async Task It_omits_a_native_failure_deleted_before_the_terminal_suppressed_scan()
+    {
+        await AssertMixedFailureDrainAsync(
+            nativeLimitFirst: true,
+            ordinaryRecovers: false,
+            pageSize: 2,
+            deleteNativeBeforeTerminalScan: true
+        );
+    }
+
+    private static async Task AssertMixedFailureDrainAsync(
+        bool nativeLimitFirst,
+        bool ordinaryRecovers,
+        int pageSize,
+        bool deleteFirstNativeAfterFirstPass = false,
+        bool staggerFailures = false,
+        bool deleteNativeBeforeTerminalScan = false,
+        bool slowOrdinaryAttempts = false,
+        bool additionalOrdinaryFailure = false,
+        bool deleteOrdinaryBeforeRetry = false,
+        bool initialHealthyDocument = false
+    )
+    {
+        MutableTimeProvider clock = new(ObservedAt);
+        using var attemptLimit = new CancellationTokenSource();
+        var queue = new MixedFailureWorkQueue(
+            clock,
+            nativeLimitFirst,
+            ordinaryRecovers,
+            attemptLimit,
+            deleteFirstNativeAfterFirstPass,
+            staggerFailures,
+            deleteNativeBeforeTerminalScan,
+            slowOrdinaryAttempts,
+            additionalOrdinaryFailure,
+            deleteOrdinaryBeforeRetry,
+            initialHealthyDocument
+        );
+        var target = RuntimeContext(pageSize: pageSize, providerToken: RelationalProviderToken.SqlServer);
+        var context = CreateCommandContext(
+            new RecordingAdministrativePrimitives(
+                Enumerable
+                    .Repeat(
+                        new DocumentCacheAdministrativeProjectedStateEmptinessResult(true, false, "pending"),
+                        additionalOrdinaryFailure ? 20 : 10
+                    )
+                    .ToArray()
+            ),
+            new RecordingMutexLease(),
+            target
+        );
+        context.MarkMutated(RebuildingLifecycle);
+        var scheduler = CreateRealScheduler(
+            new DocumentCacheProjectionDrainPageProcessor(
+                queue,
+                queue,
+                NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
+                clock
+            )
+        );
+        var delay = new RecordingDrainDelay(clock);
+        DocumentCacheAdministrativeDrainToEmptyResult? result = null;
+
+        Func<Task> drain = async () =>
+            result = await CreateDrainer(scheduler, delay, clock)
+                .DrainToEmptyAsync(context, attemptLimit.Token);
+
+        await drain
+            .Should()
+            .NotThrowAsync(
+                $"mixed poison must be identified within {(additionalOrdinaryFailure ? 40 : 20)} item attempts"
+            );
+
+        result!
+            .FailureResult!.Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.PersistentPoison);
+        result.FailureResult.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
+        result.FailureResult.Lifecycle.Should().Be(DocumentCacheLifecycleState.Rebuilding);
+        var diagnostic = result.FailureResult.PhaseDiagnostics.Single(d =>
+            d.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
+        );
+        if (
+            !ordinaryRecovers
+            && !deleteNativeBeforeTerminalScan
+            && !deleteOrdinaryBeforeRetry
+            && !additionalOrdinaryFailure
+        )
+        {
+            long ordinaryDocumentId = nativeLimitFirst ? 102L : 101L;
+            diagnostic
+                .Message.Should()
+                .Contain(
+                    $"Other failed document IDs observed during this traversal bounded: {ordinaryDocumentId}"
+                );
+        }
+        long nativeDocumentId = nativeLimitFirst ? 101L : 102L;
+        if (deleteFirstNativeAfterFirstPass)
+        {
+            nativeDocumentId = 103L;
+        }
+        if (deleteNativeBeforeTerminalScan)
+        {
+            diagnostic.AffectedDocumentIds.Should().Equal(102L);
+            diagnostic.Message.Should().NotContain("Update or remove");
+            queue.PendingDocumentIds.Should().Equal(102L);
+        }
+        else
+        {
+            diagnostic.Message.Should().Contain("Update or remove");
+            diagnostic.AffectedDocumentIds.Should().Equal(nativeDocumentId);
+            queue.PendingDocumentIds.Should().Contain(nativeDocumentId);
+        }
+        if (deleteFirstNativeAfterFirstPass)
+        {
+            queue.PendingDocumentIds.Should().NotContain(101);
+        }
+        if (ordinaryRecovers)
+        {
+            queue.OrdinaryAttemptCount.Should().Be(4);
+            result.AcknowledgedOrRemovedItemCount.Should().Be(initialHealthyDocument ? 2 : 1);
+            queue.PendingDocumentIds.Should().NotContain(nativeLimitFirst ? 102L : 101L);
+        }
+        else
+        {
+            if (deleteOrdinaryBeforeRetry)
+            {
+                queue.OrdinaryAttemptCount.Should().Be(1);
+            }
+            else
+            {
+                queue.OrdinaryAttemptCount.Should().BeGreaterThanOrEqualTo(4);
+            }
+            if (additionalOrdinaryFailure)
+            {
+                queue.AdditionalOrdinaryAttemptCount.Should().BeGreaterThanOrEqualTo(4);
+            }
+            result.AcknowledgedOrRemovedItemCount.Should().Be(initialHealthyDocument ? 1 : 0);
+            int expectedPendingCount = additionalOrdinaryFailure ? 3 : 2;
+            if (deleteNativeBeforeTerminalScan || deleteOrdinaryBeforeRetry)
+            {
+                expectedPendingCount = 1;
+            }
+            queue.PendingDocumentIds.Should().HaveCount(expectedPendingCount);
+        }
+        if (pageSize == 1)
+        {
+            target.FailureBackoffState.EvictionCount.Should().BeGreaterThan(0);
+        }
+        delay
+            .Delays.Should()
+            .NotBeEmpty()
+            .And.OnlyContain(value => value > TimeSpan.Zero && value <= TimeSpan.FromSeconds(10));
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public void It_does_not_classify_mixed_failure_passes_as_native_limit_passes_in_either_order(
+        bool nativeLimitFirst
+    )
+    {
+        var pass = new DocumentCacheAdministrativeDrainPass(1);
+        var nativeLimitPage = DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [101]);
+        var ordinaryPage = DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [102]);
+
+        if (nativeLimitFirst)
+        {
+            pass.Record(nativeLimitPage, nativeLimitFailureIds: [101]);
+            pass.Record(ordinaryPage);
+        }
+        else
+        {
+            pass.Record(ordinaryPage);
+            pass.Record(nativeLimitPage, nativeLimitFailureIds: [101]);
+        }
+
+        pass.IsUnproductivePoisonPass.Should().BeTrue();
+        pass.IsUnproductiveNativeLimitPass.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_classifies_a_pass_of_only_native_limit_failures_after_the_suppression_state_evicts_them()
+    {
+        var pass = new DocumentCacheAdministrativeDrainPass(1);
+
+        pass.Record(
+            DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [101]),
+            nativeLimitFailureIds: [101]
+        );
+        pass.Record(
+            DocumentCacheProjectionDrainPageResult.PageProcessed(1, 0, 1, [102]),
+            nativeLimitFailureIds: [102]
+        );
+
+        pass.IsUnproductiveNativeLimitPass.Should().BeTrue();
+    }
+
     private static DocumentCacheAdministrativeDrainer CreateDrainer(
         IDocumentCacheProjectionScheduler scheduler,
         IDocumentCacheAdministrativeDrainDelay? delay = null,
@@ -606,9 +1411,12 @@ public class Given_DocumentCacheAdministrativeDrain
     private static DocumentCacheProjectionTargetRuntimeContext RuntimeContext(
         IDocumentCacheMaterializer? materializer = null,
         IDocumentCacheWriter? writer = null,
-        IDocumentCacheSessionBoundWriter? sessionBoundWriter = null
+        IDocumentCacheSessionBoundWriter? sessionBoundWriter = null,
+        int pageSize = 3,
+        RelationalProviderToken? providerToken = null
     )
     {
+        providerToken ??= RelationalProviderToken.Postgresql;
         DocumentCacheTargetExecutionContext executionContext = new(
             TargetKey,
             new DocumentCacheTargetContextGeneration(1),
@@ -616,14 +1424,14 @@ public class Given_DocumentCacheAdministrativeDrain
                 readAccelerationEnabled: true,
                 directFillTimeout: TimeSpan.FromMilliseconds(250),
                 projectorPollInterval: TimeSpan.FromSeconds(5),
-                projectorPageSize: 3,
+                projectorPageSize: pageSize,
                 projectorMaxConcurrentTargets: 1,
                 projectorFailureBackoff: TimeSpan.FromSeconds(10),
                 projectorBaselineHighWaterMark: 100,
                 administrationWorkflowTimeout: TimeSpan.FromHours(24)
             ),
-            new DocumentCacheTargetDataStoreMetadata(TargetKey.DataStoreId, "postgresql"),
-            new DocumentCacheTargetConnectionInput(RelationalProviderToken.Postgresql, "connection"),
+            new DocumentCacheTargetDataStoreMetadata(TargetKey.DataStoreId, providerToken.Value),
+            new DocumentCacheTargetConnectionInput(providerToken, "connection"),
             Fingerprint,
             RebuildingLifecycle,
             new DocumentCacheInventoryValidationResult(
@@ -640,7 +1448,7 @@ public class Given_DocumentCacheAdministrativeDrain
         return new DocumentCacheProjectionTargetRuntimeContext(
             executionContext,
             new DocumentCacheProjectionTargetProviderAdapters(
-                RelationalProviderToken.Postgresql,
+                providerToken,
                 MaterializationTargetContext(),
                 materializer ?? new RecordingDocumentCacheMaterializer(),
                 writer ?? new RecordingDocumentCacheWriter()
@@ -726,7 +1534,7 @@ public class Given_DocumentCacheAdministrativeDrain
     {
         private readonly Queue<DocumentProjectionWorkPage> _pages = new(pages);
 
-        public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
+        public RelationalProviderToken ProviderToken { get; init; } = RelationalProviderToken.Postgresql;
 
         public List<DocumentProjectionWorkPageRequest> Requests { get; } = [];
 
@@ -737,6 +1545,127 @@ public class Given_DocumentCacheAdministrativeDrain
         {
             Requests.Add(request);
             return Task.FromResult(_pages.Dequeue());
+        }
+    }
+
+    private sealed class MixedFailureWorkQueue(
+        MutableTimeProvider clock,
+        bool nativeLimitFirst,
+        bool ordinaryRecovers,
+        CancellationTokenSource attemptLimit,
+        bool deleteFirstNativeAfterFirstPass = false,
+        bool staggerFailures = false,
+        bool deleteNativeBeforeTerminalScan = false,
+        bool slowOrdinaryAttempts = false,
+        bool additionalOrdinaryFailure = false,
+        bool deleteOrdinaryBeforeRetry = false,
+        bool initialHealthyDocument = false
+    ) : IDocumentProjectionWorkPager, IDocumentCacheProjectionItemProcessor
+    {
+        private int _attemptCount;
+        private int _passStartCount;
+        private readonly SortedSet<long> _pendingDocumentIds = deleteFirstNativeAfterFirstPass
+            ? [101, 102, 103]
+            : [101, 102];
+
+        public RelationalProviderToken ProviderToken => RelationalProviderToken.SqlServer;
+
+        public int OrdinaryAttemptCount { get; private set; }
+
+        public int AdditionalOrdinaryAttemptCount { get; private set; }
+
+        public IReadOnlyCollection<long> PendingDocumentIds => _pendingDocumentIds;
+
+        public Task<DocumentProjectionWorkPage> ReadPageAsync(
+            DocumentProjectionWorkPageRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (_attemptCount == 0 && initialHealthyDocument)
+            {
+                _pendingDocumentIds.Add(99);
+            }
+            if (!request.Cursor.HasValue && ++_passStartCount == 2 && deleteFirstNativeAfterFirstPass)
+            {
+                // Model the work-row cascade from deleting the canonical source document.
+                _pendingDocumentIds.Remove(101);
+            }
+            if (additionalOrdinaryFailure)
+            {
+                _pendingDocumentIds.Add(100);
+            }
+            if (!request.Cursor.HasValue && OrdinaryAttemptCount >= 1 && deleteOrdinaryBeforeRetry)
+            {
+                _pendingDocumentIds.Remove(nativeLimitFirst ? 102L : 101L);
+            }
+            if (!request.Cursor.HasValue && OrdinaryAttemptCount >= 4 && deleteNativeBeforeTerminalScan)
+            {
+                // Delete after the last processing pass, before any terminal suppressed scan.
+                _pendingDocumentIds.Remove(101);
+            }
+            return Task.FromResult(
+                new DocumentProjectionWorkPage(
+                    _pendingDocumentIds
+                        .Where(id => !request.Cursor.HasValue || id > request.Cursor.LastDocumentId)
+                        .Take(request.PageSize)
+                        .Select(id => WorkItem(id, 10)),
+                    request.PageSize
+                )
+            );
+        }
+
+        public Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
+            DocumentCacheProjectionItemProcessRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (++_attemptCount > (additionalOrdinaryFailure ? 40 : 20))
+            {
+                attemptLimit.Cancel();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            long id = request.WorkItem.DocumentId;
+            if (id == 99)
+            {
+                _pendingDocumentIds.Remove(id);
+                return Task.FromResult(DocumentCacheProjectionItemProcessResult.AcknowledgedOrRemoved);
+            }
+            if (id == 100)
+            {
+                AdditionalOrdinaryAttemptCount++;
+            }
+            bool nativeLimitFailure = id == (nativeLimitFirst ? 101 : 102) || id == 103;
+            if (staggerFailures && _attemptCount is 2 or 3)
+            {
+                clock.Advance(TimeSpan.FromSeconds(2));
+            }
+            if (!nativeLimitFailure && id != 100 && slowOrdinaryAttempts)
+            {
+                clock.Advance(TimeSpan.FromSeconds(15));
+            }
+            if (!nativeLimitFailure && id != 100 && ++OrdinaryAttemptCount > 3 && ordinaryRecovers)
+            {
+                _pendingDocumentIds.Remove(id);
+                request.TargetContext.FailureBackoffState.ClearFailure(id);
+                return Task.FromResult(DocumentCacheProjectionItemProcessResult.AcknowledgedOrRemoved);
+            }
+
+            request.TargetContext.FailureBackoffState.RecordFailure(
+                id,
+                nativeLimitFailure
+                    ? DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                    : DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure,
+                "Document projection failed.",
+                clock.GetUtcNow(),
+                TimeSpan.FromSeconds(10),
+                request.WorkItem.RequiredContentVersion
+            );
+            return Task.FromResult(
+                nativeLimitFailure
+                    ? DocumentCacheProjectionItemProcessResult.NativeJsonLimitFailure
+                    : DocumentCacheProjectionItemProcessResult.DocumentScopedFailure
+            );
         }
     }
 
@@ -755,6 +1684,41 @@ public class Given_DocumentCacheAdministrativeDrain
             _ = cancellationToken;
             Requests.Add(request);
             return Task.FromResult(_results.Dequeue());
+        }
+    }
+
+    private sealed class RetryingItemProcessor(
+        TimeProvider clock,
+        DocumentCacheProjectionDocumentDiagnosticCategory category,
+        int failureCount = int.MaxValue
+    ) : IDocumentCacheProjectionItemProcessor
+    {
+        private int _attemptCount;
+
+        public Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
+            DocumentCacheProjectionItemProcessRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (++_attemptCount > failureCount)
+            {
+                request.TargetContext.FailureBackoffState.ClearFailure(request.WorkItem.DocumentId);
+                return Task.FromResult(DocumentCacheProjectionItemProcessResult.AcknowledgedOrRemoved);
+            }
+
+            request.TargetContext.FailureBackoffState.RecordFailure(
+                request.WorkItem.DocumentId,
+                category,
+                "Document projection failed.",
+                clock.GetUtcNow(),
+                TimeSpan.FromSeconds(10),
+                request.WorkItem.RequiredContentVersion
+            );
+            return Task.FromResult(
+                category == DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                    ? DocumentCacheProjectionItemProcessResult.NativeJsonLimitFailure
+                    : DocumentCacheProjectionItemProcessResult.DocumentScopedFailure
+            );
         }
     }
 

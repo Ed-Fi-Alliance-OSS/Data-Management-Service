@@ -667,7 +667,13 @@ public sealed partial class DmsDataStoreProvisioningService(
             );
             if (verdict is DmsTargetValidation.Invalid invalid)
             {
-                throw StepFailed(invalid.Code, ValidateStagingStep + "." + invalid.Check);
+                throw new DmsProvisioningFailedException(
+                    DmsProvisioningFailure.ForTargetValidation(
+                        invalid,
+                        ValidateStagingStep,
+                        manifest.DatabaseEngine
+                    )
+                );
             }
 
             if (identity is not DmsIdentityRead.Found package)

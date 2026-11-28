@@ -1802,10 +1802,17 @@ jobs:
 
       - name: Run Backend CDC Connector Template Smoke Tests
         run: |
+          $qualified = Get-Content 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json' -Raw | ConvertFrom-Json -AsHashtable
+          $filter = 'Category=CdcConnectorTemplateSmoke'
+          if ($env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE -ceq $qualified.image -and
+              -not [object]::Equals($qualified['mssqlNativeDocumentCache'], $true)) {
+            $filter += '&Category!=MssqlIntegration'
+            Write-Warning 'SQL Server native connector smoke requires a native-capable candidate or a qualified shipped worker.'
+          }
           dotnet test ${{ env.TEST_ASSEMBLY }} `
             -v normal `
             --results-directory "./src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/TestResults" `
-            --filter "Category=CdcConnectorTemplateSmoke" `
+            --filter $filter `
             --logger "trx;LogFileName=EdFi.DataManagementService.Backend.Cdc.Tests.Integration.ConnectorTemplateSmoke.trx" `
             --logger "console" `
             --nologo

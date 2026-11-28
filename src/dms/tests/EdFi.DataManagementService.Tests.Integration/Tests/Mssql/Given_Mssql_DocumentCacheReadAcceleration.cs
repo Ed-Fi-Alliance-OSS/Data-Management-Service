@@ -7,6 +7,8 @@ using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using EdFi.DataManagementService.Tests.Integration.Mssql;
 using EdFi.DataManagementService.Tests.Integration.Scenarios;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 
@@ -36,6 +38,52 @@ public sealed class Given_Mssql_DocumentCacheReadAcceleration : MssqlApiIntegrat
         DocumentCacheReadAccelerationScenario.It_shapes_cached_profile_and_descriptor_conditional_get(
             Harness
         );
+}
+
+[Category("DocumentCacheReadAcceleration")]
+public sealed class Given_Mssql_DocumentCacheReadAcceleration_With_An_Oversized_Candidate
+    : MssqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.ProfileRootOnlyMerge;
+    protected override bool EnableDocumentCacheReadAcceleration => true;
+    protected override bool RecordDocumentCacheReadTelemetry => true;
+    protected override string DocumentCacheReadAccelerationDirectFillTimeout => "00:00:05";
+
+    protected override void ConfigureAdditionalServices(IServiceCollection services) =>
+        DocumentCacheReadAccelerationScenario.ConfigureOversizedCacheCandidate(services);
+
+    [Test]
+    public Task It_serves_the_document_relationally_and_projects_following_work() =>
+        DocumentCacheReadAccelerationScenario.It_serves_relationally_and_projects_following_work_when_native_json_is_too_large(
+            Harness
+        );
+}
+
+[Category("DocumentCacheReadAcceleration")]
+public sealed class Given_Mssql_DocumentCacheReadAcceleration_With_Invalid_Physical_Marker
+    : MssqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.ProfileRootOnlyMerge;
+    protected override bool EnableDocumentCacheReadAcceleration => true;
+    protected override bool RecordDocumentCacheReadTelemetry => true;
+
+    protected override async Task<string> LeaseDatabaseAsync(FixtureContext fixture)
+    {
+        var connectionString = await base.LeaseDatabaseAsync(fixture);
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE dms.DocumentCacheState SET ProjectionLifecycleState = 'Tracking' WHERE StateId = 1;
+            UPDATE dms.MssqlPhysicalSchema SET MssqlPhysicalSchemaVersion = 'v1';
+            """;
+        await command.ExecuteNonQueryAsync();
+        return connectionString;
+    }
+
+    [Test]
+    public Task It_rejects_projection_and_direct_fill_while_serving_the_selected_target_relationally() =>
+        DocumentCacheReadAccelerationScenario.It_serves_relationally_when_physical_admission_fails(Harness);
 }
 
 [Category("DocumentCacheReadAcceleration")]

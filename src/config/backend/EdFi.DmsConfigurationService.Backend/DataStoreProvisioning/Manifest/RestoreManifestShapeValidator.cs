@@ -10,7 +10,7 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 
 /// <summary>
-/// Validates a strictly parsed restore manifest against the version-1 contract, rule for rule and in the
+/// Validates a strictly parsed restore manifest against the engine-specific contract, rule for rule and in the
 /// order of the delivered <c>Assert-RestoreManifestShape</c>, and materializes the <see cref="RestoreManifest"/>.
 /// Beyond the delivered rules it rejects any member that is not part of the contract, at every level.
 /// Every integer must be a JSON number with no fraction or exponent; every text field a JSON string;
@@ -41,6 +41,7 @@ internal static partial class RestoreManifestShapeValidator
         "engineVersion",
         "databaseCompatibilityLevel",
         "documentJsonColumnType",
+        "mssqlPhysicalSchemaVersion",
         "inventory",
         "inventorySha256",
         "artifactFileName",
@@ -65,6 +66,25 @@ internal static partial class RestoreManifestShapeValidator
         {
             throw new RestoreManifestException(
                 $"The restore manifest field 'databaseEngine' must be exactly {EngineRule}."
+            );
+        }
+
+        if (databaseEngine == RestoreManifest.MssqlEngine && version != RestoreManifest.MssqlFormatVersion)
+        {
+            throw new RestoreManifestException(
+                "The restore manifest field 'version' must be 2 for mssql; reprovision legacy templates for native DocumentCache."
+            )
+            {
+                IsLegacyMssqlTemplate = version == 1,
+            };
+        }
+        if (
+            databaseEngine == RestoreManifest.PostgresqlEngine
+            && version != RestoreManifest.PostgresqlFormatVersion
+        )
+        {
+            throw new RestoreManifestException(
+                "The restore manifest field 'version' is unsupported; only version 1 is supported for postgresql."
             );
         }
 
@@ -97,6 +117,36 @@ internal static partial class RestoreManifestShapeValidator
         string engineVersion = RequireString(root, "engineVersion");
         int? databaseCompatibilityLevel = ReadCompatibilityLevel(root, databaseEngine);
         string documentJsonColumnType = RequireString(root, "documentJsonColumnType");
+        string? physicalVersion = null;
+        if (databaseEngine == RestoreManifest.MssqlEngine)
+        {
+            physicalVersion = RequireString(root, "mssqlPhysicalSchemaVersion");
+            if (physicalVersion != RestoreManifest.NativeMssqlPhysicalSchemaVersion)
+            {
+                throw new RestoreManifestException(
+                    "The restore manifest field 'mssqlPhysicalSchemaVersion' must be v2."
+                );
+            }
+            if (documentJsonColumnType != RestoreManifest.MssqlDocumentJsonColumnType)
+            {
+                throw new RestoreManifestException(
+                    "The restore manifest field 'documentJsonColumnType' must be json for mssql."
+                );
+            }
+            if (!DmsEngineCompatibility.TryParseRequiredMajor(engineVersion, out int major) || major < 17)
+            {
+                throw new RestoreManifestException(
+                    "The restore manifest field 'engineVersion' requires SQL Server major version 17 or later."
+                );
+            }
+        }
+        else if (root.TryGetProperty("mssqlPhysicalSchemaVersion", out _))
+        {
+            throw new RestoreManifestException(
+                "The restore manifest field 'mssqlPhysicalSchemaVersion' must be omitted for postgresql."
+            );
+        }
+
         string inventorySha256 = RequireSha256(root, "inventorySha256");
 
         CanonicalInventory inventory = CanonicalInventoryJson.Read(RequireMember(root, "inventory"));
@@ -134,6 +184,7 @@ internal static partial class RestoreManifestShapeValidator
             EngineVersion = engineVersion,
             DatabaseCompatibilityLevel = databaseCompatibilityLevel,
             DocumentJsonColumnType = documentJsonColumnType,
+            MssqlPhysicalSchemaVersion = physicalVersion,
             Inventory = inventory,
             InventorySha256 = inventorySha256,
             ArtifactFileName = artifactFileName,
@@ -155,7 +206,7 @@ internal static partial class RestoreManifestShapeValidator
             if (!contractMembers.Contains(property.Name))
             {
                 throw new RestoreManifestException(
-                    $"{subject} declares a member at position {position} that is not part of the version {RestoreManifest.SupportedVersion} contract."
+                    $"{subject} declares a member at position {position} that is not part of the restore manifest contract."
                 );
             }
         }
@@ -168,13 +219,6 @@ internal static partial class RestoreManifestShapeValidator
         {
             throw new RestoreManifestException(
                 "The restore manifest field 'version' must be an integer manifest format version."
-            );
-        }
-
-        if (version != RestoreManifest.SupportedVersion)
-        {
-            throw new RestoreManifestException(
-                $"The restore manifest field 'version' is unsupported; only version {RestoreManifest.SupportedVersion} is supported."
             );
         }
 

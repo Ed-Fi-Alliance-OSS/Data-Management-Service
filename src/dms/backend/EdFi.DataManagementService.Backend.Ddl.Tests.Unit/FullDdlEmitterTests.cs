@@ -11,6 +11,19 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 
 [TestFixture]
+public class Given_Mssql_FullDdlEmitter_Output
+{
+    [Test]
+    public void It_emits_exactly_one_final_newline_so_the_manifest_matches_the_written_SQL()
+    {
+        var schemaSet = SmallFixtureEffectiveSchemaSetLoader.Load("minimal");
+        (_, string sql) = DdlPipelineHelpers.BuildDdlForDialect(schemaSet, SqlDialect.Mssql, strict: false);
+
+        sql.ReplaceLineEndings("\n").Should().EndWith("\n").And.NotEndWith("\n\n");
+    }
+}
+
+[TestFixture]
 public class Given_JoinSegments_With_All_Segments_Having_Trailing_Newlines
 {
     private string _result = default!;
@@ -155,6 +168,26 @@ public class Given_FullDdlEmitter_Script_Prologue(SqlDialect dialect)
             .Matches(_sql, "^SET QUOTED_IDENTIFIER ON;$", RegexOptions.Multiline)
             .Count.Should()
             .Be(expected);
+    }
+
+    [Test]
+    public void It_should_compile_the_engine_guard_before_the_physical_catalog_query()
+    {
+        if (dialect != SqlDialect.Mssql)
+        {
+            return;
+        }
+
+        var batches = Regex.Split(_sql, @"^GO\s*$", RegexOptions.Multiline);
+        int engineBatch = Array.FindIndex(batches, batch => batch.Contains("THROW 51128,"));
+        int catalogBatch = Array.FindIndex(batches, batch => batch.Contains("TRANSLATE("));
+        engineBatch.Should().BeGreaterOrEqualTo(0);
+        catalogBatch
+            .Should()
+            .BeGreaterThan(
+                engineBatch,
+                "SQL Server 2016 must report the engine floor before compiling TRANSLATE"
+            );
     }
 }
 

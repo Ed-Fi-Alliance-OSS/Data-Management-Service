@@ -75,6 +75,35 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
     protected override DbConnection CreateConnection(string connectionString) =>
         new SqlConnection(connectionString);
 
+    public override void CheckPlatformPreconditions(string connectionString)
+    {
+        var builder = new SqlConnectionStringBuilder(connectionString) { InitialCatalog = "master" };
+        using var connection = CreateConnection(builder.ConnectionString);
+        connection.Open();
+        ExecutePhysicalSchemaGuard(connection, MssqlDocumentCachePhysicalSchema.PlatformGuardSql);
+    }
+
+    protected override void ValidatePlatformCompatibility(DbConnection connection)
+    {
+        ExecutePhysicalSchemaGuard(connection, MssqlDocumentCachePhysicalSchema.PlatformGuardSql);
+        ExecutePhysicalSchemaGuard(connection, MssqlDocumentCachePhysicalSchema.ProvisioningGuardSql);
+    }
+
+    private static void ExecutePhysicalSchemaGuard(DbConnection connection, string sql)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        try
+        {
+            command.ExecuteNonQuery();
+        }
+        catch (SqlException exception)
+            when (MssqlPhysicalSchemaCompatibilityException.IsGuardFailure(exception))
+        {
+            throw new MssqlPhysicalSchemaCompatibilityException(exception);
+        }
+    }
+
     public override string GetDatabaseName(string connectionString)
     {
         var builder = new SqlConnectionStringBuilder(connectionString);
@@ -206,6 +235,11 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
                     "Failed to roll back transaction for database: {DatabaseName}",
                     LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
                 );
+            }
+
+            if (MssqlPhysicalSchemaCompatibilityException.IsGuardFailure(ex))
+            {
+                throw new MssqlPhysicalSchemaCompatibilityException(ex);
             }
 
             throw new InvalidOperationException(

@@ -28,11 +28,12 @@ BeforeAll {
 
     function script:Test-SigningEligibleExpression {
         # Evaluates the signing rule for one event, ref, and signing-enabled variable.
-        param([string]$Expression, [string]$EventName, [string]$Ref, [string]$SigningEnabled = "")
+        param([string]$Expression, [string]$EventName, [string]$Ref, [string]$SigningEnabled = "", [bool]$Requested = $true)
 
         return Test-WorkflowExpression -Expression $Expression -Run @{
             "github.event_name" = $EventName
             "github.ref" = $Ref
+            "inputs.attest_and_attach_release_assets" = $Requested
             "vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED" = $SigningEnabled
         }
     }
@@ -46,11 +47,13 @@ BeforeAll {
             [hashtable]$Results,
             [string]$EventName = "push",
             [string]$Ref = "refs/heads/main",
-            [string]$RefType = "branch"
+            [string]$RefType = "branch",
+            [string]$Engine = "postgresql"
         )
 
         $run = @{
             "inputs.publish_package" = $PublishPackage
+            "inputs.database_engine" = $Engine
             "github.event_name" = $EventName
             "github.ref" = $Ref
             "github.ref_type" = $RefType
@@ -244,6 +247,7 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
     }
 
     It "binds only sign-template-package, gated on eligibility and the signing-enabled variable, to the protected environment" {
+        $script:content | Should -Match '(?m)^      attest_and_attach_release_assets:\n        description: [^\n]+\n        required: false\n        type: boolean\n        default: true$'
         $environmentLines = @($script:content -split "`n" | Where-Object { $_ -match '^\s*environment:' })
         # The other two are the publishing environment of the publish and promote jobs, pinned by
         # the publishing-token test below.
@@ -251,7 +255,7 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
         $script:signJob.Contains($environmentLines[0]) | Should -BeTrue
 
         $script:signJob.Contains("`n    needs: build-template`n") | Should -BeTrue
-        $script:signJob.Contains("`n    if: `${{ $script:signingEligibleExpression && $script:signingEnabledExpression }}`n") | Should -BeTrue
+        $script:signJob.Contains("`n    if: `${{ inputs.attest_and_attach_release_assets && $script:signingEligibleExpression && $script:signingEnabledExpression }}`n") | Should -BeTrue
         # A job without an environment has no path to the environment secret.
         $script:buildJob | Should -Not -Match '(?m)^\s*environment:'
         $script:companionJob | Should -Not -Match '(?m)^\s*environment:'
@@ -282,18 +286,33 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
         Test-SigningEligibleExpression -Expression $jobCondition -EventName $EventName -Ref $Ref -SigningEnabled $SigningEnabled | Should -Be $Runs
     }
 
+    It "signs and attaches release metadata according to caller intent for <Case>" -ForEach @(
+        @{ Case = "held main push"; EventName = "push"; Ref = "refs/heads/main"; Requested = $false; Sign = $false; Attach = $false }
+        @{ Case = "held tag push"; EventName = "push"; Ref = "refs/tags/v8.2.0"; Requested = $false; Sign = $false; Attach = $false }
+        @{ Case = "tag verification dispatch"; EventName = "workflow_dispatch"; Ref = "refs/tags/v8.2.0"; Requested = $false; Sign = $false; Attach = $false }
+        @{ Case = "main publication dispatch"; EventName = "workflow_dispatch"; Ref = "refs/heads/main"; Requested = $true; Sign = $true; Attach = $false }
+        @{ Case = "tag publication"; EventName = "push"; Ref = "refs/tags/v8.2.0"; Requested = $true; Sign = $true; Attach = $true }
+    ) {
+        $attachJob = Get-WorkflowJobBlock -Content $script:content -JobName "attach-sbom-and-provenance-to-release"
+        $run = @{ EventName = $EventName; Ref = $Ref; SigningEnabled = "true"; Requested = $Requested }
+        Test-SigningEligibleExpression -Expression (Get-WorkflowJobCondition $script:signJob) @run | Should -Be $Sign
+        Test-SigningEligibleExpression -Expression (Get-WorkflowJobCondition $attachJob) @run | Should -Be $Attach
+    }
+
     It "says loudly when a build will not be signed (<Case>)" -ForEach @(
-        @{ Case = "ineligible run"; Eligible = "false"; Enabled = "true"; Notice = "*::notice title=Unattested template build::Only main and v*.*.* tag runs (never pull requests) sign template packages*UNATTESTED*" }
-        @{ Case = "signing not enabled"; Eligible = "true"; Enabled = "false"; Notice = "*::notice title=Unattested template build::The TEMPLATE_ATTESTATION_SIGNING_ENABLED repository variable is not 'true'*UNATTESTED*" }
-        @{ Case = "signing requested"; Eligible = "true"; Enabled = "true"; Notice = "sign-template-package attests this template package after the build, on a separate runner." }
+        @{ Case = "verification only"; Requested = "false"; Eligible = "true"; Enabled = "true"; Notice = "*::notice title=Unattested template build::This verification run skips template signing*UNATTESTED*" }
+        @{ Case = "ineligible run"; Requested = "true"; Eligible = "false"; Enabled = "true"; Notice = "*::notice title=Unattested template build::Only main and v*.*.* tag runs (never pull requests) sign template packages*UNATTESTED*" }
+        @{ Case = "signing not enabled"; Requested = "true"; Eligible = "true"; Enabled = "false"; Notice = "*::notice title=Unattested template build::The TEMPLATE_ATTESTATION_SIGNING_ENABLED repository variable is not 'true'*UNATTESTED*" }
+        @{ Case = "signing requested"; Requested = "true"; Eligible = "true"; Enabled = "true"; Notice = "sign-template-package attests this template package after the build, on a separate runner." }
     ) {
         $planStep = Get-WorkflowStepBlock -Content $script:content -StepName "Report template signing plan"
         $script:buildJob.Contains($planStep) | Should -BeTrue
+        $planStep.Contains('SIGNING_REQUESTED: ${{ inputs.attest_and_attach_release_assets }}') | Should -BeTrue
         $planStep.Contains("SIGNING_ELIGIBLE: `${{ $script:signingEligibleExpression }}") | Should -BeTrue
         $planStep.Contains("SIGNING_ENABLED: `${{ $script:signingEnabledExpression }}") | Should -BeTrue
 
         $workDir = (New-Item -ItemType Directory -Path (Join-Path $TestDrive "plan-$([Guid]::NewGuid().ToString('n'))")).FullName
-        $result = Invoke-WorkflowStep -Content $script:content -StepName "Report template signing plan" -WorkDir $workDir -Environment @{ SIGNING_ELIGIBLE = $Eligible; SIGNING_ENABLED = $Enabled }
+        $result = Invoke-WorkflowStep -Content $script:content -StepName "Report template signing plan" -WorkDir $workDir -Environment @{ SIGNING_REQUESTED = $Requested; SIGNING_ELIGIBLE = $Eligible; SIGNING_ENABLED = $Enabled }
 
         $result.ExitCode | Should -Be 0
         $result.Printed | Should -BeLike $Notice
@@ -460,6 +479,21 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
         } | Should -Be $Publishes
     }
 
+    It "requires a signed SQL Server build and companion before publication" {
+        $condition = Get-WorkflowJobCondition $script:publishJob
+        $results = @{
+            "build-template"              = "success"
+            "generate-package-sbom"       = "success"
+            "generate-package-provenance" = "success"
+            "sign-template-package"       = "skipped"
+            "build-attestation-companion" = "skipped"
+        }
+        Test-PublishCondition -Expression $condition -PublishPackage $true -Engine mssql -Results $results | Should -BeFalse
+        $results['sign-template-package'] = 'success'
+        $results['build-attestation-companion'] = 'success'
+        Test-PublishCondition -Expression $condition -PublishPackage $true -Engine mssql -Results $results | Should -BeTrue
+    }
+
     It "gives the Azure publishing token only to the push and promote steps, inside the publishing environment" {
         $script:content | Should -Not -Match '(?m)^  (ARTIFACTS_API_KEY|ARTIFACTS_USERNAME|VSS_NUGET_EXTERNAL_FEED_ENDPOINTS):' -Because "no workflow-wide env may carry a publishing credential"
         $declaration = [regex]::Match($script:content, '(?m)^      AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN:\r?\n        required: (?<required>\w+)$')
@@ -509,7 +543,7 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
         $pushStep.Contains("--skip-duplicate") | Should -BeTrue
     }
 
-    It "couples release promotion: probes the companion, promotes it before the template when present, and tolerates only unattested-era absence" {
+    It "requires the companion on SQL Server promotion and promotes it before the template on either engine" {
         $promoteIndex = $script:content.IndexOf("Template Azure Package")
         $promoteIndex | Should -BeGreaterThan 0
         $promoteStep = $script:content.Substring($promoteIndex)
@@ -519,6 +553,7 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
         $promoteStep.Contains("/nuget/packages/") | Should -BeTrue
         $promoteStep.Contains("Companion attestation package probe failed with HTTP") | Should -BeTrue
         $promoteStep.Contains("Unattested-era release") | Should -BeTrue
+        $promoteStep | Should -Match '(?s)if \(-not \$promoteCompanion\) \{\s+if \(\$env:DATABASE_ENGINE -eq "mssql"\) \{\s+throw "Cannot promote SQL Server template'
 
         # Companion promotion comes before the template promotion.
         $companionPromoteIndex = $promoteStep.IndexOf('$arguments.PackageName = $companionPackageName')
@@ -742,13 +777,13 @@ Describe "template caller workflows pass the attestation secret through (<Caller
         }
     }
 
-    It "forwards TEMPLATE_ATTESTATION_PRIVATE_KEY to the reusable workflow" {
-        # Passing it by name is what lets the called job receive the ENVIRONMENT secret: the
-        # called job's environment takes precedence, and a secret that exists only in the
-        # environment can still be passed by name.
-        foreach ($call in @($script:buildCall, $script:publishCall)) {
-            $call.Contains('TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY }}') | Should -BeTrue
-        }
+    It "disables signing and release attachments only for the MSSQL verification call" {
+        $mssql = $CallerFile -like "*.MsSql.yml"
+        $script:buildCall.Contains("      attest_and_attach_release_assets: false") | Should -Be $mssql
+        $script:publishCall | Should -Not -Match 'attest_and_attach_release_assets:'
+        $key = 'TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY }}'
+        $script:buildCall.Contains($key) | Should -Be (!$mssql)
+        $script:publishCall.Contains($key) | Should -BeTrue
     }
 
     It "leaves the environment to the reusable workflow and still builds pull requests, unsigned" {
@@ -784,9 +819,38 @@ Describe "template caller workflows pass the attestation secret through (<Caller
         $Run["github.event.pull_request.head.repo.fork"] = $(if ($Run["github.event_name"] -eq "pull_request") { $false } else { $null })
         $Run["github.event.pull_request.draft"] = $(if ($Run["github.event_name"] -eq "pull_request") { $false } else { $null })
         $Run["github.repository_owner"] = "Ed-Fi-Alliance-OSS"
+        $Run["vars.MSSQL_TEMPLATE_V2_PUBLICATION_ENABLED"] = 'true'
+        $Run["vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED"] = 'true'
 
         Test-CallerCondition -Expression (Get-CallerCondition $script:buildCall) -Run $Run | Should -Be ($Expected -eq "build")
         Test-CallerCondition -Expression (Get-CallerCondition $script:publishCall) -Run $Run | Should -Be ($Expected -eq "publish")
+    }
+
+    It "runs the <Expected> call for <Case> during the MSSQL cutover" -ForEach @(
+        @{ Case = "main before cutover"; EventName = "push"; IsTag = $false; Enabled = ""; Signing = "true"; Expected = "build" }
+        @{ Case = "a tag before cutover"; EventName = "push"; IsTag = $true; Enabled = ""; Signing = "true"; Expected = "build" }
+        @{ Case = "a manual publication request before cutover"; EventName = "workflow_dispatch"; IsTag = $false; Enabled = ""; Signing = "true"; Expected = "blocked" }
+        @{ Case = "a manual tag publication request without signing"; EventName = "workflow_dispatch"; IsTag = $true; Enabled = "true"; Signing = ""; Expected = "blocked" }
+        @{ Case = "an eligible manual publication request after cutover"; EventName = "workflow_dispatch"; IsTag = $true; Enabled = "true"; Signing = "true"; Expected = "publish" }
+        @{ Case = "main without signing"; EventName = "push"; IsTag = $false; Enabled = "true"; Signing = ""; Expected = "build" }
+        @{ Case = "the later release of a published tag"; EventName = "release"; IsTag = $true; Enabled = ""; Signing = ""; Expected = "publish" }
+    ) -Skip:($CallerFile -notlike "*.MsSql.yml") {
+        $run = @{
+            "github.event_name" = $EventName
+            "github.event.pull_request.head.repo.fork" = $null
+            "github.event.pull_request.draft" = $null
+            "github.repository_owner" = "Ed-Fi-Alliance-OSS"
+            "github.ref" = $(if ($IsTag) { "refs/tags/v8.2.0" } else { "refs/heads/main" })
+            "github.ref_type" = $(if ($IsTag) { "tag" } else { "branch" })
+            "inputs.publish_package" = $true
+            "vars.MSSQL_TEMPLATE_V2_PUBLICATION_ENABLED" = $Enabled
+            "vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED" = $Signing
+        }
+        Test-CallerCondition -Expression (Get-CallerCondition $script:buildCall) -Run $run | Should -Be ($Expected -eq "build")
+        Test-CallerCondition -Expression (Get-CallerCondition $script:publishCall) -Run $run | Should -Be ($Expected -eq "publish")
+        $blockedJob = Get-WorkflowJobBlock -Content $script:callerContent -JobName "publication-blocked"
+        Test-CallerCondition -Expression (Get-CallerCondition $blockedJob) -Run $run | Should -Be ($Expected -eq "blocked")
+        $blockedJob | Should -Match '(?m)^\s+exit 1$'
     }
 
     It "runs neither call for <Case>" -ForEach @(
@@ -805,6 +869,7 @@ Describe "the smoke test builds populated templates without the Azure publishing
                 (Join-Path $PSScriptRoot "../../../.github/workflows/scheduled-smoke-test.yml"))) -Raw
         $smokeContent | Should -Not -BeLike "*AZURE_ARTIFACTS*"
         $smokeContent | Should -Not -Match 'secrets: inherit'
+        $smokeContent | Should -Not -Match 'attest_and_attach_release_assets:'
         $smokeContent | Should -Match '(?m)^      publish_package: false$'
     }
 }

@@ -3,6 +3,8 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+. (Join-Path $PSScriptRoot '../docker-compose/cdc-failure-codes.ps1')
+
 # Only fixed metadata crosses the private Pester/process boundary. Never serialize
 # ErrorRecord messages, assertion values, command text, arguments or host paths.
 function ConvertTo-CdcRunbookWorkerDiagnostic {
@@ -70,7 +72,7 @@ function ConvertTo-CdcRunbookStatusDiagnostic {
     }
     if ($Value['ControllerFailureCodes'] -is [array]) {
         $safe.ControllerFailureCodes = @($Value.ControllerFailureCodes | Where-Object {
-            $_ -is [string] -and $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed)\z'
+            Test-CdcControllerFailureCode $_
         } | Select-Object -Unique -First 16)
     }
     return $safe
@@ -129,7 +131,7 @@ function ConvertTo-CdcRunbookDiagnostic {
     if ($Value['ControllerExitCode'] -is [int] -or $Value['ControllerExitCode'] -is [long]) { $safe.ControllerExitCode = $Value.ControllerExitCode }
     if ($Value['ControllerFailureCodes'] -is [array]) {
         $codes = @($Value.ControllerFailureCodes | Where-Object {
-            $_ -is [string] -and $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed)\z'
+                Test-CdcControllerFailureCode $_
         } | Select-Object -Unique -First 16)
         if ($codes.Count -gt 0) { $safe.ControllerFailureCodes = $codes }
     }

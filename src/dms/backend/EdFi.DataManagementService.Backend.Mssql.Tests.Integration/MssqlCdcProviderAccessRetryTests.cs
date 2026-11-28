@@ -29,6 +29,12 @@ public class Given_MssqlCdcProviderAccessRetry
     private const string HeartbeatCaptureInstanceName = "dms_binding_cdc_heartbeat";
     private const string WorkTableCaptureInstanceName = "dms_binding_projection_work";
     private const string WrongDocumentCaptureInstanceName = "dms_unexpected_document";
+    private const string LegacyCacheColumnSql = """
+        ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+        ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
+        ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;
+        ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson, OBJECT) = 1);
+        """;
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
@@ -1038,6 +1044,43 @@ public class Given_MssqlCdcProviderAccessRetry
         (await ColumnExistsAsync(connection, "CdcHeartbeat", "HeartbeatAt"))
             .Should()
             .BeFalse("setup must not alter a mismatched heartbeat table into shape");
+        (await CaptureInstanceCountAsync(connection)).Should().Be(0);
+    }
+
+    [TestCase(CdcProviderSetupMode.InitialCreateOrExactMatch, "DELETE FROM dms.MssqlPhysicalSchema")]
+    [TestCase(
+        CdcProviderSetupMode.ValidateOnly,
+        "UPDATE dms.MssqlPhysicalSchema SET MssqlPhysicalSchemaVersion = 'v1'"
+    )]
+    [TestCase(CdcProviderSetupMode.InitialCreateOrExactMatch, LegacyCacheColumnSql)]
+    [TestCase(
+        CdcProviderSetupMode.InitialCreateOrExactMatch,
+        "DROP TABLE dms.MssqlPhysicalSchema;" + LegacyCacheColumnSql
+    )]
+    public async Task It_rejects_physical_schema_drift_before_mutating_the_live_database(
+        CdcProviderSetupMode mode,
+        string mutation
+    )
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await ExecuteNonQueryAsync(connection, "ALTER DATABASE CURRENT SET ALLOW_SNAPSHOT_ISOLATION OFF");
+        await ExecuteNonQueryAsync(connection, mutation);
+
+        var result = await RunSetupAsync(connection, mode);
+
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Code == "CDC_SQLSERVER_DOCUMENTCACHE_PHYSICAL_SCHEMA_MISMATCH");
+        (
+            await _database.ExecuteScalarAsync<int>(
+                "SELECT CONVERT(int, snapshot_isolation_state) FROM sys.databases WHERE database_id = DB_ID()"
+            )
+        )
+            .Should()
+            .Be(0);
+        (await IsDatabaseCdcEnabledAsync(connection)).Should().BeFalse();
+        (await TableExistsAsync(connection, "CdcHeartbeat")).Should().BeFalse();
         (await CaptureInstanceCountAsync(connection)).Should().Be(0);
     }
 

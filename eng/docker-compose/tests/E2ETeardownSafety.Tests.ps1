@@ -550,6 +550,9 @@ finally { Pop-Location }
             $engCopy = Split-Path $script:realComposeRoot
             Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../schema-package-utility.psm1') -Destination $engCopy
             New-Item -ItemType Directory -Path (Join-Path $engCopy 'ci') -Force | Out-Null
+            # cdc-runbook-diagnostics.ps1 sources ../docker-compose/cdc-failure-codes.ps1 relative to ci.
+            New-Item -ItemType Directory -Path (Join-Path $engCopy 'docker-compose') -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../cdc-failure-codes.ps1') -Destination (Join-Path $engCopy 'docker-compose')
             Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../ci/cdc-runbook-diagnostics.ps1') -Destination (Join-Path $engCopy 'ci')
 
             function Write-TeardownEnvironmentFile {

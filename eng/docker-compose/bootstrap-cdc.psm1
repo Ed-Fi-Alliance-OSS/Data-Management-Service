@@ -6,6 +6,7 @@
 # This phase carries configuration and receipts. SchemaTools owns all binding, provider,
 # Kafka, readiness and durable publication decisions.
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'cdc-failure-codes.ps1')
 
 function Read-BootstrapCdcSettings {
     <#
@@ -52,7 +53,8 @@ function Invoke-BootstrapCdcDockerInspection {
 
 function Get-BootstrapCdcHostProcessCommand {
     if ($IsLinux -or $IsMacOS) {
-        $commands = @(& ps -eo args= 2>$null)
+        $processListCommand = Get-Command -Name ps -CommandType Application -ErrorAction Stop
+        $commands = @(& $processListCommand -eo args= 2>$null)
         if ($LASTEXITCODE -ne 0) { throw 'CDC host process inspection is unavailable.' }
         return $commands
     }
@@ -259,14 +261,21 @@ function Invoke-BootstrapCdcEnable {
         try {
             $failure = ($output -join "`n") | ConvertFrom-Json
             $codes = @($failure.diagnostics | ForEach-Object {
-                if ($_.component -cin @('Request', 'WorkflowState', 'Projection', 'ProviderSetup', 'Kafka', 'Connect', 'Worker', 'Metrics', 'WriterPublication') -and
-                    $_.failure -cin @('InvalidInput', 'Unavailable', 'Timeout', 'AuthenticationFailed', 'Conflict', 'ValidationFailed')) {
-                    "$($_.component)/$($_.failure)"
-                }
+                $code = "$($_.component)/$($_.failure)"
+                if (Test-CdcControllerFailureCode $code) { $code }
             } | Select-Object -Unique)
         }
         catch { $codes = @() }
-        $enableError = [InvalidOperationException]::new("CDC enable did not authorize writer publication (exit $exitCode). Retain the original state and inspect with SchemaTools cdc status.")
+        $message = if ('Worker/NativeDocumentCacheWorkerRequired' -cin $codes) {
+            "SQL Server native DocumentCache CDC requires a DMS release with a qualified Kafka Connect worker. Retain the original state and update DMS and its pinned worker together before retrying."
+        }
+        elseif ('ProviderSetup/IncompatibleDocumentCachePhysicalSchema' -cin $codes) {
+            "SQL Server CDC requires a verified native DocumentCache v2 baseline. Retain the original state, verify setup-principal access, and drop and reprovision incompatible databases before enabling CDC."
+        }
+        else {
+            "CDC enable did not authorize writer publication (exit $exitCode). Retain the original state and inspect with SchemaTools cdc status."
+        }
+        $enableError = [InvalidOperationException]::new($message)
         $enableError.Data['CdcFailureCodes'] = $codes
         throw $enableError
     }

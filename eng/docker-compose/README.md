@@ -356,8 +356,9 @@ A few things are specific to the MSSQL path:
   This `.bak` coupling is a one-way compatibility boundary.
   A package built and verified on SQL Server 2025 is not expected to restore onto a SQL Server
   2022 instance.
-  Packages published previously against SQL Server 2022 do restore forward onto the SQL Server
-  2025 runtime.
+  Raw backups produced on SQL Server 2022 can restore forward onto the SQL Server 2025 runtime.
+  That engine-level compatibility does not make legacy packages eligible for guarded bootstrap
+  restore; the current package requirements are described below.
   Compatibility level 170 is the supported-runtime baseline because it is the SQL Server 2025
   default for newly created databases.
   The template content gates only verify that level; they never set it.
@@ -632,6 +633,14 @@ in the tracked policy or the local overlay. Older packages that lack the restore
 attestation are not eligible for `-RestoreTemplate`. The database engine could still read their
 `.sql` or `.bak` artifact, but engine-level backup compatibility does not make a package eligible
 for the guarded bootstrap restore.
+
+SQL Server bootstrap restore requires an attested package with restore-manifest format `2`,
+`documentJsonColumnType: "json"`, and `mssqlPhysicalSchemaVersion: "v2"`, plus a matching
+SchemaTools executable that emits `mssql_physical_schema_version: "v2"` in its MSSQL
+`ddl.manifest.json` entry. These checks run before Docker starts. An attested legacy SQL Server
+format-`1` package is rejected even when its backup can restore on SQL Server 2025. Rebuild the
+Minimal or Populated package from the native baseline and use the matching SchemaTools and
+bootstrap consumers. PostgreSQL continues to use restore-manifest format `1` with `jsonb`.
 
 Restore works on both database engines (`-DatabaseEngine`) and on both wrappers
 (`bootstrap-local-dms.ps1` and `bootstrap-published-dms.ps1`). It rejects `-InfraOnly`,

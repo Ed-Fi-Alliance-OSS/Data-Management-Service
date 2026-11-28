@@ -1675,10 +1675,10 @@ function Get-TemplateSourceCatalogFacts {
         $databaseCompatibilityLevel = $parsedCompatibilityLevel
     }
 
-    $documentJsonRows = Invoke-TemplateCatalogQuery @queryParameters `
-        -Query (Get-DocumentJsonColumnTypeQuerySql -DatabaseEngine $DatabaseEngine) `
-        -FailureMessage "Failed to read the DocumentJson column type from '$DatabaseName'."
-    $documentJsonColumnType = ConvertFrom-DocumentJsonColumnTypeRow -Row $documentJsonRows
+    $cacheFacts = Get-RestoreDocumentCacheCatalogFact -QueryParameters $queryParameters -InvokeCatalogQuery {
+        param($parameters, $sql, $failureMessage)
+        Invoke-TemplateCatalogQuery @parameters -Query $sql -FailureMessage $failureMessage
+    }
 
     $schemaRows = Invoke-TemplateCatalogQuery @queryParameters `
         -Query (Get-InventorySchemaQuerySql -DatabaseEngine $DatabaseEngine -Purpose InventoryEnumeration) `
@@ -1722,7 +1722,8 @@ function Get-TemplateSourceCatalogFacts {
         ResourceKeySeedHashB64     = $effectiveSchema.ResourceKeySeedHashB64
         EngineVersion              = $engineVersion
         DatabaseCompatibilityLevel = $databaseCompatibilityLevel
-        DocumentJsonColumnType     = $documentJsonColumnType
+        MssqlPhysicalSchemaVersion = $cacheFacts.MssqlPhysicalSchemaVersion
+        DocumentJsonColumnType     = $cacheFacts.DocumentJsonColumnType
         FullInventory              = $fullInventory
         ArtifactInventory          = $artifactInventory
         DatabaseLevelObjects       = [string[]]$databaseLevelObjects
@@ -1981,6 +1982,7 @@ function Write-TemplateRestoreManifest {
     }
     if ($DatabaseEngine -eq "mssql") {
         $manifestArguments.DatabaseCompatibilityLevel = $Facts.DatabaseCompatibilityLevel
+        $manifestArguments.MssqlPhysicalSchemaVersion = $Facts.MssqlPhysicalSchemaVersion
     }
 
     $manifest = New-TemplateRestoreManifest @manifestArguments

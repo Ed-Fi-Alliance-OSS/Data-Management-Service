@@ -681,28 +681,37 @@ Describe 'CDC qualification CI scheduling' {
         $script:gate | Should -Match '(?m)^      - run-cdc-qualification$'
         $script:gate | Should -Not -Match 'nightly-cdc|run-cdc-heavy-qualification'
     }
-    It 'selects all seventeen live jobs by default without Contract or duplicates' {
+    It 'selects the shipped worker qualification matrix without Contract or duplicates' {
         $matrix = & $script:matrixScript | ConvertFrom-Json
         $pairs = @($matrix.include | ForEach-Object { $_.lane + '/' + $_.suite })
-        $expected = @('Kafka/All')
-        foreach ($provider in @('Postgresql', 'Mssql')) {
-            foreach ($suite in @('Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History', 'MessageContract', 'ApiE2E')) {
-                $expected += "$provider/$suite"
-            }
+        $expected = @('Kafka/All', 'Mssql/Admission', 'Mssql/History', 'Mssql/MessageContract')
+        $expected += @('Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History', 'MessageContract', 'ApiE2E') |
+            ForEach-Object { "Postgresql/$_" }
+        if ([object]::Equals((Get-CdcQualificationWorkerImage)['mssqlNativeDocumentCache'], $true)) {
+            $expected += @('Mssql/Lifecycle', 'Mssql/Recovery', 'Mssql/RecordSize', 'Mssql/Telemetry', 'Mssql/ApiE2E')
         }
         @($pairs | Sort-Object) | Should -Be @($expected | Sort-Object)
+    }
+    It 'requires the native-worker refusal and defers only dependent SQL Server suites until the worker supports native JSON' {
+        $deferred = Get-CdcQualificationProviderSuite -Provider Mssql -MssqlNativeDocumentCache $false
+        @($deferred.Keys) | Should -Be @('Admission', 'History', 'MessageContract')
+        $deferred.Admission | Should -Be 'Category=CdcMssqlNativeWorkerRefusal&Category=MssqlIntegration'
+        $deferred.MessageContract | Should -Be 'Category=CdcMessageContractSerialized&Category=MssqlIntegration'
+        $qualified = Get-CdcQualificationProviderSuite -Provider Mssql -MssqlNativeDocumentCache $true
+        $qualified.Keys.Count | Should -Be 8
+        $qualified.Admission | Should -Be 'Category=CdcControllerAdmission&Category=MssqlIntegration'
+        $qualified.Telemetry | Should -Be 'Category=CdcConnectorTelemetryQualification&Category=MssqlIntegration'
+        $qualified.MessageContract | Should -Be '(Category=CdcMessageContractSerialized|Category=CdcMessageContractKafka)&Category=MssqlIntegration'
     }
     It 'selects <Lane>/<Suite> for a targeted manual run' -ForEach @(
         @{ Lane = 'Kafka'; Suite = 'All'; Count = 1 }
         @{ Lane = 'Postgresql'; Suite = 'All'; Count = 8 }
-        @{ Lane = 'Mssql'; Suite = 'All'; Count = 8 }
         @{ Lane = 'Postgresql'; Suite = 'RecordSize'; Count = 1 }
         @{ Lane = 'Mssql'; Suite = 'Admission'; Count = 1 }
         @{ Lane = 'Mssql'; Suite = 'History'; Count = 1 }
         @{ Lane = 'Postgresql'; Suite = 'MessageContract'; Count = 1 }
         @{ Lane = 'Mssql'; Suite = 'MessageContract'; Count = 1 }
         @{ Lane = 'Postgresql'; Suite = 'ApiE2E'; Count = 1 }
-        @{ Lane = 'Mssql'; Suite = 'ApiE2E'; Count = 1 }
     ) {
         $matrix = & $script:matrixScript -Lane $Lane -Suite $Suite | ConvertFrom-Json
         $matrix.include.GetType().IsArray | Should -BeTrue
@@ -713,6 +722,16 @@ Describe 'CDC qualification CI scheduling' {
         }
         @($matrix.include | Where-Object lane -ne $Lane).Count | Should -Be 0
         if ($Suite -ne 'All') { @($matrix.include | Where-Object suite -ne $Suite).Count | Should -Be 0 }
+    }
+    It 'rejects explicitly requested SQL Server <Suite> while the shipped worker is unqualified' -ForEach @(
+        @{ Suite = 'ApiE2E' }
+        @{ Suite = 'Telemetry' }
+    ) {
+        if ([object]::Equals((Get-CdcQualificationWorkerImage)['mssqlNativeDocumentCache'], $true)) {
+            (& $script:matrixScript -Lane Mssql -Suite $Suite | ConvertFrom-Json).include.Count | Should -Be 1
+        } else {
+            { & $script:matrixScript -Lane Mssql -Suite $Suite } | Should -Throw '*requires a shipped worker qualified for native DocumentJson*'
+        }
     }
     It 'rejects ambiguous <Lane> suite selection instead of silently selecting different tests' -ForEach @(
         @{ Lane = 'All' }
@@ -744,12 +763,13 @@ Describe 'CDC qualification CI scheduling' {
         try {
             foreach ($lane in @('All', 'Postgresql', 'Mssql')) {
                 $env:SELECTED_LANE = $lane
-                $env:SELECTED_SUITE = if ($lane -eq 'All') { 'All' } else { 'ApiE2E' }
+                $env:SELECTED_SUITE = if ($lane -eq 'All') { 'All' } else { 'Admission' }
                 $env:GITHUB_OUTPUT = Join-Path $TestDrive "selection-$lane"
                 & ([scriptblock]::Create($selection))
                 $output = Get-Content $env:GITHUB_OUTPUT
                 $selected = $output[0].Substring('matrix='.Length) | ConvertFrom-Json
-                $selected.include.Count | Should -Be $(if ($lane -eq 'All') { 17 } else { 1 })
+                $expectedCount = if ($lane -ne 'All') { 1 } elseif ([object]::Equals((Get-CdcQualificationWorkerImage)['mssqlNativeDocumentCache'], $true)) { 17 } else { 12 }
+                $selected.include.Count | Should -Be $expectedCount
                 $output[1] | Should -Be "suite-count=$($selected.include.Count)"
             }
         } finally {
@@ -951,7 +971,7 @@ Describe 'CDC documentation qualification boundary' {
     }
     It 'selects the shared live setup fixture for each owned provider Admission path' {
         $runner = Get-Content (Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1') -Raw
-        $runner | Should -Match "if \(\`$phase -eq 'Admission' -or"
+        $runner | Should -Match "if \(\`$phase -in @\('Admission', 'Lifecycle'\) -and -not \`$nativeWorkerDeferred\)"
         $runner | Should -Match 'New-PesterContainer.*RunbookSetup.Live.Tests.ps1.*Provider = \$selected'
         $runner | Should -Match 'Mssql Admission/Lifecycle/ApiE2E requires CDC_RUNBOOK_OWNED_STACK=1'
         $runner | Should -Match 'Get-CdcRunbookPesterReport.*-QualificationProfile "\$selected\$procedure"'
@@ -1777,6 +1797,7 @@ function global:docker { $global:LASTEXITCODE = 0 }
 }
 
 Describe 'CDC API E2E prerequisite summary' {
+    BeforeAll { Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force }
     It 'retains sanitized evidence for always-upload after the workflow runner fails for <Provider>' -ForEach @(
         @{ Provider = 'Postgresql' }; @{ Provider = 'Mssql' }
     ) {
@@ -1816,7 +1837,16 @@ exit $LASTEXITCODE
         try { $env:RUNNER_TEMP = $workspace; & ([scriptblock]::Create($fallback)) }
         finally { $env:RUNNER_TEMP = $savedRunnerTemp; Pop-Location }
         (Get-FileHash (Join-Path $destination 'qualification.json')).Hash | Should -Be $summaryHash
-        $report = @(Get-Content (Join-Path $destination 'qualification.json') -Raw | ConvertFrom-Json | Where-Object Name -eq "$Provider-ApiE2E")[0]
+        $reports = @(Get-Content (Join-Path $destination 'qualification.json') -Raw | ConvertFrom-Json)
+        if ($Provider -eq 'Mssql' -and -not [object]::Equals((Get-CdcQualificationWorkerImage)['mssqlNativeDocumentCache'], $true)) {
+            $deferred = @($reports | Where-Object Name -eq 'prerequisites-or-runner')[0]
+            $deferred.Status | Should -Be 'EnvironmentUnavailable'
+            $deferred.Reason | Should -Match 'requires a shipped worker qualified for native DocumentJson'
+            @($reports | Where-Object Name -eq 'Mssql-ApiE2E').Count | Should -Be 0
+            Test-Path (Join-Path $destination 'Mssql-ApiE2E/cdc-api-e2e.json') | Should -BeFalse
+            return
+        }
+        $report = @($reports | Where-Object Name -eq "$Provider-ApiE2E")[0]
         $report.InvocationId | Should -Match '^[a-f0-9-]{36}$'
         $report.Stages.Setup | Should -Be Failed
         $report.Stages.Test | Should -Be NotRun
@@ -2222,7 +2252,8 @@ function docker { `$global:LASTEXITCODE = 0 }
         $result = Invoke-CdcRunbookLiveWrapper -Id cdc-pg-e2e-setup -FixtureRoot $script:private -TimeoutSeconds 30
         $result.ExitCode | Should -Be 1
         $result.FailureKind | Should -Be 'None'
-        ((Get-Content "$($result.LogPrefix).stderr" -Raw) -replace '\s', '') | Should -Match 'private-input-sentinel'
+        $stderr = (Get-Content "$($result.LogPrefix).stderr" -Raw) -replace '\x1b\[[0-9;]*m', '' -replace '\s', ''
+        $stderr | Should -Match 'private-input-sentinel'
         $report = Get-CdcRunbookPesterReport -Tests @([pscustomobject]@{ ExpandedName = 'CDC-DOC cdc-managed-start'; Result = 'Failed' }) -QualificationProfile MssqlLifecycle -ProgressPath (Join-Path $script:private 'runbook-progress.json')
         Export-CdcRunbookReport -Report $report -RawDirectory $script:private -Destination $script:published -FileName 'cdc-runbook-live-lifecycle.json'
         $json = Get-Content (Join-Path $script:published 'cdc-runbook-live-lifecycle.json') -Raw

@@ -9,6 +9,8 @@
 # DMS-only gate, dump, and restore-manifest steps, so it proves the real restore/catalog/manifest/
 # data path; API registration is intercepted at its first call (full serveability is the release
 # matrix).
+$physicalDriftCases = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/mssql-physical-schema-drift.json') -Raw |
+    ConvertFrom-Json -AsHashtable
 foreach ($case in @(
         @{ Engine = 'postgresql'; Dialect = 'pgsql'; Container = $env:DMS_TEMPLATE_TEST_PG_CONTAINER },
         @{ Engine = 'mssql'; Dialect = 'mssql'; Container = $env:DMS_TEMPLATE_TEST_MSSQL_CONTAINER }
@@ -41,7 +43,7 @@ foreach ($case in @(
                 if ($LASTEXITCODE -ne 0) { throw "Test SQL failed in $Database" }
                 return $result
             }
-            function Invoke-TestPackageCapture([string]$Label) {
+            function Invoke-TestPackageCapture([string]$Label, $CapturedSourceFacts = $null) {
                 $directory = Join-Path $TestDrive $Label
                 $staging = Join-Path $directory 'staging'
                 New-Item -ItemType Directory $staging | Out-Null
@@ -50,14 +52,14 @@ foreach ($case in @(
                 # build the package the way Build-TemplateNuGetPackage does: capture the source facts,
                 # pass the DMS-only gate, dump, and write restore-manifest.json beside the artifact.
                 & (Get-Module Template-Management) {
-                    param($Engine, $Container, $Database, $SaSecret, $Directory, $ArtifactName)
+                    param($Engine, $Container, $Database, $SaSecret, $Directory, $ArtifactName, $CapturedSourceFacts)
                     $schemas = @(Get-UserSchemaNames -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $Database -MssqlPassword $SaSecret)
-                    $facts = Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $Database -MssqlPassword $SaSecret -ArtifactSchemaName ([string[]]$schemas)
+                    $facts = $CapturedSourceFacts ?? (Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $Database -MssqlPassword $SaSecret -ArtifactSchemaName ([string[]]$schemas))
                     $partition = Assert-DmsOnlyTemplateSource -Facts $facts -DatabaseEngine $Engine -DatabaseName $Database
                     Invoke-DatabaseDump -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $Database -DatabaseSchemas $schemas -BackupDirectory $Directory -BackupFileName $ArtifactName -MssqlPassword $SaSecret | Out-Null
                     Write-TemplateRestoreManifest -Facts $facts -Partition $partition -Config @{ Id = 'Focused.Template'; DatabaseBackupName = $ArtifactName } `
                         -PackageVersion '0.0.0-test' -DatabaseEngine $Engine -TemplateKind Minimal -StandardVersion '5.2.0' -BackupDirectory $Directory | Out-Null
-                } $Engine $Container $source $password $staging $artifactName
+                } $Engine $Container $source $password $staging $artifactName $CapturedSourceFacts
                 Compress-Archive -Path (Join-Path $staging '*') -DestinationPath (Join-Path $directory 'package.zip')
                 Move-Item (Join-Path $directory 'package.zip') (Join-Path $directory 'Focused.Template.nupkg')
                 Remove-Item -LiteralPath $staging -Recurse -Force
@@ -92,6 +94,9 @@ foreach ($case in @(
             }
             if ($LASTEXITCODE -ne 0) { throw 'Could not provision fixture' }
             & docker exec $Container rm -f $remoteDdl
+            # This focused fixture has an extension-only sample schema. Add the empty
+            # companion required by the template inventory gate for this synthetic package.
+            Invoke-TestSql $source 'CREATE SCHEMA tracked_changes_sample;' | Out-Null
             $seed = if ($Engine -eq 'mssql') {
                 @'
 DECLARE @key smallint = (SELECT ResourceKeyId FROM dms.ResourceKey WHERE ProjectName = 'Ed-Fi' AND ResourceName = 'SchoolTypeDescriptor');
@@ -144,6 +149,86 @@ SELECT "DocumentId", "ResourceKeyId", 'uri://template', 'school', 'School' FROM 
             { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory $script:correctPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw 'API checkpoint after live catalogs and data'
             Should -Invoke Get-CmsToken -Times 1 -Exactly
             @(Invoke-TestSql $script:restored $fingerprintSql) | Should -Be $fingerprint
+        }
+        It 'Rejects <shape> during native SQL Server source inspection' -Skip:($Engine -ne 'mssql') -ForEach @(
+            $physicalDriftCases | Where-Object check -eq 'MssqlPhysicalSchemaVersion'
+        ) {
+            Invoke-TestSql $source $Sql | Out-Null
+            try {
+                { Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $source -MssqlPassword $password } |
+                    Should -Throw '*physical schema marker*'
+            }
+            finally {
+                Invoke-TestSql $source $Undo | Out-Null
+            }
+        }
+        It 'Rejects <Name> during native SQL Server source inspection' -Skip:($Engine -ne 'mssql') -ForEach @(
+            @{ Name = 'a markerless v1 baseline'; Column = 'nvarchar(max) NOT NULL'; HideMarker = $true; Message = '*physical schema marker*' }
+            @{ Name = 'a legacy text column with a v2 marker'; Column = 'nvarchar(max) NOT NULL'; HideMarker = $false; Message = '*Cannot verify native json*' }
+            @{ Name = 'a nullable native column'; Column = 'json NULL'; HideMarker = $false; Message = '*enabled and trusted CK_DocumentCache_IsJsonObject*' }
+        ) {
+            # The fixture seeds relational data directly and leaves the cache empty.
+            $replaceColumn = @'
+ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
+GO
+'@
+            $addCheck = 'ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson], OBJECT) = 1);'
+            try {
+                Invoke-TestSql $source "$replaceColumn`nALTER TABLE dms.DocumentCache ADD DocumentJson $Column;" | Out-Null
+                Invoke-TestSql $source $addCheck | Out-Null
+                if ($HideMarker) {
+                    Invoke-TestSql $source "EXEC sys.sp_rename 'dms.MssqlPhysicalSchema', 'SavedMssqlPhysicalSchema';" | Out-Null
+                }
+                { Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $source -MssqlPassword $password } |
+                    Should -Throw $Message
+            }
+            finally {
+                if ($HideMarker) {
+                    Invoke-TestSql $source "IF OBJECT_ID('dms.SavedMssqlPhysicalSchema', 'U') IS NOT NULL EXEC sys.sp_rename 'dms.SavedMssqlPhysicalSchema', 'MssqlPhysicalSchema';" | Out-Null
+                }
+                Invoke-TestSql $source "$replaceColumn`nALTER TABLE dms.DocumentCache ADD DocumentJson json NOT NULL;" | Out-Null
+                Invoke-TestSql $source $addCheck | Out-Null
+            }
+        }
+        It 'Rejects a native SQL Server source and restored package with <shape>' -Skip:($Engine -ne 'mssql') -ForEach @(
+            $physicalDriftCases | Where-Object check -eq 'MssqlDocumentCacheObjectCheck'
+            @{
+                shape = 'weaker object check'
+                Sql = 'ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson]) = 1);'
+                Undo = 'ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson], OBJECT) = 1);'
+            }
+        ) {
+            $healthyFacts = Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $source -MssqlPassword $password
+            Invoke-TestSql $source $Sql | Out-Null
+            try {
+                { Invoke-TestPackageCapture "invalid-$shape" } |
+                    Should -Throw "*enabled and trusted CK_DocumentCache_IsJsonObject*"
+                Test-Path (Join-Path $TestDrive "invalid-$shape/staging/Focused.Template.bak") | Should -BeFalse
+                # Simulate a producer that did not inspect the CHECK, with a valid artifact hash.
+                $invalidPackage = Invoke-TestPackageCapture "drifted-$shape" $healthyFacts
+            }
+            finally {
+                Invoke-TestSql $source $Undo | Out-Null
+            }
+            { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory $invalidPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } |
+                Should -Throw "*enabled and trusted CK_DocumentCache_IsJsonObject*"
+            Should -Invoke Get-CmsToken -Times 0 -Exactly
+        }
+        It 'Rejects a disabled singleton CHECK before packaging or serving a restore' -Skip:($Engine -ne 'mssql') {
+            $healthyFacts = Get-TemplateSourceCatalogFacts -DatabaseEngine $Engine -ContainerName $Container -DatabaseName $source -MssqlPassword $password
+            Invoke-TestSql $source 'ALTER TABLE dms.MssqlPhysicalSchema NOCHECK CONSTRAINT CK_MssqlPhysicalSchema_Singleton;' | Out-Null
+            try {
+                { Invoke-TestPackageCapture 'disabled-singleton' } | Should -Throw '*physical schema marker*'
+                Test-Path (Join-Path $TestDrive 'disabled-singleton/staging/Focused.Template.bak') | Should -BeFalse
+                $invalidPackage = Invoke-TestPackageCapture 'drifted-singleton' $healthyFacts
+            }
+            finally {
+                Invoke-TestSql $source 'ALTER TABLE dms.MssqlPhysicalSchema WITH CHECK CHECK CONSTRAINT CK_MssqlPhysicalSchema_Singleton;' | Out-Null
+            }
+            { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory $invalidPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } |
+                Should -Throw '*physical schema marker*'
+            Should -Invoke Get-CmsToken -Times 0 -Exactly
         }
         It 'Rejects a pre-change restored package with the same fingerprint before API setup' {
             { & $script:verify -SourceDatabaseName $source -VerificationDatabaseName $script:restored -ExpectedTemplateKind Minimal -PackageDirectory $script:oldPackage -ExpectedModelManifestPath $script:manifest -DatabaseEngine $Engine -ContainerName $Container -MssqlPassword $password } | Should -Throw "Template schema catalog assertions failed for '$script:restored'."

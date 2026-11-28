@@ -490,6 +490,10 @@ Configuration Service selection rules in [shared preparation](#prepare-the-owned
 the [SQL Server contract](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server)
 and [initial-admission owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence).
 
+For a fresh native SQL Server `v2` database, use a DMS release whose pinned worker is
+qualified for native `DocumentJson`. Check the [native DocumentCache rollout](../../docs/RELATIONAL-BACKEND.md#sql-server-native-documentcache-rollout)
+before starting this procedure.
+
 | Record | Value |
 | --- | --- |
 | Target/generation | Default tenant, SQL Server, fresh selected Configuration Service target `1` / `datastore-1`, generation `1`, dedicated new `edfi_cdc`. The original managed CREATE supplies source identity and receipt. |
@@ -1129,6 +1133,10 @@ The
 [source-history owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity)
 and [managed/native recovery boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#controller-managed-lifecycle-and-native-recovery-boundary)
 define the scope of fresh observations.
+
+For an established SQL Server CDC binding on physical `v1` (`nvarchar(max)`), run these
+procedures using its matching DMS release, SchemaTools and qualified worker. Keep that
+toolchain and its retained deployment state available until the planned cutover to `v2`.
 
 | Record | Value |
 | --- | --- |

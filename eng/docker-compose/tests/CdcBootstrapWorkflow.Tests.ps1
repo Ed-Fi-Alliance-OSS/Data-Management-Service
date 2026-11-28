@@ -20,7 +20,7 @@ Describe 'CDC bootstrap wrapper phase contract' {
         $script:sandbox = Join-Path $TestDrive 'wrapper'
         New-Item -ItemType Directory $script:sandbox | Out-Null
         Copy-Item (Join-Path $script:composeRoot '*.yml') $script:sandbox
-        foreach ($name in @('bootstrap-local-dms.ps1', 'bootstrap-published-dms.ps1', 'bootstrap-wrapper.psm1', 'cdc-cleanup-diagnostics.psm1')) {
+        foreach ($name in @('bootstrap-local-dms.ps1', 'bootstrap-published-dms.ps1', 'bootstrap-wrapper.psm1', 'cdc-cleanup-diagnostics.psm1', 'cdc-failure-codes.ps1')) {
             Copy-Item (Join-Path $script:composeRoot $name) $script:sandbox
         }
         @'
@@ -731,6 +731,7 @@ Describe 'Explicit CDC settings reach the controller and eventual HTTP host' {
         $script:handoffRoot = Join-Path $TestDrive 'handoff'
         New-Item -ItemType Directory $script:handoffRoot | Out-Null
         Copy-Item (Join-Path $script:composeRoot 'bootstrap-cdc.psm1') (Join-Path $script:handoffRoot 'bootstrap-cdc-handoff.psm1')
+        Copy-Item (Join-Path $script:composeRoot 'cdc-failure-codes.ps1') $script:handoffRoot
         @'
 function Resolve-BootstrapSchemaWorkspace { return @{ CoreSchemaPath = '/staged/core.json'; ExtensionSchemaPaths = @('/staged/extension.json') } }
 Export-ModuleMember -Function Resolve-BootstrapSchemaWorkspace

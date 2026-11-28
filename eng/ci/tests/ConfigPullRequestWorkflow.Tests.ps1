@@ -103,13 +103,37 @@ bash "$CLASSIFIER"
 
     It 'retains the unrelated PR skip for <Path>' -ForEach @(
         @{ Path = 'docs/README.md' }
-        @{ Path = 'src/dms/core/EdFi.DataManagementService.Core/Example.cs' }
+        @{ Path = 'src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/Example.cs' }
+        @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/Example.cs' }
         @{ Path = '' }
     ) {
         $result = Invoke-ConfigDetection -ChangedFile @($Path)
         $result.ExitCode | Should -Be 0
         $result.Output.config_relevant | Should -BeExactly 'false'
         $result.Output.fresh_build_required | Should -BeExactly 'false'
+        $result.Output.mssql_template_relevant | Should -BeExactly 'false'
+    }
+
+    It 'selects only the MSSQL template checks for a DMS producer change to <Path>' -ForEach @(
+        @{ Path = 'src/dms/Dockerfile' }
+        @{ Path = 'src/dms/core/EdFi.DataManagementService.Core/Startup/EffectiveSchemaHashProvider.cs' }
+        @{ Path = 'src/dms/core/EdFi.DataManagementService.Core.External/Example.cs' }
+        @{ Path = 'src/dms/core/EdFi.DataManagementService.CustomValidation/Example.cs' }
+        @{ Path = 'src/dms/core/EdFi.DataManagementService.Identity/Example.cs' }
+        @{ Path = 'src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Example.cs' }
+        @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/Example.cs' }
+        @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Example.cs' }
+        @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs' }
+        @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend.Plans/Example.cs' }
+        @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs' }
+        @{ Path = 'src/dms/backend/EdFi.DataManagementService.Backend.External/MssqlDocumentCachePhysicalSchema.cs' }
+        @{ Path = 'src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/MssqlDatabaseProvisioner.cs' }
+    ) {
+        $result = Invoke-ConfigDetection -ChangedFile @($Path)
+        $result.ExitCode | Should -Be 0 -Because $result.Diagnostics
+        $result.Output.config_relevant | Should -BeExactly 'false'
+        $result.Output.fresh_build_required | Should -BeExactly 'false'
+        $result.Output.mssql_template_relevant | Should -BeExactly 'true'
     }
 
     It 'retains fresh image detection for <Path>' -ForEach @(
@@ -164,7 +188,6 @@ bash "$CLASSIFIER"
         @{ Job = 'verify-security-metadata-tools' }
         @{ Job = 'run-unit-tests' }
         @{ Job = 'run-e2e-tests' }
-        @{ Job = 'run-dms-provisioning-integration-tests' }
     ) {
         $block = Get-JobBlock $Job
         $block | Should -Match '(?m)^    needs: detect-fresh-build-changes$'
@@ -174,37 +197,94 @@ bash "$CLASSIFIER"
 
     It 'runs the DmsProvisioning category only in its own lane' {
         (Get-JobBlock 'run-integration-tests') | Should -Match "build-config\.ps1 IntegrationTest .*-IntegrationTestFilter 'Category!=DmsProvisioning'"
-        $job = Get-JobBlock 'run-dms-provisioning-integration-tests'
-        $job | Should -Match '--filter "Category=DmsProvisioning"'
-        foreach ($variable in @(
-            'ConnectionStrings__PostgresqlDmsAdmin', 'ConnectionStrings__MssqlDmsAdmin', 'ConnectionStrings__MssqlAdmin', 'DMS_PROVISIONING_PSQL_PATH',
-            'DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH', 'DMS_EXPECTED_EFFECTIVE_SCHEMA_HASH'
-        )) {
-            $job | Should -Match "(?m)^      ${variable}: "
+        $postgres = Get-JobBlock 'run-dms-provisioning-integration-tests'
+        $mssql = Get-JobBlock 'run-dms-provisioning-integration-tests-mssql'
+        $postgres | Should -Match '--filter "Category=DmsProvisioning&Category!=DmsProvisioningCrossEngine"'
+        $postgres | Should -Match 'DMS_PROVISIONING_TEST_PROJECT: .*Backend\.Postgresql\.Tests\.Integration\.csproj'
+        $mssql | Should -Match 'DMS_PROVISIONING_TEST_PROJECT: .*Backend\.Mssql\.Tests\.Integration\.csproj'
+        $mssql | Should -Match '(?m)^      - \*run-dms-provisioning-tests$'
+        foreach ($lane in @('run-dms-provisioning-integration-tests', 'run-dms-provisioning-integration-tests-mssql', 'run-dms-provisioning-integration-tests-cross-engine')) {
+            (Get-JobBlock 'event_file') | Should -Match "needs: \[.*\b$lane(?:,|\])"
+            (Get-JobBlock 'config-ci-gate') | Should -Match "(?m)^      - $lane$"
         }
-        $cmsAdmin = [regex]::Match($job, '(?m)^      ConnectionStrings__MssqlAdmin: (.+)$').Groups[1].Value
-        $targetAdmin = [regex]::Match($job, '(?m)^      ConnectionStrings__MssqlDmsAdmin: (.+)$').Groups[1].Value
+        $postgres | Should -Match '(?m)^    needs: detect-fresh-build-changes$'
+        $postgres | Should -Match 'ConnectionStrings__PostgresqlDmsAdmin:'
+        $postgres | Should -Match 'DMS_PROVISIONING_PSQL_PATH:'
+        $postgres | Should -Not -Match 'build-cms-mssql-templates|ConnectionStrings__MssqlDmsAdmin'
+        $mssql | Should -Match 'ConnectionStrings__MssqlDmsAdmin:'
+        $mssql | Should -Match 'ConnectionStrings__MssqlAdmin:'
+        $cmsAdmin = [regex]::Match($mssql, '(?m)^      ConnectionStrings__MssqlAdmin: (.+)$').Groups[1].Value
+        $targetAdmin = [regex]::Match($mssql, '(?m)^      ConnectionStrings__MssqlDmsAdmin: (.+)$').Groups[1].Value
         ($cmsAdmin -ceq $targetAdmin) | Should -BeTrue -Because 'CMS fixtures must use the same isolated SQL test server'
         ($targetAdmin -match '^"Server=tcp:127\.0\.0\.1,1433;') | Should -BeTrue -Because 'managed physical admission requires an explicit TCP endpoint'
-        $job | Should -Match 'DMS_PROVISIONING_MSSQL_STAGING_PATH=\$staging" >> "\$GITHUB_ENV"'
-        $job | Should -Match '"DMS_TEMPLATE_PACKAGE_DIRECTORY=\$directory" \| Out-File -FilePath \$env:GITHUB_ENV'
-        (Get-JobBlock 'event_file') | Should -Match 'needs: \[.*run-dms-provisioning-integration-tests'
+        $mssql | Should -Match 'DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH:'
+        $mssql | Should -Match 'DMS_PROVISIONING_MSSQL_STAGING_PATH=\$staging" >> "\$GITHUB_ENV"'
+    }
+
+    It 'runs the cross-engine provisioning fixtures only in the lane that holds both engines' {
+        $cross = Get-JobBlock 'run-dms-provisioning-integration-tests-cross-engine'
+        $postgres = Get-JobBlock 'run-dms-provisioning-integration-tests'
+        $mssql = Get-JobBlock 'run-dms-provisioning-integration-tests-mssql'
+        $cross | Should -Match '--filter "Category=DmsProvisioningCrossEngine"'
+        # The same category name the fixtures carry, so a rename cannot silently empty the lane.
+        $cross | Should -Match 'DMS_PROVISIONING_TEST_PROJECTS: .*Backend\.Postgresql\.Tests\.Integration\.csproj;.*Backend\.Mssql\.Tests\.Integration\.csproj'
+        $constant = Get-Content (Join-Path $script:repoRoot 'src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/DataStoreProvisioning/Packaging/DmsProvisioningLaneRequirement.cs') -Raw
+        $constant | Should -Match 'CrossEngineCategory = "DmsProvisioningCrossEngine"'
+        # Both single-engine lanes skip it: the PostgreSQL lane by its own filter, the MSSQL lane by
+        # sharing that filter step.
+        $postgres | Should -Match 'Category!=DmsProvisioningCrossEngine'
+        $mssql | Should -Match '(?m)^      - \*run-dms-provisioning-tests$'
+        foreach ($setting in @(
+                'ConnectionStrings__PostgresqlDmsAdmin:', 'ConnectionStrings__MssqlDmsAdmin:', 'ConnectionStrings__MssqlAdmin:',
+                'DMS_PROVISIONING_PSQL_PATH:', 'DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH:', 'POSTGRESQL_TEMPLATE_PACKAGE_VERSION:')) {
+            $cross | Should -Match ([regex]::Escape($setting))
+        }
+        foreach ($step in @(
+                'install-psql-dms-provisioning', 'download-postgresql-templates-dms-provisioning',
+                'prepare-staging-dms-provisioning', 'start-sql-server-dms-provisioning',
+                'download-mssql-templates-dms-provisioning', 'check-mssql-templates-dms-provisioning')) {
+            $cross | Should -Match "(?m)^      - \*$step$"
+            $workflow | Should -Match "(?m)^      - &$step$"
+        }
+        $cross | Should -Match 'needs: \[detect-fresh-build-changes, build-cms-mssql-templates\]'
+        $cross | Should -Match "needs.detect-fresh-build-changes.outputs.mssql_template_relevant == 'true'"
+        # Both package sets land in one directory, with the PostgreSQL download first.
+        $workflow.IndexOf('*download-postgresql-templates-dms-provisioning') | Should -BeLessThan $workflow.IndexOf('*check-mssql-templates-dms-provisioning')
     }
 
     It 'gives SQL Server read access to the staging directory through the runner group only' {
-        $job = Get-JobBlock 'run-dms-provisioning-integration-tests'
+        $job = Get-JobBlock 'run-dms-provisioning-integration-tests-mssql'
         $job | Should -Match 'chmod 2750 "\$staging"'
         $job | Should -Match '--group-add "\$\(id -g\)"'
         $job | Should -Match '--volume "\$DMS_PROVISIONING_MSSQL_STAGING_PATH:\$DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH"'
     }
 
-    It 'downloads the four released template packages pinned by SHA-256' {
+    It 'downloads the two released PostgreSQL templates pinned by SHA-256' {
         $job = Get-JobBlock 'run-dms-provisioning-integration-tests'
         $job | Should -Match '_packaging/EdFi%40Release/nuget/v3/index\.json'
         $pins = [regex]::Matches($job, '(?m)^\s+"EdFi\.Api\.(Minimal|Populated)\.Template\.(PostgreSql|MsSql)\.5\.2\.0" = "[0-9a-f]{64}"$')
         @($pins | ForEach-Object { "$($_.Groups[1].Value)/$($_.Groups[2].Value)" } | Sort-Object -Unique) |
-            Should -Be @('Minimal/MsSql', 'Minimal/PostgreSql', 'Populated/MsSql', 'Populated/PostgreSql')
+            Should -Be @('Minimal/PostgreSql', 'Populated/PostgreSql')
         $job | Should -Match 'if \(\$actual -ne \$expected\[\$id\]\)'
+    }
+
+    It 'requires both native same-run MSSQL package builds before exercising live CMS restore' {
+        $producer = Get-JobBlock 'build-cms-mssql-templates'
+        $producer | Should -Match '(?m)^    needs: detect-fresh-build-changes$'
+        $producer | Should -Match 'kind: \[Minimal, Populated\]'
+        $producer | Should -Match 'bootstrap-local-dms\.ps1 -DatabaseEngine mssql'
+        $producer | Should -Match 'Build-TemplateNuGetPackage'
+        $producer | Should -Not -Match 'secrets\.|packages: write|id-token: write|contents: write'
+
+        $consumer = Get-JobBlock 'run-dms-provisioning-integration-tests-mssql'
+        $consumer | Should -Match 'needs: \[detect-fresh-build-changes, build-cms-mssql-templates\]'
+        foreach ($job in @($producer, $consumer)) {
+            $job | Should -Match "github.event_name != 'pull_request' \|\|\s+needs.detect-fresh-build-changes.outputs.config_relevant == 'true' \|\|\s+needs.detect-fresh-build-changes.outputs.mssql_template_relevant == 'true'"
+        }
+        (Get-JobBlock 'config-ci-gate') | Should -Match '(?m)^      - build-cms-mssql-templates$'
+        $consumer | Should -Match 'pattern: cms-mssql-\*-template'
+        $consumer | Should -Match 'Get-FileHash -Algorithm SHA256 .+\.Hash -cne \$expected'
+        $consumer | Should -Match 'foreach \(\$kind in "Minimal", "Populated"\)'
     }
 
     It 'runs versioning and workflow tests plus the reusable local package smoke without publication' {

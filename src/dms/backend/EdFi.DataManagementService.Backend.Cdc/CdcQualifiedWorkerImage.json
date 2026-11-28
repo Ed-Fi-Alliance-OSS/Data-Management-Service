@@ -6,6 +6,7 @@
   "exporterVersion": "1.5.0",
   "exporterSha256": "0315f3f657876302c6205a98d4036ec775dca529c5d0419ca60ee669c688239f",
   "mappingSha256": "bc81eafc084baf3caf98341f218d288387c177b13759b756f42907df42bfb8ac",
+  "mssqlNativeDocumentCache": false,
   "providers": [
     "Postgresql",
     "SqlServer"

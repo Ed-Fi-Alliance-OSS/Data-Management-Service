@@ -5,6 +5,7 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Reflection;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -14,16 +15,8 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 /// <summary>
-/// Evaluation spike for the SQL Server native <c>json</c> data type, per the "Evaluation Spike (In
-/// Scope Under Defer)" section of
-/// reference/design/backend-redesign/epics/17-mssql-gap-closure/03-sql-server-2025-and-native-json.md.
-///
-/// This fixture creates its own scratch <c>DocumentCache</c>-shaped table with literal SQL, entirely
-/// separate from the generated DDL pipeline: it does not call <c>MssqlDialect</c> or
-/// <c>CoreDdlEmitter</c>, and does not touch goldens or manifests. The native <c>json</c> type is
-/// still a preview feature for boxed SQL Server 2025, so tests assert observed provider and engine
-/// behavior rather than only the documented surface; deviations are called out inline as recorded
-/// findings for the follow-up adoption ticket.
+/// Verifies SQL Server native <c>json</c> binding, storage and retrieval against a scratch
+/// <c>DocumentCache</c>-shaped table created independently of generated DDL.
 /// </summary>
 [TestFixture]
 [Category(MssqlCiShards.Shard1)]
@@ -42,12 +35,9 @@ public class Given_NativeJsonEvaluationTests_A_DocumentCache_Shaped_Scratch_Tabl
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
-        if (!MssqlTestDatabaseHelper.IsConfigured())
-        {
-            Assert.Ignore(
-                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.json (or appsettings.Test.json)"
-            );
-        }
+        MssqlConnectionStringGuard.RequireConfiguredForCiOrSkipLocally(
+            "SQL Server integration tests require a MssqlAdmin connection string in appsettings.json (or appsettings.Test.json)"
+        );
 
         var rawProductMajorVersion = await ReadProductMajorVersionAsync();
 
@@ -265,12 +255,22 @@ public class Given_NativeJsonEvaluationTests_A_DocumentCache_Shaped_Scratch_Tabl
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT CONVERT(varchar(128), SERVERPROPERTY('ProductVersion'));";
+        var engineVersion = (string)(await command.ExecuteScalarAsync())!;
+        var providerVersion = typeof(SqlConnection)
+            .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!
+            .InformationalVersion;
+        await TestContext.Out.WriteLineAsync(
+            $"SQL Server {engineVersion}, Microsoft.Data.SqlClient {providerVersion}"
+        );
+
         command.CommandText = $"SELECT DocumentJson FROM {ScratchTableName};";
         await using var reader = await command.ExecuteReaderAsync();
 
         // Recorded finding: Microsoft documents that TDS clients may see DocumentJson surfaced as
         // varchar(max)/nvarchar(max). Against SQL Server 2025 with Microsoft.Data.SqlClient 6.1.4,
         // both schema-inspection surfaces instead report the native json type name directly.
+        reader.GetDataTypeName(0).Should().Be("json");
         DbColumn documentJsonColumn = (await reader.GetColumnSchemaAsync())[0];
         documentJsonColumn.DataTypeName.Should().Be("json");
 

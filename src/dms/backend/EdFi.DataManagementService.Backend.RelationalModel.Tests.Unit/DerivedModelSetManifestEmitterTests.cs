@@ -82,6 +82,12 @@ public class Given_A_Descriptor_Only_Model_Set_When_Emitting_Manifest
     }
 
     [Test]
+    public void It_should_omit_the_mssql_physical_schema_version()
+    {
+        JsonNode.Parse(_manifest)!.AsObject().ContainsKey("mssql_physical_schema_version").Should().BeFalse();
+    }
+
+    [Test]
     public void It_should_include_projects_section()
     {
         _manifest.Should().Contain("\"projects\":");
@@ -1012,6 +1018,14 @@ public class Given_A_Mssql_Model_Set_With_Identity_Collation_When_Emitting_Detai
         _manifestObjects = IdentityCollationManifestTestHelpers
             .EnumerateObjects(JsonNode.Parse(manifest)!)
             .ToArray();
+    }
+
+    [Test]
+    public void It_writes_the_v2_physical_schema_version_at_the_root()
+    {
+        var version = _manifestObjects[0]["mssql_physical_schema_version"]?.GetValue<string>();
+
+        version.Should().Be("v2");
     }
 
     [Test]

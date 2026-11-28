@@ -41,6 +41,7 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         ("dms", "DataStoreIdentity"),
         ("dms", "DocumentCacheState"),
         ("dms", "EffectiveSchema"),
+        ("dms", "MssqlPhysicalSchema"),
         ("dms", "ResourceKey"),
         ("dms", "SchemaComponent"),
     ];

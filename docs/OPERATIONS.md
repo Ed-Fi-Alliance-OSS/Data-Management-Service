@@ -1586,7 +1586,7 @@ DMSPROV-<Code>: DMS data store provisioning is not ready for target provider <pr
 | `TrustPolicy` | The trust policy file is readable, valid, and lists at least one `detached-attestation` producer with a valid P-256 key. | See [Trust](#template-package-trust). |
 | `Catalog.Minimal`, `Catalog.Sample` | Each allowlisted package and its attestation are present, the attestation verifies, the manifest matches `Compatibility`, and the probe's operation directory is removed afterwards (`StagingFailed` at `ReleaseOperationDirectory` when it is not). | Place the exact package and attestation in `ArtifactDirectory`, or correct the allowlist or `Compatibility`. For `ReleaseOperationDirectory`, remove the leftover named in the `1438_21`/`1438_22` log entries (see [Leftovers after a crash](#leftovers-after-a-crash)) and fix what prevented its removal. |
 | `TargetServer` | The server can be reached and its facts read. | Network, credentials, TLS settings. |
-| `ServerVersion`, `EngineCompatibility.<template>` | PostgreSQL 18 or later; SQL Server 2022 (16) or later; and the server's major version is at least the one each package was built on. | Upgrade the server, or use packages built for it. |
+| `ServerVersion`, `EngineCompatibility.<template>` | PostgreSQL 18 or later. SQL Server 2025 (17) or later with a physical-v2 template package. The server's major version must also be at least the version used to build each package. | Upgrade the server or select a compatible package. |
 | `Template0Encoding` | PostgreSQL: `template0`, from which every staging database is created, uses `UTF8`. `template1` is not checked or used. | Initialize the cluster again with UTF-8 encoding; see [PostgreSQL](#postgresql). |
 | `Superuser`, `CreateDatabasePrivilege`, `SignalBackendPrivilege`, `ReadAllStatsPrivilege`, `EnqueueOwnerRole` | PostgreSQL privileges; see [PostgreSQL](#postgresql). | Grant them to the administrative login. |
 | `CreateDatabasePrivilege`, `AlterAnyDatabasePrivilege`, `AlterAnyConnectionPrivilege`, `ViewServerStatePrivilege`, `FileCatalogVisibility`, `DefaultDataPath`, `DefaultLogPath` | SQL Server privileges and default file locations; see [SQL Server](#sql-server). | Grant them, or set the instance default paths. |
@@ -1788,6 +1788,12 @@ server message, or `psql` output. The category tells the caller whether to retry
 | `ArtifactMissing` | `OperatorInspectionRequired`; `Transient` when an accepted managed create meets it, so a temporarily missing package or attestation retries within the job's attempts. Each retry repeats the trust, hash, manifest and pin checks; a file that stays missing exhausts the job. See [Managed data stores](./CMS-MANAGED-DATA-STORES.md) |
 | `ArtifactUntrusted`, `ArtifactTampered`, `ManifestInvalid`, `ManifestMismatch`, `BackupInvalid`, `PackageIdentityInvalid`, `ArtifactChangedSinceCreate` | `OperatorInspectionRequired` |
 | `ContentProfileViolation`, `TargetIncompatible`, `SecurityStateViolation`, `StagingIntegrityViolation`, `IdentityAssignmentFailed`, `TargetUnowned`, `TargetUnverifiable`, `TargetFenced`, `InstanceChanged`, `OutcomeUnknown`, `CompensationFailed` | `OperatorInspectionRequired` |
+
+For SQL Server `TargetIncompatible` at `MssqlPhysicalSchemaVersion`, `DocumentJsonColumnType`, or
+`MssqlDocumentCacheObjectCheck`, verify the pinned physical-v2 package and matching restore tools.
+Use the managed template restore flow to provision a fresh datastore on SQL Server 2025 or later.
+For an existing datastore, plan the data carry-forward before replacement. See the
+[native DocumentCache rollout](./RELATIONAL-BACKEND.md#sql-server-native-documentcache-rollout).
 
 #### A refused administrative login, and rotating its password
 

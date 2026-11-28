@@ -6,6 +6,7 @@
 using System.Buffers;
 using System.Text;
 using System.Text.Json;
+using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.SchemaTools.Introspection;
 
@@ -27,6 +28,10 @@ public static class ProvisionedSchemaManifestEmitter
             w.WriteStartObject();
             w.WriteString("manifest_version", manifest.ManifestVersion);
             w.WriteString("dialect", manifest.Dialect);
+            if (manifest.Dialect == "mssql" && manifest.MssqlPhysicalSchemaVersion is { } version)
+            {
+                w.WriteString(MssqlDocumentCachePhysicalSchema.ManifestPropertyName, version);
+            }
 
             WriteSchemas(w, manifest.Schemas);
             WriteTables(w, manifest.Tables);

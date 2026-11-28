@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
@@ -55,6 +56,165 @@ public class MssqlDmsTargetEngineFactsTests
             _projects,
             rule
         );
+
+    [TestFixture]
+    public class Given_a_view_with_a_document_json_column
+    {
+        [Test]
+        public async Task It_includes_a_case_distinct_documentcache_carrier()
+        {
+            RequireConfiguredOrSkip();
+            await using TestDatabase database = await CreateDatabaseAsync("jsoncases");
+            await ExecuteOnServerAsync(
+                $"ALTER DATABASE {MssqlIdentifiers.Quote(database.DatabaseName.Value)} COLLATE Latin1_General_100_CS_AS;"
+            );
+            await database.ExecuteAsync(await File.ReadAllTextAsync(FixturePath("dms-shaped-database.sql")));
+            await database.ExecuteAsync(
+                "CREATE VIEW [dms].[documentcache] AS SELECT CAST(N'{}' AS nvarchar(max)) AS [DocumentJson];"
+            );
+            (DmsTargetFacts facts, DmsIdentityRead identity) = await ReadAsync(database);
+
+            facts
+                .DocumentJsonColumns.Should()
+                .Contain(new DmsDocumentJsonColumn("dms", "documentcache", "nvarchar(max)"));
+            Validate(facts, identity, new DmsTargetValidationRule.Staging(Guid.NewGuid()))
+                .Should()
+                .Be(
+                    new DmsTargetValidation.Invalid(
+                        DmsProvisioningFailureCode.TargetIncompatible,
+                        DmsTargetValidator.DocumentJsonColumnTypeCheck
+                    )
+                );
+        }
+
+        [TestCase("DocumentJson")]
+        [TestCase("documentjson")]
+        public async Task It_includes_other_views_in_the_carrier_consistency_check(string columnName)
+        {
+            RequireConfiguredOrSkip();
+            await using TestDatabase database = await CreateDmsShapedDatabaseAsync("jsonview");
+            await database.ExecuteAsync(
+                $"CREATE VIEW [dms].[OtherCarrier] AS SELECT CAST(N'{{}}' AS nvarchar(max)) AS [{columnName}];"
+            );
+            (DmsTargetFacts facts, DmsIdentityRead identity) = await ReadAsync(database);
+
+            facts
+                .DocumentJsonColumns.Should()
+                .Contain(new DmsDocumentJsonColumn("dms", "OtherCarrier", "nvarchar(max)"));
+            Validate(facts, identity, new DmsTargetValidationRule.Staging(Guid.NewGuid()))
+                .Should()
+                .Be(
+                    new DmsTargetValidation.Invalid(
+                        DmsProvisioningFailureCode.TargetIncompatible,
+                        DmsTargetValidator.DocumentJsonColumnTypeCheck
+                    )
+                );
+        }
+
+        [Test]
+        public async Task It_requires_the_document_cache_carrier_to_be_a_user_table()
+        {
+            RequireConfiguredOrSkip();
+            await using TestDatabase database = await CreateDmsShapedDatabaseAsync("cacheview");
+            await database.ExecuteAsync("DROP TABLE [dms].[DocumentCache];");
+            await database.ExecuteAsync(
+                "CREATE VIEW [dms].[DocumentCache] AS SELECT CAST(N'{}' AS json) AS [DocumentJson];"
+            );
+            (DmsTargetFacts facts, DmsIdentityRead identity) = await ReadAsync(database);
+
+            facts
+                .DocumentJsonColumns.Should()
+                .Contain(new DmsDocumentJsonColumn("dms", "DocumentCache", "json"));
+            Validate(facts, identity, new DmsTargetValidationRule.Staging(Guid.NewGuid()))
+                .Should()
+                .Be(
+                    new DmsTargetValidation.Invalid(
+                        DmsProvisioningFailureCode.TargetIncompatible,
+                        DmsTargetValidator.DocumentJsonColumnTypeCheck
+                    )
+                );
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_drifted_native_document_cache_baseline
+    {
+        [TestCaseSource(nameof(SharedPhysicalSchemaDriftCases))]
+        [TestCase(
+            "ALTER TABLE dms.MssqlPhysicalSchema NOCHECK CONSTRAINT CK_MssqlPhysicalSchema_Singleton;",
+            DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
+        )]
+        [TestCase(
+            """
+                ALTER TABLE dms.MssqlPhysicalSchema DROP CONSTRAINT CK_MssqlPhysicalSchema_Singleton;
+                ALTER TABLE dms.MssqlPhysicalSchema ADD CONSTRAINT CK_MssqlPhysicalSchema_Singleton CHECK (SingletonId >= 1);
+                """,
+            DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
+        )]
+        [TestCase(
+            """
+                ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+                ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
+                EXEC(N'ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;');
+                """,
+            DmsTargetValidator.DocumentJsonColumnTypeCheck
+        )]
+        [TestCase(
+            """
+                DROP TABLE dms.MssqlPhysicalSchema;
+                ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+                ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
+                EXEC(N'ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;');
+                """,
+            DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
+        )]
+        public Task It_rejects_incompatible_physical_baselines(string mutation, string check) =>
+            AssertIncompatibleAsync(mutation, check);
+
+        [TestCase(
+            """
+                ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+                ALTER TABLE dms.DocumentCache ALTER COLUMN DocumentJson json NULL;
+                ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject
+                    CHECK (ISJSON([DocumentJson], OBJECT) = 1);
+                """
+        )]
+        [TestCase(
+            "ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject; "
+                + "ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON([DocumentJson]) = 1);"
+        )]
+        public Task It_rejects_invalid_object_validation(string mutation) =>
+            AssertIncompatibleAsync(mutation, DmsTargetValidator.MssqlDocumentCacheObjectCheck);
+
+        private static IEnumerable<TestCaseData> SharedPhysicalSchemaDriftCases()
+        {
+            var path = Path.Combine(
+                TestContext.CurrentContext.TestDirectory,
+                "Fixtures",
+                "mssql-physical-schema-drift.json"
+            );
+            using var fixture = JsonDocument.Parse(File.ReadAllText(path));
+            foreach (var drift in fixture.RootElement.EnumerateArray())
+            {
+                yield return new TestCaseData(
+                    drift.GetProperty("sql").GetString(),
+                    drift.GetProperty("check").GetString()
+                ).SetArgDisplayNames(drift.GetProperty("shape").GetString()!);
+            }
+        }
+
+        private static async Task AssertIncompatibleAsync(string mutation, string check)
+        {
+            RequireConfiguredOrSkip();
+            await using TestDatabase database = await CreateDmsShapedDatabaseAsync("cachecheck");
+            await database.ExecuteAsync(mutation);
+            (DmsTargetFacts facts, DmsIdentityRead identity) = await ReadAsync(database);
+
+            Validate(facts, identity, new DmsTargetValidationRule.Staging(Guid.NewGuid()))
+                .Should()
+                .Be(new DmsTargetValidation.Invalid(DmsProvisioningFailureCode.TargetIncompatible, check));
+        }
+    }
 
     [TestFixture]
     public class Given_the_dms_shaped_database
@@ -166,10 +326,18 @@ public class MssqlDmsTargetEngineFactsTests
             _facts.CompatibilityLevel.Should().Be(_compatibilityLevel);
 
         [Test]
-        public void It_lists_the_document_cache_json_column_with_its_declared_length() =>
+        public void It_reads_the_native_document_cache_type_and_physical_version()
+        {
             _facts
                 .DocumentJsonColumns.Should()
-                .Equal(new DmsDocumentJsonColumn("dms", "DocumentCache", "nvarchar(max)"));
+                .Equal(
+                    new DmsDocumentJsonColumn("dms", "DocumentCache", "json")
+                    {
+                        IsMssqlDocumentCacheColumn = true,
+                    }
+                );
+            _facts.HasMssqlPhysicalSchemaMarker.Should().BeTrue();
+        }
 
         [Test]
         public void It_enumerates_the_schemas_including_dbo() =>

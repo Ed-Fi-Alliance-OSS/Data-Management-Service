@@ -19,6 +19,69 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Platform(Exclude = "Win", Reason = "Local CDC state requires Unix owner-only permissions.")]
 internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcRegistrationTestBase(provider)
 {
+    [Test]
+    public async Task It_rejects_a_worker_without_native_document_cache_qualification_before_registration()
+    {
+        var jsonType = Provider == Ddl.CdcProvider.SqlServer ? "json" : "jsonb";
+        var sources = CdcConnectorTemplateTestData
+            .BuildRequiredSourceTableInventory(Provider)
+            .Select(table =>
+                table.TableKind == Ddl.CdcSourceTableKind.DocumentCache
+                    ? new Ddl.CdcSourceTableInventory(
+                        table.TableKind,
+                        table.TableName,
+                        table.EmittedQuotedTableName,
+                        [
+                            .. table.Columns,
+                            CdcConnectorTemplateTestData.BuildColumn(Provider, "DocumentJson", 2, jsonType),
+                        ]
+                    )
+                    : table
+            )
+            .ToArray();
+        var executor = A.Fake<Ddl.ICdcProviderDatabaseExecutor>();
+        IReadOnlyList<IReadOnlyDictionary<string, string?>> rows =
+        [
+            new Dictionary<string, string?> { ["physical_schema_version"] = "v2" },
+        ];
+        A.CallTo(() => executor.QueryAsync(A<string>._, A<CancellationToken>._)).Returns(rows);
+        _request = CdcDeploymentRequestTestData.Request(
+            Provider,
+            worker: Provider == Ddl.CdcProvider.SqlServer
+                ? CdcDeploymentRequestTestData.Worker()
+                : _request.WorkerPolicy,
+            sourceInventory: Provider == Ddl.CdcProvider.SqlServer
+                ? sources
+                : _request.ProviderSetup.ExpectedSourceInventory,
+            databaseExecutor: executor
+        );
+
+        _trace.Clear();
+
+        var result = await RunAsync();
+
+        if (Provider == Ddl.CdcProvider.Postgresql)
+        {
+            result.State.Should().Be(CdcTransportEvidenceState.Observed);
+            A.CallTo(() => executor.QueryAsync(A<string>._, A<CancellationToken>._)).MustNotHaveHappened();
+            _posts.Should().Be(1);
+            return;
+        }
+
+        result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+        result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Failure.Should()
+            .Be(CdcDeploymentFailure.NativeDocumentCacheWorkerRequired);
+        result.Diagnostics[0].Message.Should().Contain("worker qualified for native DocumentJson");
+        A.CallTo(() => executor.QueryAsync(A<string>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+        _trace.Should().BeEmpty();
+        _posts.Should().Be(0);
+        ReadJournal().Operations.Should().NotContain(o => o.Effect == CdcWorkflowEffect.RegisterConnector);
+    }
+
     [TestCase(CdcDeploymentFailure.Unavailable, false)]
     [TestCase(CdcDeploymentFailure.Timeout, false)]
     [TestCase(CdcDeploymentFailure.Unavailable, true)]

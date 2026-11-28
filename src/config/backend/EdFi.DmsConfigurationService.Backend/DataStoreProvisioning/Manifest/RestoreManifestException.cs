@@ -6,10 +6,13 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 
 /// <summary>
-/// A restore manifest is not a document of the version-1 contract: it is empty, not JSON, not
+/// A restore manifest violates the applicable engine contract: it is empty, not JSON, not
 /// well-formed Unicode, or violates a shape rule, including an inventory that is not canonical or whose
 /// recomputed hash differs from the recorded one. It is a verdict about the package, which the catalog
 /// reports as <c>ManifestInvalid</c>. The message names the failed rule and the field or entry
 /// position only; it never echoes a value from the document.
 /// </summary>
-public sealed class RestoreManifestException(string message) : Exception(message);
+public sealed class RestoreManifestException(string message) : Exception(message)
+{
+    internal bool IsLegacyMssqlTemplate { get; init; }
+}

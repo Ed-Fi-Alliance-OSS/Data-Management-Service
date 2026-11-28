@@ -558,6 +558,11 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
                 VerifyAttestationStep + "." + exception.TrustRefusal,
                 exception
             ),
+            TemplatePackageDefect.ManifestInvalid
+                when exception.InnerException is RestoreManifestException { IsLegacyMssqlTemplate: true } =>
+                DmsProvisioningFailure.ForLegacyMssqlTemplate(
+                    DmsProvisioningDiagnostic.From(exception, ReadPackageStep + ".LegacyMssqlTemplate")
+                ),
             TemplatePackageDefect.PackageInvalid or TemplatePackageDefect.ManifestInvalid => Failure(
                 DmsProvisioningFailureCode.ManifestInvalid,
                 ReadPackageStep,

@@ -553,10 +553,57 @@ public class TemplateArtifactCatalogTests
     }
 
     [TestFixture]
+    public class Given_a_signed_malformed_native_mssql_manifest
+    {
+        [TestCase(
+            "\"mssqlPhysicalSchemaVersion\": \"v2\"",
+            "\"mssqlPhysicalSchemaVersion\": \"v1\", \"mssqlPhysicalSchemaVersion\": \"v2\""
+        )]
+        [TestCase(
+            "\"documentJsonColumnType\": \"json\"",
+            "\"documentJsonColumnType\": \"nvarchar(max)\", \"documentJsonColumnType\": \"json\""
+        )]
+        [TestCase(
+            "\"databaseCompatibilityLevel\": 170",
+            "\"databaseCompatibilityLevel\": 90, \"databaseCompatibilityLevel\": 170"
+        )]
+        [TestCase("\"databaseCompatibilityLevel\": 170", "\"databaseCompatibilityLevel\": [170]")]
+        public async Task It_refuses_the_same_manifest_bytes_as_bootstrap_before_server_contact(
+            string original,
+            string malformed
+        )
+        {
+            string valid = await File.ReadAllTextAsync(
+                Path.Combine(CanonicalInventoryHashTests.FixtureDirectory, "restore-manifest.mssql.json")
+            );
+            valid.Should().Contain(original);
+            Outcome outcome = await ResolveInOwnWorkspace(
+                workspace =>
+                    workspace.Build(
+                        workspace
+                            .MinimalBuilder(mssql: true)
+                            .WithManifestText(valid.Replace(original, malformed, StringComparison.Ordinal))
+                    ),
+                workspace =>
+                    workspace.Options(
+                        provider: DmsDataStoreProvisioningOptions.MssqlProvider,
+                        minimalPackageId: RestoreManifestSample.MssqlPackageId
+                    )
+            );
+            DmsProvisioningFailure failure = FailureOf(outcome.Resolution);
+            (failure.Code, failure.Diagnostic.Operation)
+                .Should()
+                .Be((DmsProvisioningFailureCode.ManifestInvalid, TemplateArtifactCatalog.ReadPackageStep));
+            outcome.OperationEntries.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
     public class Given_packages_that_violate_the_package_contract
     {
         private Outcome _notAZip = null!;
-        private Outcome _manifestNotVersionOne = null!;
+        private Outcome _invalidManifest = null!;
+        private Outcome _legacyMssql = null!;
         private Outcome _manifestNamesAnotherVersion = null!;
 
         [SetUp]
@@ -567,7 +614,25 @@ public class TemplateArtifactCatalogTests
                     workspace.MinimalBuilder().WithRawPackageBytes(Encoding.UTF8.GetBytes("not a zip"))
                 )
             );
-            _manifestNotVersionOne = await ResolveInOwnWorkspace(workspace =>
+            _legacyMssql = await ResolveInOwnWorkspace(
+                workspace =>
+                    workspace.Build(
+                        workspace
+                            .MinimalBuilder(mssql: true)
+                            .WithManifest(manifest =>
+                            {
+                                manifest["version"] = 1;
+                                manifest.Remove("mssqlPhysicalSchemaVersion");
+                                manifest["documentJsonColumnType"] = "nvarchar(max)";
+                            })
+                    ),
+                workspace =>
+                    workspace.Options(
+                        provider: DmsDataStoreProvisioningOptions.MssqlProvider,
+                        minimalPackageId: RestoreManifestSample.MssqlPackageId
+                    )
+            );
+            _invalidManifest = await ResolveInOwnWorkspace(workspace =>
                 workspace.Build(workspace.MinimalBuilder().WithManifestText("{}"))
             );
             _manifestNamesAnotherVersion = await ResolveInOwnWorkspace(workspace =>
@@ -589,12 +654,28 @@ public class TemplateArtifactCatalogTests
         [Test]
         public void It_refuses_a_manifest_outside_the_contract_with_the_reader_in_the_type_chain()
         {
-            DmsProvisioningFailure failure = FailureOf(_manifestNotVersionOne.Resolution);
+            DmsProvisioningFailure failure = FailureOf(_invalidManifest.Resolution);
             using AssertionScope scope = new();
             (failure.Code, failure.Diagnostic.Operation)
                 .Should()
                 .Be((DmsProvisioningFailureCode.ManifestInvalid, TemplateArtifactCatalog.ReadPackageStep));
             failure.Diagnostic.ExceptionTypeChain.Should().EndWith(typeof(RestoreManifestException).FullName);
+        }
+
+        [Test]
+        public void It_refuses_a_signed_legacy_mssql_template_during_package_read()
+        {
+            DmsProvisioningFailure failure = FailureOf(_legacyMssql.Resolution);
+            (failure.Code, failure.Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.ManifestInvalid,
+                        TemplateArtifactCatalog.ReadPackageStep + ".LegacyMssqlTemplate"
+                    )
+                );
+            failure.Summary.Should().Contain("Pin a verified native v2 template").And.Contain("reprovision");
+            _legacyMssql.OperationEntries.Should().BeEmpty();
         }
 
         [Test]
@@ -615,7 +696,7 @@ public class TemplateArtifactCatalogTests
         public void It_releases_the_operation_directory_on_every_refusal()
         {
             _notAZip.OperationEntries.Should().BeEmpty();
-            _manifestNotVersionOne.OperationEntries.Should().BeEmpty();
+            _invalidManifest.OperationEntries.Should().BeEmpty();
             _manifestNamesAnotherVersion.OperationEntries.Should().BeEmpty();
         }
     }

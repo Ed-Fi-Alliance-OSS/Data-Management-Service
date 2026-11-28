@@ -131,7 +131,8 @@ public sealed record DocumentCacheProjectionDrainPageResult
         int acknowledgedOrRemovedItemCount,
         int documentScopedFailureCount,
         ImmutableArray<long> documentScopedFailureIds,
-        DocumentCacheAdministrativeDrainFailure? administrativeFailure
+        DocumentCacheAdministrativeDrainFailure? administrativeFailure,
+        ImmutableArray<long> suppressedDocumentIds = default
     )
     {
         Outcome = DocumentCacheProjectionSchedulingGuard.RequireDefined(
@@ -220,6 +221,7 @@ public sealed record DocumentCacheProjectionDrainPageResult
         DocumentScopedFailureCount = documentScopedFailureCount;
         DocumentScopedFailureIds = documentScopedFailureIds.IsDefault ? [] : documentScopedFailureIds;
         AdministrativeFailure = administrativeFailure;
+        SuppressedDocumentIds = suppressedDocumentIds.IsDefault ? [] : suppressedDocumentIds;
     }
 
     public DocumentCacheProjectionDrainPageOutcome Outcome { get; }
@@ -236,13 +238,20 @@ public sealed record DocumentCacheProjectionDrainPageResult
 
     public ImmutableArray<long> DocumentScopedFailureIds { get; }
 
+    internal ImmutableArray<long> SuppressedDocumentIds { get; }
+
+    internal ImmutableArray<long> NativeLimitFailureIds { get; init; } = [];
+
+    internal ImmutableArray<long> SuppressedNativeLimitFailureIds { get; init; } = [];
+
     public DocumentCacheAdministrativeDrainFailure? AdministrativeFailure { get; }
 
     public static DocumentCacheProjectionDrainPageResult PageProcessed(
         int processedItemCount,
         int acknowledgedOrRemovedItemCount = 0,
         int documentScopedFailureCount = 0,
-        ImmutableArray<long> documentScopedFailureIds = default
+        ImmutableArray<long> documentScopedFailureIds = default,
+        ImmutableArray<long> suppressedDocumentIds = default
     ) =>
         new(
             DocumentCacheProjectionDrainPageOutcome.PageProcessed,
@@ -252,7 +261,8 @@ public sealed record DocumentCacheProjectionDrainPageResult
             acknowledgedOrRemovedItemCount,
             documentScopedFailureCount,
             documentScopedFailureIds,
-            administrativeFailure: null
+            administrativeFailure: null,
+            suppressedDocumentIds
         );
 
     public static DocumentCacheProjectionDrainPageResult NoEligibleWork { get; } =

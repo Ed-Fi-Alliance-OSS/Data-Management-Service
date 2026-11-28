@@ -22,6 +22,7 @@ public sealed partial class MssqlReferenceResolverTestDatabase : IAsyncDisposabl
     [
         ("dms", "DataStoreIdentity"),
         ("dms", "DocumentCacheState"),
+        ("dms", "MssqlPhysicalSchema"),
     ];
     private static readonly string _resetSql = MssqlDatabaseResetSql.Build(_baselineTables);
     private static readonly string _coreMetadataSeedSql = """

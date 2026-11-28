@@ -100,6 +100,13 @@ public sealed class CdcConnectorRegistration
         var token = timeout.Token;
         try
         {
+            if (!CdcQualifiedWorkerImage.CanServe(request))
+            {
+                return new CdcTransportResult<CdcConnectorRegistrationReceipt>.Unavailable(
+                    await CdcQualifiedWorkerImage.DiagnoseNativeRefusalAsync(request, _time, token)
+                );
+            }
+
             await using var session = await _store.AcquireAsync(
                 request.Timing.CallTimeout,
                 request.Timing.PollInterval < request.Timing.CallTimeout

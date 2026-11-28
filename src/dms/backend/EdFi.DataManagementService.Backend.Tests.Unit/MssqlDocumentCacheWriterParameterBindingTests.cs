@@ -19,6 +19,15 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_MssqlDocumentCacheWriterParameterBinding
 {
     [Test]
+    public void It_binds_the_serialized_document_as_native_json()
+    {
+        var parameter = BuildCandidateParameters()["@documentJson"];
+
+        parameter.SqlDbType.Should().Be(SqlDbType.Json);
+        parameter.Value.Should().Be("""{"value":"candidate"}""");
+    }
+
+    [Test]
     public void It_binds_resource_key_metadata_parameters_as_unicode_nvarchar()
     {
         IReadOnlyDictionary<string, SqlParameter> parameters = BuildCandidateParameters();

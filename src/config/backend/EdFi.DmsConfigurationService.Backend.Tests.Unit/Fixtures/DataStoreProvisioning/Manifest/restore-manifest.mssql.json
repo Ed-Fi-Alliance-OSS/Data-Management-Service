@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "packageId": "EdFi.Api.Minimal.Template.MsSql.5.2.0",
   "packageVersion": "1.0.123",
   "databaseEngine": "mssql",
@@ -16,7 +16,7 @@
   "resourceKeySeedHashB64": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
   "relationalMappingVersion": "v3",
   "engineVersion": "17.0.900.7",
-  "documentJsonColumnType": "nvarchar(max)",
+  "documentJsonColumnType": "json",
   "inventory": {
     "schemas": [
       {
@@ -117,5 +117,6 @@
   "inventorySha256": "045615fc790c89913b5c72a13a7b4c77dabb87e3e9233bafe32f1cb4b25f3f7d",
   "artifactFileName": "EdFi.Api.Minimal.Template.MsSql.5.2.0.bak",
   "artifactSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+  "mssqlPhysicalSchemaVersion": "v2",
   "databaseCompatibilityLevel": 170
 }

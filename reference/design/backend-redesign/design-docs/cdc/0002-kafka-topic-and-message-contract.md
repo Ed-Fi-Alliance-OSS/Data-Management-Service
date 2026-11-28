@@ -407,7 +407,7 @@ equivalent of the `_lastModifiedDate` consistency check. A missing, null, unavai
 malformed, or wrong-schema value fails the record; it is never replaced with the current time.
 
 For provider source data that Debezium can report as unavailable, including PostgreSQL
-TOAST-backed `jsonb` and SQL Server `nvarchar(max)` `DocumentJson`, the connector pins
+TOAST-backed `jsonb` and physical-v1 SQL Server `nvarchar(max)` `DocumentJson`, the connector pins
 Debezium 3.6's unavailable-value marker. A required retained `DocumentJson` value carrying
 that marker is a transformation failure; it is never interpreted as JSON `null` or emitted
 in the public record.
@@ -415,9 +415,22 @@ in the public record.
 The transform validates every required retained `dms.DocumentCache` field against the
 pinned provider fixture schema as well as its semantic content. `DocumentJson` is a
 schema-backed Kafka Connect `STRING`: PostgreSQL `jsonb` uses Debezium's
-`io.debezium.data.Json` logical string shape, SQL Server `nvarchar(max)` uses the pinned
-string shape, and both provider shapes apply the required-field unavailable-marker check
-above. `ContentVersion` is the
+`io.debezium.data.Json` logical string shape, and physical-v1 SQL Server `nvarchar(max)`
+uses the pinned string shape. For physical v2, SQL Server stores `DocumentJson` as native
+`json`. The column-specific Debezium converter
+`org.edfi.kafka.connect.converters.SqlServerDocumentCacheJsonConverter`, configured as
+`edfiCacheJson` for the exact `DocumentCache` table, preserves the Kafka Connect `STRING`
+shape consumed by `DocumentState`; the physical change does not change the public message
+contract. Both SQL Server baselines and PostgreSQL apply the required-field
+unavailable-marker check above.
+
+Native v2 capture requires an exact worker digest qualified with this converter and its
+SQL Server JDBC driver. Rendering the converter configuration alone does not establish
+that qualification. Until the shipped worker's `mssqlNativeDocumentCache` capability is
+qualified and enabled, native SQL Server CDC admission remains closed; see the
+[worker qualification procedure](../../../../../docs/CDC-QUALIFICATION.md#preparing-the-native-sql-server-worker-cutover).
+
+`ContentVersion` is the
 pinned `INT64`/Java `Long` shape. `ProjectName`, `ResourceName`, `ResourceVersion`, and
 `StreamEtag` are pinned schema-backed string fields. `LastModifiedAt` is PostgreSQL's
 pinned `io.debezium.time.ZonedTimestamp` string shape for `TIMESTAMPTZ` or SQL Server's

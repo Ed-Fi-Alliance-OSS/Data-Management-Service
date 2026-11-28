@@ -29,7 +29,12 @@ Describe "Assert-TemplateWorkflowInputs" {
                 Reusable        = ".github/workflows/build-minimal-template.yml"
                 BackendPath     = "src/dms/backend/EdFi.DataManagementService.Backend.Mssql/**"
                 ComposePath     = "eng/docker-compose/mssql.compose.yml"
-                ExtraPaths      = @("eng/docker-compose/.env.mssql")
+                ExtraPaths      = @(
+                    "eng/docker-compose/.env.mssql"
+                    "src/shared/MssqlDocumentCacheCatalog.sql"
+                    "src/dms/backend/EdFi.DataManagementService.Backend.External/EdFi.DataManagementService.Backend.External.csproj"
+                    "src/dms/backend/EdFi.DataManagementService.Backend.External/MssqlDocumentCachePhysicalSchema.cs"
+                )
                 ForkGuardCount  = 2
                 PackageNames    = @(
                     "EdFi.Api.Minimal.Template.MsSql.5.2.0",
@@ -53,7 +58,12 @@ Describe "Assert-TemplateWorkflowInputs" {
                 Reusable        = ".github/workflows/build-populated-template.yml"
                 BackendPath     = "src/dms/backend/EdFi.DataManagementService.Backend.Mssql/**"
                 ComposePath     = "eng/docker-compose/mssql.compose.yml"
-                ExtraPaths      = @("eng/docker-compose/.env.mssql")
+                ExtraPaths      = @(
+                    "eng/docker-compose/.env.mssql"
+                    "src/shared/MssqlDocumentCacheCatalog.sql"
+                    "src/dms/backend/EdFi.DataManagementService.Backend.External/EdFi.DataManagementService.Backend.External.csproj"
+                    "src/dms/backend/EdFi.DataManagementService.Backend.External/MssqlDocumentCachePhysicalSchema.cs"
+                )
                 ForkGuardCount  = 3
                 PackageNames    = @(
                     "EdFi.Api.Populated.Template.MsSql.5.2.0",
@@ -312,12 +322,16 @@ Describe "Assert-TemplateWorkflowInputs" {
                 Should -BeNullOrEmpty -Because "$($case.FileName) must run only for its own kind/engine plus shared template dependencies"
             @([regex]::Matches($workflowContent, '(?m)^      publish_package: true$')).Count |
                 Should -Be 1 -Because "$($case.FileName) must publish from one call only"
-            @([regex]::Matches($workflowContent, [regex]::Escape("$forkGate && $publishCall }}"))).Count |
-                Should -Be 1 -Because "$($case.FileName) must never publish from a PR"
-            @([regex]::Matches($workflowContent, [regex]::Escape("$forkGate && !($publishCall) }}"))).Count |
-                Should -Be 1 -Because "$($case.FileName) must build every run the publishing call skips"
-            @([regex]::Matches($workflowContent, [regex]::Escape($forkGate))).Count |
-                Should -Be $case.ForkGuardCount -Because "secret-consuming PR jobs must skip fork and draft pull requests"
+            # SQL Server's cutover hold uses different conditions, exercised across event and
+            # publication states by TemplateWorkflowAttestation.Tests.ps1.
+            if ($case.FileName -notlike "*.MsSql.yml") {
+                @([regex]::Matches($workflowContent, [regex]::Escape("$forkGate && $publishCall }}"))).Count |
+                    Should -Be 1 -Because "$($case.FileName) must never publish from a PR"
+                @([regex]::Matches($workflowContent, [regex]::Escape("$forkGate && !($publishCall) }}"))).Count |
+                    Should -Be 1 -Because "$($case.FileName) must build every run the publishing call skips"
+                @([regex]::Matches($workflowContent, [regex]::Escape($forkGate))).Count |
+                    Should -Be $case.ForkGuardCount -Because "secret-consuming PR jobs must skip fork and draft pull requests"
+            }
             @([regex]::Matches($workflowContent, [regex]::Escape($concurrencyGroup))).Count | Should -Be 1
             @([regex]::Matches($workflowContent, [regex]::Escape($cancelInProgress))).Count |
                 Should -Be 1 -Because "new commits should cancel obsolete template builds only for the same PR"
@@ -350,7 +364,7 @@ Describe "Assert-TemplateWorkflowInputs" {
             $workflowContent | Should -Match '(?ms)^  push:\r?\n    branches:\r?\n      - main\r?\n    tags:\r?\n      - "v\*\.\*\.\*"$'
             $workflowContent | Should -Match '(?ms)^  workflow_dispatch:\r?\n    inputs:\r?\n      publish_package:.*?^        default: true$'
             $workflowContent | Should -Match ([regex]::Escape(
-                "&& github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) }}"
+                "&& github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true)"
             ))
         }
     }

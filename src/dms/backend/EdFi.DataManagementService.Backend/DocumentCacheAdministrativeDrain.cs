@@ -5,6 +5,7 @@
 
 using System.Collections.Immutable;
 using System.Data;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
@@ -266,6 +267,9 @@ internal sealed class DocumentCacheAdministrativeDrainer(
     ILogger<DocumentCacheAdministrativeDrainer> logger
 ) : IDocumentCacheAdministrativeDrainer
 {
+    private const int RepeatedPoisonPassThreshold = 2;
+    private const int MixedFailurePassThreshold = 4;
+
     public async Task<DocumentCacheAdministrativeDrainSliceResult> DrainBackpressureReliefSliceAsync(
         DocumentCacheAdministrativeCommandExecutionContext context,
         CancellationToken cancellationToken = default
@@ -357,7 +361,30 @@ internal sealed class DocumentCacheAdministrativeDrainer(
         var currentPass = new DocumentCacheAdministrativeDrainPass(
             context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize
         );
-        var poisonSuppressionRetryPassCount = 0;
+        var unproductivePoisonPassCount = 0;
+        var observedMixedPoisonFailures = false;
+        var unproductiveOrdinaryFailurePassCount = 0;
+        ImmutableArray<long> nativeLimitDocumentIds = [];
+        var verifyingPendingNativeFailure = false;
+        bool isSqlServer =
+            context.TargetContext.TargetExecutionContext.ProviderToken == RelationalProviderToken.SqlServer;
+
+        bool HasExhaustedPoisonRetries() =>
+            unproductivePoisonPassCount
+                >= (observedMixedPoisonFailures ? MixedFailurePassThreshold : RepeatedPoisonPassThreshold)
+            && (
+                !observedMixedPoisonFailures
+                || unproductiveOrdinaryFailurePassCount >= MixedFailurePassThreshold
+            );
+
+        void ResetPoisonRetries()
+        {
+            unproductivePoisonPassCount = 0;
+            observedMixedPoisonFailures = false;
+            unproductiveOrdinaryFailurePassCount = 0;
+            nativeLimitDocumentIds = [];
+            verifyingPendingNativeFailure = false;
+        }
 
         while (true)
         {
@@ -380,18 +407,151 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                 return Fail(context, stats, drainResult.AdministrativeFailure);
             }
 
-            if (CompletedCursorPass(startingCursor, endingCursor, drainResult))
+            ImmutableArray<long> pageNativeLimitDocumentIds = isSqlServer
+                ? drainResult.NativeLimitFailureIds
+                : [];
+            ImmutableArray<long> suppressedNativeLimitDocumentIds = isSqlServer
+                ? drainResult.SuppressedNativeLimitFailureIds
+                : [];
+            ImmutableArray<long> currentNativeLimitDocumentIds = pageNativeLimitDocumentIds.AddRange(
+                suppressedNativeLimitDocumentIds
+            );
+            ImmutableArray<long> GetOtherFailureDocumentIds() =>
+                currentPass
+                    .OrdinaryFailureDocumentIds.Concat(
+                        drainResult.DocumentScopedFailureIds.Except(pageNativeLimitDocumentIds)
+                    )
+                    .Concat(drainResult.SuppressedDocumentIds.Except(suppressedNativeLimitDocumentIds))
+                    .Distinct()
+                    .Take(context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize)
+                    .ToImmutableArray();
+            bool completedCursorPass = CompletedCursorPass(startingCursor, endingCursor, drainResult);
+
+            if (verifyingPendingNativeFailure)
             {
+                if (drainResult.AcknowledgedOrRemovedItemCount > 0)
+                {
+                    ResetPoisonRetries();
+                }
+                else if (!currentNativeLimitDocumentIds.IsEmpty)
+                {
+                    return PersistentPoison(
+                        context,
+                        stats,
+                        currentNativeLimitDocumentIds,
+                        nativeLimitConfirmed: true,
+                        otherFailureDocumentIds: GetOtherFailureDocumentIds()
+                    );
+                }
+                else if (completedCursorPass)
+                {
+                    return PersistentPoison(context, stats, currentPass.DiagnosticDocumentIds);
+                }
+            }
+
+            if (completedCursorPass)
+            {
+                if (observedMixedPoisonFailures && currentPass.IsNativeLimitOnlyTraversal)
+                {
+                    // A source deletion can remove ordinary work without an acknowledgement.
+                    // Retire its allowance only after a full traversal sees native work alone.
+                    observedMixedPoisonFailures = false;
+                    unproductivePoisonPassCount = 0;
+                    unproductiveOrdinaryFailurePassCount = 0;
+                }
                 if (
-                    drainResult.AcknowledgedOrRemovedItemCount > 0
-                    || drainResult.DocumentScopedFailureCount > 0
+                    currentPass.IsUnproductivePoisonPass
+                    && currentPass.NativeLimitFailureCount < currentPass.DocumentScopedFailureCount
+                    && currentPass.SuppressedOrdinaryFailureCount == 0
+                    && drainResult.AcknowledgedOrRemovedItemCount == 0
+                    && drainResult.DocumentScopedFailureCount == drainResult.ProcessedItemCount
                 )
                 {
-                    poisonSuppressionRetryPassCount = 0;
+                    // Count only traversals where every ordinary pending row got an attempt.
+                    // Native-only retries and suppressed ordinary work consume no allowance.
+                    unproductiveOrdinaryFailurePassCount++;
                 }
-                else if (currentPass.IsUnproductiveNoProgressPass)
+                // Native JSON limit failures can outnumber the bounded suppression cache and
+                // become eligible again on every wrap. Classify the entire completed pass,
+                // using the categories captured before later pages can evict the failures.
+                // Acknowledgement on the wrapping page is still progress.
+                if (
+                    currentPass.IsUnproductivePoisonPass
+                    && currentPass.NativeLimitFailureCount > 0
+                    && drainResult.AcknowledgedOrRemovedItemCount == 0
+                    && drainResult.DocumentScopedFailureCount == drainResult.ProcessedItemCount
+                )
                 {
-                    poisonSuppressionRetryPassCount = 0;
+                    observedMixedPoisonFailures |=
+                        !currentPass.IsUnproductiveNativeLimitPass
+                        || currentPass.SuppressedOrdinaryFailureCount > 0
+                        || pageNativeLimitDocumentIds.Length != drainResult.DocumentScopedFailureCount
+                        || drainResult.SuppressedDocumentIds.Length > suppressedNativeLimitDocumentIds.Length;
+                    // Use the latest completed pass, since earlier work rows can disappear
+                    // when their source documents are deleted between passes.
+                    nativeLimitDocumentIds = currentPass.NativeLimitDocumentIds;
+                    // A fully suppressed wrapping page is followed by NoEligibleWorkWithRetry.
+                    // Classify the pass now, but count that retry boundary only once below.
+                    if (drainResult.ProcessedItemCount > 0)
+                    {
+                        unproductivePoisonPassCount++;
+                    }
+                    if (drainResult.ProcessedItemCount > 0 && HasExhaustedPoisonRetries())
+                    {
+                        if (!currentNativeLimitDocumentIds.IsEmpty)
+                        {
+                            return PersistentPoison(
+                                context,
+                                stats,
+                                currentNativeLimitDocumentIds,
+                                nativeLimitConfirmed: true,
+                                otherFailureDocumentIds: GetOtherFailureDocumentIds()
+                            );
+                        }
+                        // A previous pass's native IDs can be stale after source deletion.
+                        // Continue from this wrapping page until pending native work is observed
+                        // or one complete traversal confirms only ordinary work remains.
+                        verifyingPendingNativeFailure = true;
+                    }
+
+                    // After establishing repeated native failures, give mixed work two more
+                    // complete passes with backoff so ordinary failures can recover. Keep this
+                    // allowance until progress, even if a later pass has only native failures.
+                    if (
+                        !verifyingPendingNativeFailure
+                        && drainResult.ProcessedItemCount > 0
+                        && observedMixedPoisonFailures
+                        && unproductivePoisonPassCount >= RepeatedPoisonPassThreshold
+                    )
+                    {
+                        await delay
+                            .DelayAsync(
+                                context
+                                    .TargetContext
+                                    .TargetExecutionContext
+                                    .EffectiveSettings
+                                    .ProjectorFailureBackoff,
+                                timeProvider,
+                                effectiveCancellationToken
+                            )
+                            .ConfigureAwait(false);
+                    }
+                }
+                else if (
+                    !observedMixedPoisonFailures
+                    || currentPass.AcknowledgedOrRemovedItemCount > 0
+                    || drainResult.AcknowledgedOrRemovedItemCount > 0
+                )
+                {
+                    ResetPoisonRetries();
+                }
+
+                if (
+                    currentPass.IsUnproductiveNoProgressPass
+                    && drainResult.AcknowledgedOrRemovedItemCount == 0
+                    && drainResult.DocumentScopedFailureCount == 0
+                )
+                {
                     logger.LogDebug(
                         "DocumentCache administrative drain for target {TargetKey} completed a cursor pass without acknowledging, removing, or recording failures and will poll again.",
                         LoggingSanitizer.SanitizeInternalValueForLogging(
@@ -401,15 +561,23 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                     await DelayForPollIntervalAsync(context, effectiveCancellationToken)
                         .ConfigureAwait(false);
                 }
-                else
-                {
-                    poisonSuppressionRetryPassCount = 0;
-                }
-
                 currentPass = NewPass(context);
             }
 
-            currentPass.Record(drainResult);
+            currentPass.Record(
+                drainResult,
+                pageNativeLimitDocumentIds,
+                suppressedNativeLimitDocumentIds,
+                includeSuppressedDiagnostics: isSqlServer
+            );
+
+            // Suppressed ordinary failures still need their retry allowance, including
+            // after healthy work reset the counters on the preceding traversal.
+            if (isSqlServer && currentPass.NativeLimitDocumentIds.Length > 0)
+            {
+                observedMixedPoisonFailures |= currentPass.SuppressedOrdinaryFailureCount > 0;
+                nativeLimitDocumentIds = currentPass.NativeLimitDocumentIds;
+            }
 
             switch (drainResult.Outcome)
             {
@@ -427,28 +595,62 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                         return DocumentCacheAdministrativeDrainToEmptyResult.Succeeded(stats);
                     }
 
+                    if (verifyingPendingNativeFailure && drainResult.NextRetryAt is not null)
+                    {
+                        return PersistentPoison(context, stats, currentPass.DiagnosticDocumentIds);
+                    }
+
                     if (drainResult.NextRetryAt is not null)
                     {
                         if (currentPass.IsUnproductivePoisonPass || currentPass.ProcessedItemCount == 0)
                         {
-                            poisonSuppressionRetryPassCount++;
-                            if (poisonSuppressionRetryPassCount >= 2)
+                            unproductivePoisonPassCount++;
+                            if (HasExhaustedPoisonRetries())
                             {
+                                if (!nativeLimitDocumentIds.IsEmpty)
+                                {
+                                    verifyingPendingNativeFailure = true;
+                                    currentPass = NewPass(context);
+                                    continue;
+                                }
                                 return PersistentPoison(context, stats, currentPass.DiagnosticDocumentIds);
                             }
                         }
-                        else
+                        else if (
+                            !observedMixedPoisonFailures
+                            || currentPass.AcknowledgedOrRemovedItemCount > 0
+                        )
                         {
-                            poisonSuppressionRetryPassCount = 0;
+                            ResetPoisonRetries();
                         }
 
-                        await DelayUntilAsync(drainResult.NextRetryAt.Value, effectiveCancellationToken)
-                            .ConfigureAwait(false);
+                        if (isSqlServer && observedMixedPoisonFailures)
+                        {
+                            // Waiting only for the earliest deadline can keep independently
+                            // staggered ordinary failures from ever retrying in one traversal.
+                            // A full backoff makes every failure recorded so far eligible.
+                            await delay
+                                .DelayAsync(
+                                    context
+                                        .TargetContext
+                                        .TargetExecutionContext
+                                        .EffectiveSettings
+                                        .ProjectorFailureBackoff,
+                                    timeProvider,
+                                    effectiveCancellationToken
+                                )
+                                .ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            await DelayUntilAsync(drainResult.NextRetryAt.Value, effectiveCancellationToken)
+                                .ConfigureAwait(false);
+                        }
                         currentPass = NewPass(context);
                         continue;
                     }
 
-                    poisonSuppressionRetryPassCount = 0;
+                    ResetPoisonRetries();
                     currentPass = NewPass(context);
                     logger.LogDebug(
                         "DocumentCache administrative drain for target {TargetKey} found durable work after an empty page and will poll again.",
@@ -589,22 +791,43 @@ internal sealed class DocumentCacheAdministrativeDrainer(
     private static DocumentCacheAdministrativeDrainToEmptyResult PersistentPoison(
         DocumentCacheAdministrativeCommandExecutionContext context,
         DocumentCacheAdministrativeDrainStats stats,
-        ImmutableArray<long> diagnosticDocumentIds
+        ImmutableArray<long> diagnosticDocumentIds,
+        bool nativeLimitConfirmed = false,
+        ImmutableArray<long> otherFailureDocumentIds = default
     )
     {
-        ImmutableArray<long> boundedDocumentIds = diagnosticDocumentIds.IsDefaultOrEmpty
-            ? context.TargetContext.FailureBackoffState.CreateFailureDiagnosticsSnapshot().DocumentIds
-            : diagnosticDocumentIds;
+        ImmutableArray<long> boundedDocumentIds = (
+            diagnosticDocumentIds.IsDefaultOrEmpty
+                ? context.TargetContext.FailureBackoffState.CreateFailureDiagnosticsSnapshot().DocumentIds
+                : diagnosticDocumentIds
+        )
+            .Take(context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize)
+            .ToImmutableArray();
+
+        string message =
+            "Administrative drain observed durable work that repeatedly produced only document-scoped failures after retry was due.";
+        if (
+            context.TargetContext.TargetExecutionContext.ProviderToken == RelationalProviderToken.SqlServer
+            && !boundedDocumentIds.IsEmpty
+            && nativeLimitConfirmed
+        )
+        {
+            message =
+                "A document exceeds SQL Server native JSON storage limits. Its projection work is still pending. Update or remove the source document before retrying.";
+            if (!otherFailureDocumentIds.IsDefaultOrEmpty)
+            {
+                message +=
+                    $" Other failed document IDs observed during this traversal (bounded): {string.Join(", ", otherFailureDocumentIds)}.";
+            }
+        }
 
         DocumentCacheAdministrativeCommandResult failureResult = context.Failed(
             DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
             DocumentCacheAdministrativeCommandClassification.PersistentPoison,
             DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison,
-            "Administrative drain observed durable work that repeatedly produced only document-scoped failures after retry was due.",
+            message,
             retryable: true,
             affectedDocumentIds: boundedDocumentIds
-                .Take(context.TargetContext.TargetExecutionContext.EffectiveSettings.ProjectorPageSize)
-                .ToImmutableArray()
         );
 
         return DocumentCacheAdministrativeDrainToEmptyResult.Failed(stats, failureResult);
@@ -680,6 +903,9 @@ internal readonly record struct DocumentCacheAdministrativeDrainCursorPosition(
 internal sealed class DocumentCacheAdministrativeDrainPass(int diagnosticCapacity)
 {
     private ImmutableArray<long> _diagnosticDocumentIds = [];
+    private ImmutableArray<long> _nativeLimitDocumentIds = [];
+    private ImmutableArray<long> _ordinaryFailureDocumentIds = [];
+    private int _suppressedFailureCount;
 
     public int ProcessedItemCount { get; private set; }
 
@@ -689,32 +915,81 @@ internal sealed class DocumentCacheAdministrativeDrainPass(int diagnosticCapacit
 
     public ImmutableArray<long> DiagnosticDocumentIds => _diagnosticDocumentIds;
 
-    public bool RecordedDurableProgress =>
-        AcknowledgedOrRemovedItemCount > 0 || DocumentScopedFailureCount > 0;
-
     public bool IsUnproductiveNoProgressPass =>
         ProcessedItemCount > 0 && AcknowledgedOrRemovedItemCount == 0 && DocumentScopedFailureCount == 0;
+
+    public int NativeLimitFailureCount { get; private set; }
+
+    public int SuppressedOrdinaryFailureCount { get; private set; }
+
+    public bool IsNativeLimitOnlyTraversal =>
+        ProcessedItemCount + _suppressedFailureCount > 0
+        && ProcessedItemCount == NativeLimitFailureCount
+        && SuppressedOrdinaryFailureCount == 0;
+
+    public ImmutableArray<long> NativeLimitDocumentIds => _nativeLimitDocumentIds;
+
+    public ImmutableArray<long> OrdinaryFailureDocumentIds => _ordinaryFailureDocumentIds;
+
+    public bool IsUnproductiveNativeLimitPass =>
+        IsUnproductivePoisonPass && NativeLimitFailureCount == DocumentScopedFailureCount;
 
     public bool IsUnproductivePoisonPass =>
         ProcessedItemCount > 0
         && AcknowledgedOrRemovedItemCount == 0
         && DocumentScopedFailureCount == ProcessedItemCount;
 
-    public void Record(DocumentCacheProjectionDrainPageResult result)
+    public void Record(
+        DocumentCacheProjectionDrainPageResult result,
+        ImmutableArray<long> nativeLimitFailureIds = default,
+        ImmutableArray<long> suppressedNativeLimitFailureIds = default,
+        bool includeSuppressedDiagnostics = false
+    )
     {
         ArgumentNullException.ThrowIfNull(result);
 
+        _suppressedFailureCount += result.SuppressedDocumentIds.Length;
+        SuppressedOrdinaryFailureCount +=
+            result.SuppressedDocumentIds.Length
+            - (suppressedNativeLimitFailureIds.IsDefault ? 0 : suppressedNativeLimitFailureIds.Length);
+
+        if (!nativeLimitFailureIds.IsDefaultOrEmpty)
+        {
+            NativeLimitFailureCount += nativeLimitFailureIds.Length;
+        }
+        _nativeLimitDocumentIds = _nativeLimitDocumentIds
+            .AddRange(nativeLimitFailureIds.IsDefault ? [] : nativeLimitFailureIds)
+            .AddRange(suppressedNativeLimitFailureIds.IsDefault ? [] : suppressedNativeLimitFailureIds)
+            .Distinct()
+            .Take(diagnosticCapacity)
+            .ToImmutableArray();
         ProcessedItemCount += result.ProcessedItemCount;
         AcknowledgedOrRemovedItemCount += result.AcknowledgedOrRemovedItemCount;
         DocumentScopedFailureCount += result.DocumentScopedFailureCount;
 
-        if (result.DocumentScopedFailureIds.IsDefaultOrEmpty)
-        {
-            return;
-        }
+        // Filter each page before applying the cap so native failures cannot crowd out
+        // ordinary failures encountered on later pages of the same traversal.
+        _ordinaryFailureDocumentIds = _ordinaryFailureDocumentIds
+            .AddRange(
+                result.DocumentScopedFailureIds.Where(id =>
+                    nativeLimitFailureIds.IsDefaultOrEmpty || !nativeLimitFailureIds.Contains(id)
+                )
+            )
+            .AddRange(
+                includeSuppressedDiagnostics
+                    ? result.SuppressedDocumentIds.Where(id =>
+                        suppressedNativeLimitFailureIds.IsDefaultOrEmpty
+                        || !suppressedNativeLimitFailureIds.Contains(id)
+                    )
+                    : []
+            )
+            .Distinct()
+            .Take(diagnosticCapacity)
+            .ToImmutableArray();
 
         _diagnosticDocumentIds = _diagnosticDocumentIds
             .AddRange(result.DocumentScopedFailureIds)
+            .AddRange(includeSuppressedDiagnostics ? result.SuppressedDocumentIds : [])
             .Distinct()
             .Take(diagnosticCapacity)
             .ToImmutableArray();

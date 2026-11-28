@@ -25,7 +25,9 @@ public static class DmsTargetValidator
     public const string IdentityCheck = "Identity";
     public const string EngineMajorCheck = "EngineMajor";
     public const string CompatibilityLevelCheck = "CompatibilityLevel";
+    public const string MssqlPhysicalSchemaVersionCheck = "MssqlPhysicalSchemaVersion";
     public const string DocumentJsonColumnTypeCheck = "DocumentJsonColumnType";
+    public const string MssqlDocumentCacheObjectCheck = "MssqlDocumentCacheObjectCheck";
     public const string InventoryHashCheck = "InventoryHash";
     public const string ContentProfileCheck = "ContentProfile";
     public const string ProjectSetCheck = "ProjectSet";
@@ -242,9 +244,26 @@ public static class DmsTargetValidator
             return Invalid(DmsProvisioningFailureCode.TargetIncompatible, CompatibilityLevelCheck);
         }
 
-        return DocumentJsonColumnTypeMatches(facts.DocumentJsonColumns, manifest)
-            ? null
-            : Invalid(DmsProvisioningFailureCode.TargetIncompatible, DocumentJsonColumnTypeCheck);
+        if (
+            manifest.DatabaseEngine == RestoreManifest.MssqlEngine
+            && (
+                !facts.HasMssqlPhysicalSchemaMarker
+                || manifest.MssqlPhysicalSchemaVersion != RestoreManifest.NativeMssqlPhysicalSchemaVersion
+            )
+        )
+        {
+            return Invalid(DmsProvisioningFailureCode.TargetIncompatible, MssqlPhysicalSchemaVersionCheck);
+        }
+
+        if (!DocumentJsonColumnTypeMatches(facts.DocumentJsonColumns, manifest))
+        {
+            return Invalid(DmsProvisioningFailureCode.TargetIncompatible, DocumentJsonColumnTypeCheck);
+        }
+
+        return
+            manifest.DatabaseEngine == RestoreManifest.MssqlEngine && !facts.HasMssqlDocumentCacheObjectCheck
+            ? Invalid(DmsProvisioningFailureCode.TargetIncompatible, MssqlDocumentCacheObjectCheck)
+            : null;
     }
 
     /// <summary>
@@ -263,7 +282,12 @@ public static class DmsTargetValidator
 
         if (
             !columns.Any(column =>
-                Same(column.SchemaName, DmsSchemaName) && Same(column.TableName, DocumentCacheTableName)
+                Same(column.SchemaName, DmsSchemaName)
+                && Same(column.TableName, DocumentCacheTableName)
+                && (
+                    manifest.DatabaseEngine != RestoreManifest.MssqlEngine
+                    || column.IsMssqlDocumentCacheColumn
+                )
             )
         )
         {

@@ -69,10 +69,20 @@ CREATE TABLE [dms].[DocumentCache]
 (
     [DocumentId] bigint NOT NULL,
     [DocumentUuid] uniqueidentifier NOT NULL,
-    [DocumentJson] nvarchar(max) NOT NULL,
+    [DocumentJson] json NOT NULL,
     [ComputedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
-    CONSTRAINT [PK_DocumentCache] PRIMARY KEY CLUSTERED ([DocumentId])
+    CONSTRAINT [PK_DocumentCache] PRIMARY KEY CLUSTERED ([DocumentId]),
+    CONSTRAINT [CK_DocumentCache_IsJsonObject] CHECK (ISJSON([DocumentJson], OBJECT) = 1)
 );
+
+CREATE TABLE [dms].[MssqlPhysicalSchema]
+(
+    [SingletonId] smallint NOT NULL,
+    [MssqlPhysicalSchemaVersion] varchar(2) NOT NULL,
+    CONSTRAINT [PK_MssqlPhysicalSchema] PRIMARY KEY ([SingletonId]),
+    CONSTRAINT [CK_MssqlPhysicalSchema_Singleton] CHECK ([SingletonId] = 1)
+);
+INSERT INTO [dms].[MssqlPhysicalSchema] VALUES (1, 'v2');
 
 CREATE TABLE [dms].[DocumentCacheState]
 (

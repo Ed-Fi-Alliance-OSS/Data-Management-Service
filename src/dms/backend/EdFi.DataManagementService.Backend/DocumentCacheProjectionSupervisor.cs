@@ -131,6 +131,21 @@ public sealed class DocumentCacheProjectionFailureBackoffState
 
     public int Capacity { get; }
 
+    internal DocumentCacheProjectionDocumentDiagnosticCategory? GetFailureCategory(
+        long documentId,
+        long requiredContentVersion
+    )
+    {
+        lock (_sync)
+        {
+            return
+                _entries.TryGetValue(documentId, out FailureEntry? entry)
+                && entry.RequiredContentVersion == requiredContentVersion
+                ? entry.Category
+                : null;
+        }
+    }
+
     public int Count
     {
         get
@@ -158,7 +173,8 @@ public sealed class DocumentCacheProjectionFailureBackoffState
         DocumentCacheProjectionDocumentDiagnosticCategory category,
         string message,
         DateTimeOffset observedAt,
-        TimeSpan failureBackoff
+        TimeSpan failureBackoff,
+        long? requiredContentVersion = null
     )
     {
         if (documentId <= 0)
@@ -199,7 +215,14 @@ public sealed class DocumentCacheProjectionFailureBackoffState
 
             _entries = _entries.SetItem(
                 documentId,
-                new FailureEntry(documentId, category, message, observedAt, nextRetryAt)
+                new FailureEntry(
+                    documentId,
+                    category,
+                    message,
+                    observedAt,
+                    nextRetryAt,
+                    RequiredContentVersion: requiredContentVersion
+                )
             );
             _diagnostics = _diagnostics.Remove(documentId);
             AppendPoisonTraversalDiagnostic(
@@ -269,7 +292,7 @@ public sealed class DocumentCacheProjectionFailureBackoffState
         }
     }
 
-    public bool IsSuppressed(long documentId, DateTimeOffset observedAt)
+    public bool IsSuppressed(long documentId, DateTimeOffset observedAt, long? requiredContentVersion = null)
     {
         if (documentId <= 0)
         {
@@ -279,7 +302,14 @@ public sealed class DocumentCacheProjectionFailureBackoffState
         lock (_sync)
         {
             return _entries.TryGetValue(documentId, out FailureEntry? entry)
-                && entry.NextRetryAt > observedAt;
+                && entry.NextRetryAt > observedAt
+                && !(
+                    entry.Category
+                        == DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                    && requiredContentVersion is long queuedVersion
+                    && entry.RequiredContentVersion is long failedVersion
+                    && queuedVersion > failedVersion
+                );
         }
     }
 
@@ -485,7 +515,8 @@ public sealed class DocumentCacheProjectionFailureBackoffState
         DateTimeOffset ObservedAt,
         DateTimeOffset NextRetryAt,
         bool SkippedUntilRetryDiagnosticRecorded = false,
-        bool PageCapacityExhaustedDiagnosticRecorded = false
+        bool PageCapacityExhaustedDiagnosticRecorded = false,
+        long? RequiredContentVersion = null
     );
 
     private sealed record DiagnosticEntry(

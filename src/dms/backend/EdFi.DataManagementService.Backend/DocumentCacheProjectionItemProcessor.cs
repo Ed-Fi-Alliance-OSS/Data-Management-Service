@@ -91,6 +91,8 @@ internal sealed record DocumentCacheProjectionItemProcessResult
 
     public DocumentCacheAdministrativeDrainFailure? AdministrativeFailure { get; }
 
+    internal bool IsNativeJsonLimitFailure { get; private init; }
+
     public static DocumentCacheProjectionItemProcessResult Continue { get; } =
         new(
             DocumentCacheProjectionItemProcessOutcome.Continue,
@@ -117,6 +119,12 @@ internal sealed record DocumentCacheProjectionItemProcessResult
             documentScopedFailureRecorded: true,
             administrativeFailure: null
         );
+
+    public static DocumentCacheProjectionItemProcessResult NativeJsonLimitFailure { get; } =
+        DocumentScopedFailure with
+        {
+            IsNativeJsonLimitFailure = true,
+        };
 
     public static DocumentCacheProjectionItemProcessResult LifecycleFenced { get; } =
         new(
@@ -251,7 +259,8 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         DocumentCacheWriterResult writerResult,
         bool materializationAllowed,
         DocumentCacheProjectionDrainInvocationKind invocationKind,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        long? attemptedContentVersion = null
     )
     {
         DateTimeOffset observedAt = _timeProvider.GetUtcNow();
@@ -318,14 +327,20 @@ internal sealed class DocumentCacheProjectionItemProcessor(
             case DocumentCacheWriterResult.CallerAbortedRetry:
             case DocumentCacheWriterResult.DeleteRaceRetryExhausted:
             case DocumentCacheWriterResult.CacheAheadUnconfirmedCallerAbort:
+            case DocumentCacheWriterResult.NativeJsonLimitExceeded:
                 RecordDocumentFailure(
                     targetContext,
                     workItem,
-                    DocumentCacheProjectionDocumentDiagnosticCategory.WriterOutcome,
+                    writerResult is DocumentCacheWriterResult.NativeJsonLimitExceeded
+                        ? DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                        : DocumentCacheProjectionDocumentDiagnosticCategory.WriterOutcome,
                     $"Cache writer outcome {writerResult.Outcome}.",
-                    observedAt
+                    observedAt,
+                    attemptedContentVersion
                 );
-                return DocumentCacheProjectionItemProcessResult.DocumentScopedFailure;
+                return writerResult is DocumentCacheWriterResult.NativeJsonLimitExceeded
+                    ? DocumentCacheProjectionItemProcessResult.NativeJsonLimitFailure
+                    : DocumentCacheProjectionItemProcessResult.DocumentScopedFailure;
 
             case DocumentCacheWriterResult.LifecycleOrLatchFenced:
                 LogContinuingWriterOutcome(targetContext, writerResult);
@@ -450,7 +465,8 @@ internal sealed class DocumentCacheProjectionItemProcessor(
                     candidateResult.WriterResult!,
                     materializationAllowed: false,
                     invocationKind,
-                    cancellationToken
+                    cancellationToken,
+                    attemptedContentVersion: success.Candidate.ContentVersion
                 )
                 .ConfigureAwait(false);
         }
@@ -822,14 +838,16 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         DocumentProjectionWorkPageItem workItem,
         DocumentCacheProjectionDocumentDiagnosticCategory category,
         string message,
-        DateTimeOffset observedAt
+        DateTimeOffset observedAt,
+        long? attemptedContentVersion = null
     ) =>
         targetContext.FailureBackoffState.RecordFailure(
             workItem.DocumentId,
             category,
             message,
             observedAt,
-            targetContext.TargetExecutionContext.EffectiveSettings.ProjectorFailureBackoff
+            targetContext.TargetExecutionContext.EffectiveSettings.ProjectorFailureBackoff,
+            attemptedContentVersion ?? workItem.RequiredContentVersion
         );
 
     private static void RecordDocumentDiagnostic(

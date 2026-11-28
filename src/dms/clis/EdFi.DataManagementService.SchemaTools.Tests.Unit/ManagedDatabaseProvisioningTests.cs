@@ -388,9 +388,8 @@ public class Given_Managed_Database_Provisioning_Command_Failure(string dialect)
                     return json.RootElement.GetProperty("operations").GetArrayLength();
                 });
 
-            // SQL Server's failed CREATE attempt leaves intent, so its retry keeps the dedicated recovery
-            // diagnostic. PostgreSQL fails in the platform check before any intent, so its retry repeats
-            // the same safe diagnostic.
+            // Both providers parse the connection during the platform check, before recording intent.
+            // A retry must therefore repeat the same sanitized diagnostic without requiring recovery.
             output.GetStringBuilder().Clear();
             error.GetStringBuilder().Clear();
             exitCode = await command.Parse(arguments).InvokeAsync();
@@ -554,18 +553,12 @@ public class Given_Managed_Database_Provisioning_Command_Failure(string dialect)
     public void It_preserves_the_recovery_exit_code() => _retry.ExitCode.Should().Be(1);
 
     [Test]
-    public void It_records_creation_intent_only_after_the_platform_check() =>
-        _operationsAfterFailure.Should().Be(dialect == "pgsql" ? 0 : 1);
+    public void It_does_not_record_creation_intent_when_the_platform_check_fails() =>
+        _operationsAfterFailure.Should().Be(0);
 
     [Test]
-    public void It_preserves_the_dedicated_recovery_diagnostic_only_after_an_attempted_create() =>
-        _retry
-            .Error.Should()
-            .Be(
-                dialect == "pgsql"
-                    ? _failure.Error
-                    : new CdcManagedProvisioningRecoveryException().Message + Environment.NewLine
-            );
+    public void It_repeats_the_sanitized_diagnostic_without_requiring_recovery() =>
+        _retry.Error.Should().Be(_failure.Error);
 
     [Test]
     public void It_emits_no_success_output_on_recovery() => _retry.Output.Should().BeEmpty();

@@ -160,6 +160,87 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
             );
     }
 
+    [TestCase(3, 1)]
+    [TestCase(1, 2)]
+    [TestCase(2, 5)]
+    public async Task It_bounds_oversized_document_retries_drains_healthy_work_and_resumes_after_correction(
+        int pageSize,
+        int oversizedDocumentCount
+    )
+    {
+        var tracking = new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false);
+        var rebuilding = new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Rebuilding, false);
+        await SetLifecycleAsync(tracking.State, cacheAheadRecoveryRequired: false);
+        IReadOnlyList<SourceDocument> sources = await InsertProjectedRowsAsync(oversizedDocumentCount + 1);
+        SourceDocument[] oversized = sources.Take(oversizedDocumentCount).ToArray();
+        SourceDocument healthy = sources[^1];
+        string oversizedKey = new('x', 8_000);
+        foreach (SourceDocument source in oversized)
+        {
+            source.Document[oversizedKey] = 1;
+        }
+        var request = new DocumentCacheOnlineCacheRebuildRequest(
+            AdministrativeTargetKey,
+            Fingerprint,
+            DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+        );
+
+        DocumentCacheAdministrativeCommandResult failure = await CreateCommand(
+                tracking,
+                new RecordingObservationSink(),
+                pageSize: pageSize
+            )
+            .ExecuteAsync(request);
+
+        failure.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
+        failure.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.PersistentPoison);
+        var diagnostic = failure
+            .PhaseDiagnostics.Should()
+            .ContainSingle(d =>
+                d.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.PersistentPoison
+            )
+            .Subject;
+        diagnostic.AffectedDocumentIds.Should().NotBeEmpty().And.HaveCountLessThanOrEqualTo(pageSize);
+        diagnostic
+            .AffectedDocumentIds.Should()
+            .OnlyContain(id => oversized.Any(source => source.DocumentId == id));
+        diagnostic.Message.Should().Contain("native JSON storage limits");
+        oversized
+            .Should()
+            .OnlyContain(source => source.MaterializationCount >= 1 && source.MaterializationCount <= 4);
+        oversized.Should().Contain(source => source.MaterializationCount > 1);
+        (await ReadLifecycleAsync()).Should().Be(rebuilding);
+        var pending = await _database.QueryRowsAsync("SELECT DocumentId FROM dms.DocumentProjectionWork;");
+        pending
+            .Select(row => Convert.ToInt64(row["DocumentId"]))
+            .Should()
+            .BeEquivalentTo(oversized.Select(source => source.DocumentId));
+        var cached = await ReadCachedJsonByDocumentIdAsync();
+        cached.Keys.Should().Equal(healthy.DocumentId);
+        cached[healthy.DocumentId].Should().Contain($"rebuilt-{healthy.DocumentId}");
+
+        foreach (SourceDocument source in oversized)
+        {
+            source.Document.Remove(oversizedKey);
+        }
+        DocumentCacheAdministrativeCommandResult resumed = await CreateCommand(
+                rebuilding,
+                new RecordingObservationSink(),
+                pageSize: pageSize
+            )
+            .ExecuteAsync(request);
+
+        resumed.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        (await ReadLifecycleAsync()).Should().Be(tracking);
+        (await ReadCountAsync("DocumentProjectionWork")).Should().Be(0);
+        var resumedCache = await ReadCachedJsonByDocumentIdAsync();
+        resumedCache.Keys.Should().BeEquivalentTo(sources.Select(source => source.DocumentId));
+        foreach (SourceDocument source in oversized)
+        {
+            resumedCache[source.DocumentId].Should().Contain($"rebuilt-{source.DocumentId}");
+        }
+    }
+
     [Test]
     public async Task It_rejects_a_set_latch_without_mutating_lifecycle_cache_or_work()
     {
@@ -229,10 +310,11 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
     private DocumentCacheOnlineCacheRebuildCommand CreateCommand(
         DocumentCacheLifecycleObservation lifecycle,
         RecordingObservationSink observationSink,
-        DrainStartProbe? drainStartProbe = null
+        DrainStartProbe? drainStartProbe = null,
+        int pageSize = 3
     )
     {
-        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(lifecycle);
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(lifecycle, pageSize);
         MssqlDocumentCacheWriter writer = CreateWriter();
         DocumentCacheProjectionTargetRuntimeContext runtimeContext = RuntimeContext(executionContext, writer);
         var registry = new StubTargetRegistry(
@@ -256,7 +338,7 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<DocumentCacheAdministrativeCommandRunner>.Instance
         );
-        DocumentCacheAdministrativeDrainer drainer = CreateDrainer(observationSink);
+        DocumentCacheAdministrativeDrainer drainer = CreateDrainer(observationSink, pageSize);
         IDocumentCacheAdministrativeDrainer effectiveDrainer = drainStartProbe is null
             ? drainer
             : new ProbingDrainer(drainStartProbe, drainer);
@@ -291,44 +373,42 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
         );
 
     private static DocumentCacheAdministrativeDrainer CreateDrainer(
-        IDocumentCacheProjectionObservationSink observationSink
+        IDocumentCacheProjectionObservationSink observationSink,
+        int pageSize
     )
     {
+        var clock = new DrainClock();
         DocumentCacheOptions options = new()
         {
-            Projector = new DocumentCacheProjectorOptions { MaxConcurrentTargets = 1, PageSize = 3 },
+            Projector = new DocumentCacheProjectorOptions { MaxConcurrentTargets = 1, PageSize = pageSize },
         };
         var scheduler = new DocumentCacheProjectionScheduler(
             Options.Create(options),
             new DocumentCacheProjectionDrainPageProcessor(
                 new MssqlDocumentProjectionWorkPager(NullLogger<MssqlDocumentProjectionWorkPager>.Instance),
                 new DocumentCacheProjectionItemProcessor(
-                    new FixedTimeProvider(ObservedAtOffset),
+                    clock,
                     NullLogger<DocumentCacheProjectionItemProcessor>.Instance
                 ),
                 NullLogger<DocumentCacheProjectionDrainPageProcessor>.Instance,
-                new FixedTimeProvider(ObservedAtOffset)
+                clock
             ),
             observationSink,
-            new FixedTimeProvider(ObservedAtOffset),
+            clock,
             NullLogger<DocumentCacheProjectionScheduler>.Instance
         );
 
-        return new(
-            scheduler,
-            new DocumentCacheAdministrativeDrainDelay(),
-            new FixedTimeProvider(ObservedAtOffset),
-            NullLogger<DocumentCacheAdministrativeDrainer>.Instance
-        );
+        return new(scheduler, clock, clock, NullLogger<DocumentCacheAdministrativeDrainer>.Instance);
     }
 
     private DocumentCacheTargetExecutionContext ExecutionContext(
-        DocumentCacheLifecycleObservation lifecycle
+        DocumentCacheLifecycleObservation lifecycle,
+        int pageSize
     ) =>
         new(
             TargetKey,
             new DocumentCacheTargetContextGeneration(1),
-            EffectiveSettings(),
+            EffectiveSettings(pageSize),
             new DocumentCacheTargetDataStoreMetadata(TargetKey.DataStoreId, "mssql"),
             new DocumentCacheTargetConnectionInput(
                 RelationalProviderToken.SqlServer,
@@ -347,12 +427,12 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
             SatisfiedSqlServerPrerequisites()
         );
 
-    private static DocumentCacheTargetEffectiveSettings EffectiveSettings() =>
+    private static DocumentCacheTargetEffectiveSettings EffectiveSettings(int pageSize) =>
         new(
             readAccelerationEnabled: true,
             directFillTimeout: TimeSpan.FromMilliseconds(250),
             projectorPollInterval: TimeSpan.FromMilliseconds(10),
-            projectorPageSize: 3,
+            projectorPageSize: pageSize,
             projectorMaxConcurrentTargets: 1,
             projectorFailureBackoff: TimeSpan.FromSeconds(1),
             projectorBaselineHighWaterMark: 1000,
@@ -743,6 +823,8 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
                 mappingSet.ResourceKeyIdByResource[PersonResource]
             ];
 
+            source.MaterializationCount++;
+
             return Task.FromResult<DocumentCacheMaterializationResult>(
                 new DocumentCacheMaterializationResult.Success(
                     new DocumentCacheMaterializationCandidate(
@@ -755,7 +837,7 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
                         ObservedAtOffset,
                         new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
                         $"etag-{source.ContentVersion}",
-                        new JsonObject { ["value"] = $"rebuilt-{source.DocumentId}" }
+                        source.Document
                     )
                 )
             );
@@ -767,5 +849,23 @@ public class Given_A_Mssql_DocumentCacheOnlineCacheRebuild_Command
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
-    private sealed record SourceDocument(long DocumentId, Guid DocumentUuid, long ContentVersion);
+    private sealed class DrainClock : TimeProvider, IDocumentCacheAdministrativeDrainDelay
+    {
+        private DateTimeOffset _now = ObservedAtOffset;
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public Task DelayAsync(TimeSpan delay, TimeProvider timeProvider, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _now += delay;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed record SourceDocument(long DocumentId, Guid DocumentUuid, long ContentVersion)
+    {
+        public JsonObject Document { get; } = new() { ["value"] = $"rebuilt-{DocumentId}" };
+        public int MaterializationCount { get; set; }
+    }
 }

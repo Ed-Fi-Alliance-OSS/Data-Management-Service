@@ -34,11 +34,14 @@ New-Item -ItemType Directory -Path $destination | Out-Null
 New-Item -ItemType Directory -Path $raw | Out-Null
 if (-not $IsWindows) { & chmod 700 $raw }
 $reports = [System.Collections.Generic.List[object]]::new()
+$qualified = if ($Lane -ne 'Contract') { Get-CdcQualificationWorkerImage }
+$mssqlNativeDocumentCache = $null -ne $qualified -and [object]::Equals($qualified['mssqlNativeDocumentCache'], $true)
+$mssqlSuites = Get-CdcQualificationProviderSuite -Provider Mssql -MssqlNativeDocumentCache $mssqlNativeDocumentCache
 # Persist invocation/stages before prerequisite checks or fixture preparation.
 $apiReports = @{}
 if ($Suite -in @('All', 'ApiE2E')) {
     foreach ($provider in @('Postgresql', 'Mssql')) {
-        if ($Lane -in @('All', $provider)) {
+        if ($Lane -in @('All', $provider) -and ($provider -ne 'Mssql' -or $mssqlSuites.Contains('ApiE2E'))) {
             $apiReports[$provider] = New-CdcApiRunnerReport -Provider $provider
             $reports.Add($apiReports[$provider])
         }
@@ -110,6 +113,12 @@ try {
     Set-Location $repo
     if ($Suite -ne 'All' -and $Lane -notin @('Postgresql', 'Mssql')) { throw 'A suite selection requires one provider lane.' }
     $lanes = if ($Lane -eq 'All') { @('Contract', 'Postgresql', 'Mssql', 'Kafka') } else { @($Lane) }
+    if ('Mssql' -in $lanes -and -not $mssqlNativeDocumentCache) {
+        if ($Suite -ne 'All' -and -not $mssqlSuites.Contains($Suite)) {
+            throw "EnvironmentUnavailable: Mssql/$Suite requires a shipped worker qualified for native DocumentJson."
+        }
+        Write-Warning 'SQL Server native CDC success suites are deferred pending a qualified worker. Admission verifies refusal and MessageContract runs serialized cases.'
+    }
     if (@($lanes | Where-Object { $_ -ne 'Contract' }).Count -gt 0) {
         $required = @('CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE')
         if ('Kafka' -in $lanes) { $required += 'CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE' }
@@ -122,7 +131,7 @@ try {
         }
         if ('Mssql' -in $lanes) {
             $required += 'CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE'
-            if ($Suite -in @('All', 'Admission', 'Lifecycle', 'ApiE2E') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
+            if ($mssqlNativeDocumentCache -and $Suite -in @('All', 'Admission', 'Lifecycle', 'ApiE2E') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
                 throw 'EnvironmentUnavailable: Mssql Admission/Lifecycle/ApiE2E requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
             }
             if ($Suite -in @('All', 'History')) { $required += 'ConnectionStrings__MssqlAdmin' }
@@ -135,16 +144,18 @@ try {
         if ('Kafka' -in $lanes -and -not (Get-Command timeout -CommandType Application -ErrorAction SilentlyContinue)) {
             throw 'EnvironmentUnavailable: Kafka runbook inspections require native timeout.'
         }
-        if ($Suite -in @('All', 'Telemetry') -and @($lanes | Where-Object { $_ -in @('Postgresql', 'Mssql') }).Count -gt 0) {
+        $mssqlTelemetrySelected = 'Mssql' -in $lanes -and $mssqlSuites.Contains('Telemetry')
+        $postgresqlTelemetrySelected = 'Postgresql' -in $lanes
+        if ($Suite -in @('All', 'Telemetry') -and ($mssqlTelemetrySelected -or $postgresqlTelemetrySelected)) {
             $inspectionTools = @('curl', 'timeout')
-            if ('Mssql' -in $lanes) { $inspectionTools += 'sqlcmd' }
-            if ('Postgresql' -in $lanes) { $inspectionTools += @('psql') }
+            if ($mssqlTelemetrySelected) { $inspectionTools += 'sqlcmd' }
+            if ($postgresqlTelemetrySelected) { $inspectionTools += @('psql') }
             foreach ($tool in $inspectionTools) {
                 if (-not (Get-Command $tool -CommandType Application -ErrorAction SilentlyContinue)) {
                     throw "EnvironmentUnavailable: required telemetry inspection client $tool is missing."
                 }
             }
-            if ('Mssql' -in $lanes) {
+            if ($mssqlTelemetrySelected) {
                 $sqlcmdVersion = (& sqlcmd --version) -join "`n"
                 if ($LASTEXITCODE -ne 0 -or $sqlcmdVersion -notmatch 'Version: v1\.10\.0(?:\s|$)') {
                     throw 'EnvironmentUnavailable: SQL Server telemetry inspection requires sqlcmd (Go) 1.10.0.'
@@ -155,7 +166,6 @@ try {
                 throw 'EnvironmentUnavailable: telemetry inspection requires native curl 8.4 or later.'
             }
         }
-        $qualified = Get-Content 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json' -Raw | ConvertFrom-Json
         if ($env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE -cne $qualified.image) {
             throw 'EnvironmentUnavailable: Connect must use the shipped qualified exporter image digest.'
         }
@@ -230,7 +240,8 @@ try {
             $reports.Add((Get-CdcRunbookKafkaReport -Path (Join-Path $raw 'kafka-local/kafka-local.trx') -KafkaProfile Local))
         }
         else {
-            $filters = Get-CdcQualificationProviderSuite -Provider $selected
+            $filters = if ($selected -eq 'Mssql') { $mssqlSuites } else { Get-CdcQualificationProviderSuite -Provider $selected }
+            $nativeWorkerDeferred = $selected -eq 'Mssql' -and -not $mssqlNativeDocumentCache
             foreach ($phase in $filters.Keys) {
                 if ($Suite -ne 'All' -and $Suite -ne $phase) { continue }
                 if ($phase -eq 'ApiE2E') {
@@ -264,7 +275,7 @@ try {
                 if ($phase -eq 'Lifecycle') {
                     $reports.Add((Get-CdcRunbookLifecycleReport -Path (Join-Path $raw "$name/$name.trx")))
                 }
-                if ($phase -eq 'Admission' -or ($phase -eq 'Lifecycle')) {
+                if ($phase -in @('Admission', 'Lifecycle') -and -not $nativeWorkerDeferred) {
                     $procedure = if ($phase -eq 'Admission') { 'Setup' } else { 'Lifecycle' }
                     $liveDirectory = Join-Path $raw "$selected-runbook-$($procedure.ToLowerInvariant())"
                     New-Item -ItemType Directory -Path $liveDirectory | Out-Null
@@ -294,8 +305,9 @@ try {
                     $env:CDC_ARTIFACT_CLEANUP_FAIL_FAST = 'true'
                     if ($selected -eq 'Postgresql') { $env:CDC_CLEANUP_POSTGRESQL_ADMIN = $env:ConnectionStrings__DatabaseConnection }
                     else { $env:CDC_CLEANUP_MSSQL_ADMIN = $env:ConnectionStrings__MssqlAdmin }
-                    Invoke-QualificationSuite -Name "$selected-provider-cleanup" -Project $backend -Filter "(Category=CdcArtifactCleanup|Category=CdcRunbookRetirement)&Category=$($selected)Integration"
-                    $reports.Add((Get-CdcRunbookHistoryReport -Path (Join-Path $raw "$selected-provider-cleanup/$selected-provider-cleanup.trx") -Selection Cleanup))
+                    $cleanupCategory = if ($nativeWorkerDeferred) { 'Category=CdcArtifactCleanup' } else { '(Category=CdcArtifactCleanup|Category=CdcRunbookRetirement)' }
+                    Invoke-QualificationSuite -Name "$selected-provider-cleanup" -Project $backend -Filter "$cleanupCategory&Category=$($selected)Integration"
+                    $reports.Add((Get-CdcRunbookHistoryReport -Path (Join-Path $raw "$selected-provider-cleanup/$selected-provider-cleanup.trx") -Selection Cleanup -ProviderCleanupOnly:$nativeWorkerDeferred))
                 }
             }
         }

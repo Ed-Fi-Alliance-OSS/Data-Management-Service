@@ -52,6 +52,13 @@ public static class DerivedModelSetManifestEmitter
                 "relational_mapping_version",
                 modelSet.EffectiveSchema.RelationalMappingVersion
             );
+            if (modelSet.Dialect == SqlDialect.Mssql)
+            {
+                writer.WriteString(
+                    MssqlDocumentCachePhysicalSchema.ManifestPropertyName,
+                    MssqlDocumentCachePhysicalSchema.Version
+                );
+            }
 
             WriteProjects(writer, modelSet.ProjectSchemasInEndpointOrder);
             WriteResourcesSummary(writer, modelSet.ConcreteResourcesInNameOrder);

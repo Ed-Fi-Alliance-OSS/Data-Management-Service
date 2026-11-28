@@ -13,7 +13,7 @@ rather than against documents the C# tests wrote themselves.
 - `restore-manifest.postgresql.json` and `restore-manifest.mssql.json`: `New-TemplateRestoreManifest` over the
   same inventory (package `EdFi.Api.Minimal.Template.{PostgreSql|MsSql}.5.2.0` version `1.0.123`, projects
   `edfi` and `tpdm`, resource key count 42, seed hash bytes 1..32, mapping version `v3`; PostgreSQL engine
-  version `18.1` with `jsonb`, SQL Server `17.0.900.7` at compatibility level 170 with `nvarchar(max)`),
+  version `18.1` with `jsonb`, SQL Server `17.0.900.7` at compatibility level 170 with native `json` and physical version `v2` in format 2),
   written with `ConvertTo-Json -Depth 10`. The producer self-validates with `Assert-RestoreManifestShape`
   and embeds the inventory in canonical order, so the SQL Server file carries `databaseCompatibilityLevel`
   as its last member.

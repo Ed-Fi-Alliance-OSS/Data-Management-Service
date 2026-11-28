@@ -27,6 +27,12 @@ internal sealed class MssqlDocumentCacheWriter(
 {
     private const int InvalidObjectNameNumber = 208;
 
+    // Native JSON representation limits from the SQL Server engine error catalog.
+    // https://learn.microsoft.com/sql/relational-databases/errors-events/database-engine-events-and-errors-13000-to-13999
+    private const int JsonStringExceedsSupportedLimit = 13641;
+    private const int JsonStringValueTooLong = 13644;
+    private const int JsonUniqueKeyCountExceeded = 13649;
+
     private static readonly DocumentCacheLifecycleReaderQuery LifecycleReaderQuery =
         DocumentCacheLifecycleReaderSupport.GetQuery(SqlDialect.Mssql);
     private static readonly MssqlRelationalWriteExceptionClassifier WriteExceptionClassifier = new();
@@ -360,6 +366,22 @@ internal sealed class MssqlDocumentCacheWriter(
                 )
                 .ConfigureAwait(false);
             throw new DocumentCacheWriterRetryableDeleteRaceException();
+        }
+        // Only cache DML in this transaction binds a native JSON value. Leave work pending
+        // on representation limits, including when SQL Server already rolled back the transaction.
+        catch (SqlException exception)
+            when (exception.Number
+                    is JsonStringExceedsSupportedLimit
+                        or (>= JsonStringValueTooLong and <= JsonUniqueKeyCountExceeded)
+            )
+        {
+            if (!MssqlTransactionStateProbe.Instance.IsAlreadyCompleted(connection, transaction, exception))
+            {
+                await transactionScope.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+
+            telemetryOutcome = DocumentCacheWriterOutcome.NativeJsonLimitExceeded;
+            return DocumentCacheWriterResult.NativeJsonLimitExceeded.Instance;
         }
         catch
         {
@@ -1115,7 +1137,7 @@ internal sealed class MssqlDocumentCacheWriter(
             }
         );
         command.Parameters.Add(
-            new SqlParameter("@documentJson", SqlDbType.NVarChar, -1)
+            new SqlParameter("@documentJson", SqlDbType.Json)
             {
                 Value = candidate.DocumentJson.ToJsonString(JsonSerializerOptions.Default),
             }

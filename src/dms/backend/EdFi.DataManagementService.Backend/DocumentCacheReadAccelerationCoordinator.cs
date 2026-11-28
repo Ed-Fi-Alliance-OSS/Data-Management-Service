@@ -359,7 +359,8 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
     IDocumentCacheReadTelemetry readTelemetry,
     IDocumentCacheProjectionTargetDiagnosticSink targetDiagnosticSink,
     TimeProvider timeProvider,
-    ILogger<DocumentCacheReadAccelerationCoordinator> logger
+    ILogger<DocumentCacheReadAccelerationCoordinator> logger,
+    IDocumentCacheProjectionSupervisor? projectionSupervisor = null
 ) : IDocumentCacheReadAccelerationCoordinator
 {
     private readonly IDataStoreSelection _dataStoreSelection =
@@ -1227,8 +1228,31 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
                 targetContext.ConnectionInput.Value
             );
 
+            DocumentCacheProjectionFailureBackoffState? failureBackoffState =
+                targetContext.ProviderToken == RelationalProviderToken.SqlServer
+                    ? projectionSupervisor
+                        ?.CurrentTargetContexts.FirstOrDefault(context =>
+                            context.TargetKey == targetContext.TargetKey
+                            && context.Generation == targetContext.Generation
+                        )
+                        ?.FailureBackoffState
+                    : null;
+
             foreach (DocumentCacheReadAccelerationCandidate candidate in candidates)
             {
+                if (
+                    failureBackoffState?.GetFailureCategory(candidate.DocumentId, candidate.ContentVersion)
+                    == DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded
+                )
+                {
+                    RecordDirectFill(
+                        targetContext,
+                        operation,
+                        resourceKind,
+                        DocumentCacheReadTelemetryLabel.SkippedNativeJsonLimit
+                    );
+                    continue;
+                }
                 if (directFillTimeout.IsCancellationRequested)
                 {
                     string cancellationOutcome = SelectDirectFillCancellationReason(

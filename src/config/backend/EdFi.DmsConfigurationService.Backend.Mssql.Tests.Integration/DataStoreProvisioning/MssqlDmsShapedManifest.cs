@@ -44,7 +44,8 @@ internal static class MssqlDmsShapedManifest
 
         return new RestoreManifest
         {
-            Version = RestoreManifest.SupportedVersion,
+            Version = RestoreManifest.MssqlFormatVersion,
+            MssqlPhysicalSchemaVersion = RestoreManifest.NativeMssqlPhysicalSchemaVersion,
             PackageId = "EdFi.Api.Minimal.Template.Mssql.5.2.0",
             PackageVersion = "1.0.123",
             DatabaseEngine = RestoreManifest.MssqlEngine,

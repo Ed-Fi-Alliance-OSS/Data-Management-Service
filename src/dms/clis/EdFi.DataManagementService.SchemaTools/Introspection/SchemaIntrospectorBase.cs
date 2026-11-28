@@ -22,6 +22,11 @@ public abstract class SchemaIntrospectorBase : ISchemaIntrospector
         IReadOnlyList<string> allowlist
     );
 
+    protected virtual string? ReadMssqlPhysicalSchemaVersion(
+        DbConnection connection,
+        IReadOnlyList<SchemaEntry> schemas
+    ) => null;
+
     public ProvisionedSchemaManifest Introspect(
         string connectionString,
         IReadOnlyList<string> schemaAllowlist
@@ -85,7 +90,8 @@ public abstract class SchemaIntrospectorBase : ISchemaIntrospector
             Sequences: sequences,
             TableTypes: assembledTableTypes,
             Functions: assembledFunctions,
-            SeedData: seedData
+            SeedData: seedData,
+            MssqlPhysicalSchemaVersion: ReadMssqlPhysicalSchemaVersion(connection, schemas)
         );
     }
 

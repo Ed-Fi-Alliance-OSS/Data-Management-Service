@@ -133,8 +133,8 @@ api-schema-tools ddl emit --schema core/ApiSchema.json --output ./ddl-output --d
 |---|---|---|
 | `pgsql.sql` / `mssql.sql` | per selected dialect | the full DDL script for that engine, without a built-in transaction wrapper |
 | `effective-schema.manifest.json` | always | the schema fingerprint, components, and resource-key seed summary |
-| `relational-model.{dialect}.manifest.json` | per selected dialect | derived inventory, including each descriptor resource's `resource_details[].shared_descriptor_table` with physical `DescriptorId` identity and `DocumentId` root locator/unique association; fixed core DDL adds type keys, mirrors, native allocation, and URI indexes |
-| `ddl.manifest.json` | only with `--ddl-manifest` | dialect-independent summary (normalized-SQL hash + statement count per dialect) for diagnostics |
+| `relational-model.{dialect}.manifest.json` | per selected dialect | derived inventory, including each descriptor resource's `resource_details[].shared_descriptor_table` with physical `DescriptorId` identity and `DocumentId` root locator/unique association. Fixed core DDL adds type keys, mirrors, native allocation, and URI indexes. The SQL Server manifest includes `mssql_physical_schema_version`. |
+| `ddl.manifest.json` | only with `--ddl-manifest` | normalized-SQL hash and statement count per dialect, plus `mssql_physical_schema_version` on the SQL Server entry |
 
 `--dialect` accepts `pgsql`, `mssql`, or `both` (default `both`). All output uses Unix
 line endings so the same inputs produce byte-for-byte identical files. Scripts produced
@@ -164,6 +164,12 @@ api-schema-tools ddl provision \
 `--create-database` creates the target if missing; `--timeout` (default `300` seconds)
 bounds DDL execution. For SQL Server, provisioning configures Read Committed Snapshot
 Isolation (and `ALLOW_SNAPSHOT_ISOLATION`) on newly created databases.
+
+SQL Server provisioning requires SQL Server 2025 (engine major version 17) or later.
+The native cache preflight checks the engine before creating a database. Use an
+effective `dbo` context for fresh or early-retry provisioning so the check can prove
+that the physical boundary is absent. To apply `mssql.sql` manually, use an error-stop
+runner such as `sqlcmd -b -i mssql.sql`.
 
 `IX_Document_CreatedByOwnershipTokenId` is a filtered index and `UX_Descriptor_UriLowered_ResourceKeyId` indexes a computed column, so SQL Server requires the indexed-view SET option set (`ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`, `CONCAT_NULL_YIELDS_NULL`, `QUOTED_IDENTIFIER` ON; `NUMERIC_ROUNDABORT` OFF) for index creation and for writes to `dms.Document` or `dms.Descriptor`. It captures `QUOTED_IDENTIFIER` and `ANSI_NULLS` into each stamp trigger the script creates.
 The generated SQL Server script therefore opens with one `SET` batch that puts the session in that state, so applying it with any client, including ODBC `sqlcmd` without `-I`, provisions the index and bakes the right settings into the triggers.
@@ -442,6 +448,7 @@ DocumentCache and CDC design:
 - [`dms.DocumentCache`](../reference/design/backend-redesign/design-docs/data-model.md#5-dmsdocumentcache-always-provisioned-optional-projection)
 - [`dms.DocumentProjectionWork`](../reference/design/backend-redesign/design-docs/data-model.md#5a-dmsdocumentprojectionwork-always-provisioned-durable-projection-work)
 - [`dms.DocumentCacheState`](../reference/design/backend-redesign/design-docs/data-model.md#6-dmsdocumentcachestate-singleton-projection-state)
+- [`dms.MssqlPhysicalSchema`](../reference/design/backend-redesign/design-docs/data-model.md#6a-dmsmssqlphysicalschema-sql-server-physical-baseline) on SQL Server
 
 These objects are physical schema and durable state. Runtime projection, projection
 administration, projection health/readiness, cache-backed reads, and complete target
@@ -478,6 +485,109 @@ defines the managed setup boundary. Existing deployments use
 and [managed lifecycle](../reference/cdc-documentation/operations-runbook.md#managed-lifecycle),
 governed by the [state-continuity contract](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral).
 
+### SQL Server native DocumentCache rollout
+
+The SQL Server `v2` baseline provisions `dms.DocumentCache.DocumentJson` as built-in
+`json NOT NULL` with an object-only check. The marker row `(1, 'v2')` in
+`dms.MssqlPhysicalSchema` and the catalog type together identify the baseline. The
+same `EffectiveSchemaHash` can identify a legacy `v1` database with `nvarchar(max)`.
+Moving a legacy target to `v2` requires fresh provisioning on SQL Server 2025 or
+later. For an in-use datastore, plan the data carry-forward and the cache/CDC
+cutover before replacing it.
+
+Cache rollout requires a qualified native-v2 runtime. CDC rollout also requires a
+compatible, qualified worker. Managed CDC enablement rejects native SQL Server targets
+until the DMS release qualifies its pinned worker for native `DocumentJson`. Coordinate
+the worker pin and native database rollout in the same release to retain managed CDC
+availability. Shipping native SQL Server before that worker is available requires an
+explicit release decision on SQL Server CDC availability. Template-backed
+rollout requires a matching, verified `v2` package and compatible restore tools.
+The [adoption record](../reference/design/backend-redesign/epics/17-mssql-gap-closure/03-sql-server-2025-and-native-json.md#dms-1328-adoption-scope)
+tracks these boundaries.
+
+For an established SQL Server CDC deployment on physical `v1`, retain its matching
+DMS, SchemaTools and qualified worker for managed validation and operation until
+cutover. The native-baseline tools require `v2` for managed validation, including
+operations against existing bindings. Verify the retained deployment with the original
+toolchain using the [established validation procedure](../reference/cdc-documentation/operations-runbook.md#established-validation)
+and a representative managed lifecycle operation before replacing any component.
+Record the tool, worker and SQL Server versions with that release evidence.
+
+Before a SQL Server template cutover, build and verify Minimal and Populated packages for
+Data Standard `5.2.0` and `6.1.0` from the same reviewed release. Keep package publication
+disabled during qualification. Inspect the exact packages and require their
+contents to include a restore manifest reporting format 2, `documentJsonColumnType: "json"`, and
+`mssqlPhysicalSchemaVersion: "v2"`; verify source and restored catalogs and the authenticated
+descriptor probe for both template kinds, plus the populated schools probe. Use the matching
+SchemaTools and CMS restore consumers for every verification. The restore preflight rejects a
+selected SQL Server SchemaTools manifest without the physical-v2 discriminator before Docker
+work, and CMS rejects packages that do not satisfy the format-2 contract. Bootstrap reads
+`mssql_physical_schema_version` from the `mssql` entry in `ddl.manifest.json`, emitted by
+the selected SchemaTools with `ddl emit --ddl-manifest` and the staged schema inputs.
+The [DMS-1271](https://edfi.atlassian.net/browse/DMS-1271) prepared schema manifest
+supplies the logical fingerprint.
+
+For the first native-v2 publication, dispatch both MSSQL template workflows from the same
+reviewed commit with `publish_package` off and without a Data Standard filter. These runs
+produce unsigned packages. Their `verify-template-restore.ps1` results establish source and
+restored catalog checks and authenticated API probes for the exact package bytes, but do
+not exercise the guarded bootstrap or CMS package-restore consumers. The
+`run-dms-provisioning-integration-tests-mssql` job in `on-config-pullrequest.yml` separately
+builds Data Standard `5.2.0` packages and attests test copies with an ephemeral key; its
+results do not qualify the four dispatch artifacts or Data Standard `6.1.0`.
+
+Complete the restore-consumer gate against those four artifacts before ending the hold:
+
+1. Download each leg's `.nupkg` and verification evidence. Check its SHA-256 against that
+   leg's `verification.json`, and retain the reviewed commit, package ID/version and digest.
+2. For each artifact, add a detached development attestation with
+   `Write-TemplatePackageAttestation` from `eng/DatabaseTemplates/Template-Management.psm1`,
+   using a producer registered by `new-template-dev-trust.ps1 -Purpose Dev`. Preserve the
+   `.nupkg` bytes and recheck the digest after attesting. Follow
+   [bootstrap restore](../eng/docker-compose/README.md#restoring-the-datastore-from-a-database-template-bootstrap-restore)
+   with `-DatabaseEngine mssql`, the matching `-DataStandardVersion 5.2` or `6.1`,
+   `-RestoreTemplate Minimal` or `Populated`, and `-PackageDirectory` pointing to that
+   artifact and its sibling attestation. Use a disposable target and the matching reviewed
+   SchemaTools; retain the scratch-validation and completed restore results.
+3. For CMS, place the unchanged Minimal and Populated `.nupkg` pair for **one** Data Standard
+   in `DMS_TEMPLATE_PACKAGE_DIRECTORY`. Follow the
+   [SQL Server provisioning setup](RUNNING-LOCALLY.md#cms-dms-template-provisioning-integration-tests),
+   set `DMS_EXPECTED_EFFECTIVE_SCHEMA_HASH` to that pair's reviewed hash, and run the MSSQL
+   integration project's `MssqlRealPackageTests` with
+   `--filter "FullyQualifiedName~MssqlRealPackageTests&Category!=DmsProvisioningCrossEngine"`.
+   These fixtures copy and attest the supplied bytes without repacking them, then exercise
+   the real CMS catalog and restore engine. Require no failures or skips. Repeat with the
+   other Data Standard's pair in a separate directory; placing both standards together is
+   ambiguous because package selection is by engine and template kind.
+
+Record the run URLs, commit, package versions, SHA-256 digests, physical catalog checks,
+authenticated probe results and both restore-consumer results for all four packages in
+the release record. After all four packages pass these gates and the CDC release decision
+is recorded, release maintainers end the first-publication hold by setting
+`MSSQL_TEMPLATE_V2_PUBLICATION_ENABLED=true` and enabling attestation signing with
+`TEMPLATE_ATTESTATION_SIGNING_ENABLED=true`. Main and version-tag pushes still build and
+verify packages during the hold. An explicit publication dispatch from main or a version
+tag reports a blocked request if either setting is disabled. Once the hold is lifted,
+pushes resume normal publishing through
+the protected signing and publishing environments. Stable release events promote the
+already published tag version with its companion attestation independently of main's
+current revision.
+
+The publishing runs build and verify their own package bytes. Record those runs and the
+digests of the exact attested packages that reach the feed, then confirm the four published
+versions before switching consumers. Verify bootstrap restore with the release attestations
+and CMS restore with the release producer configured in its trust policy; the fixtures'
+ephemeral attestations establish package compatibility, not release-producer trust.
+Coordinate the restore-job package and
+allowlist updates with deployment of the matching DMS, SchemaTools and CMS consumers.
+Review scheduled and deployment jobs for legacy-pinned template packages or restore-tool
+images that only support format 1. Existing SQL Server databases require
+fresh provisioning on SQL Server 2025 or later and a deliberate, separately planned data
+carry-forward; do not convert `nvarchar(max)` in place or infer physical compatibility from the
+unchanged effective schema hash. Existing CDC bindings have no automatic migration or cutover:
+plan their handling against the CDC deployment and state-continuity guidance before replacing an
+in-use database.
+
 ### Cache-backed read acceleration
 
 Cache-backed reads are optional. DMS considers `dms.DocumentCache` only for external
@@ -497,6 +607,13 @@ DocumentCache materializer/writer rather than the shaped API response. Snapshot 
 read-replica requests skip direct fill when derivative routing is available because those
 requests remain read-only.
 
+If a document exceeds a SQL Server native JSON storage limit, the cache writer rolls back
+that write and leaves its durable projection work pending. Projection can continue with
+other documents, and API reads for the affected document use the relational source.
+An administrative drain reports the affected document and keeps its work pending. Update
+or remove the source document before resuming the command. An online rebuild stays in
+`Rebuilding` until it drains all durable work to completion.
+
 ### Create-only guardrails and reruns
 
 Provisioning is still create-only: it does not migrate an older DocumentCache shape,
@@ -504,14 +621,15 @@ reconcile arbitrary drift, or classify every partial database state. Phase-zero 
 bounded to the effective-schema hash, required singleton safety for
 `dms.DataStoreIdentity` and `dms.DocumentCacheState`, known legacy DocumentCache artifacts
 (`DocumentCache.Etag`, `UX_DocumentCache_DocumentUuid`, and
-`IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt`), and PostgreSQL enqueue-owner
-prerequisites. Other incompatible objects are allowed to fail through ordinary provider
-DDL execution.
+`IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt`), PostgreSQL enqueue-owner
+prerequisites, and the [SQL Server physical baseline](../reference/design/backend-redesign/design-docs/ddl-generation.md#sql-server-physical-baseline-preflight).
+Other incompatible objects are allowed to fail through ordinary provider DDL execution.
 
 On a completed same-hash database, provisioning preserves `SourceIdentity`, projection
-lifecycle, `CacheAheadRecoveryRequired`, cache rows, pending work, and existing enqueue
-timestamps. Compatible reruns use the normal existence-check and replaceable
-function/trigger patterns to finish or refresh generated definitions. If a known legacy
+lifecycle, `CacheAheadRecoveryRequired`, cache rows, pending work, existing enqueue
+timestamps, and the SQL Server physical marker where applicable. Compatible reruns use
+the normal existence-check and replaceable function/trigger patterns to finish or
+refresh generated definitions. If a known legacy
 cache artifact is present, drop and recreate the database rather than expecting in-place
 repair.
 

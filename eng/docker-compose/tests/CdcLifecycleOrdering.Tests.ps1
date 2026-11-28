@@ -16,6 +16,10 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') $script:root
         Copy-Item (Join-Path $PSScriptRoot '../*.psm1') $script:root
         Copy-Item (Join-Path $PSScriptRoot '../cdc-worker-diagnostics.ps1') $script:root
+        Copy-Item (Join-Path $PSScriptRoot '../cdc-failure-codes.ps1') $script:root
+        # cdc-runbook-diagnostics.ps1 sources ../docker-compose/cdc-failure-codes.ps1 relative to ci.
+        New-Item -ItemType Directory -Force (Join-Path $TestDrive 'docker-compose') | Out-Null
+        Copy-Item (Join-Path $PSScriptRoot '../cdc-failure-codes.ps1') (Join-Path $TestDrive 'docker-compose')
         New-Item -ItemType Directory -Force (Join-Path $TestDrive 'ci') | Out-Null
         Copy-Item (Join-Path $PSScriptRoot '../../ci/cdc-runbook-diagnostics.ps1') (Join-Path $TestDrive 'ci')
         Copy-Item (Join-Path $PSScriptRoot '../*.yml') $script:root

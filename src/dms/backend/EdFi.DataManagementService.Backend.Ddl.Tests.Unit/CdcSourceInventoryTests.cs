@@ -393,7 +393,8 @@ public class Given_CoreDdlMetadata_For_CdcSourceInventory(SqlDialect dialect)
         var documentJson = documentCache.Columns.Single(column => column.ColumnName.Value == "DocumentJson");
         var streamEtag = documentCache.Columns.Single(column => column.ColumnName.Value == "StreamEtag");
 
-        documentJson.ProviderDataType.Should().Be(dialect == SqlDialect.Pgsql ? "jsonb" : "nvarchar(max)");
+        documentJson.ProviderDataType.Should().Be(dialect == SqlDialect.Pgsql ? "jsonb" : "json");
+        documentJson.IsNullable.Should().BeFalse();
         streamEtag.ProviderDataType.Should().Be("varchar(64)");
     }
 

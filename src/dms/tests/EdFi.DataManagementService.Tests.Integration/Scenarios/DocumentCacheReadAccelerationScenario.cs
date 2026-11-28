@@ -10,7 +10,9 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Etag;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Paging;
@@ -19,11 +21,110 @@ using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
 internal static class DocumentCacheReadAccelerationScenario
 {
+    private static readonly string OversizedCacheOnlyKey = new('x', 8_000);
+
+    public static void ConfigureOversizedCacheCandidate(IServiceCollection services) =>
+        services.Replace(
+            ServiceDescriptor.Scoped<IDocumentCacheMaterializer>(
+                provider => new OversizedCacheCandidateMaterializer(
+                    ActivatorUtilities.CreateInstance<DocumentCacheMaterializer>(provider)
+                )
+            )
+        );
+
+    public static async Task It_serves_relationally_and_projects_following_work_when_native_json_is_too_large(
+        ApiIntegrationHarness harness
+    )
+    {
+        await SetTrackingLifecycleAsync(harness);
+        var supervisor = harness.Services.GetRequiredService<IDocumentCacheProjectionSupervisor>();
+        await supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.SupervisorTriggered);
+        var target = supervisor.CurrentTargetContexts.Should().ContainSingle().Subject;
+        var processor = harness.Services.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
+
+        string oversizedLocation = await PostStudentAsync(
+            harness,
+            "cache-oversized-001",
+            "Relational Oversized"
+        );
+        string followingLocation = await PostStudentAsync(harness, "cache-regular-001", "Cacheable");
+        var oversized = await ReadDocumentMetadataAsync(
+            harness,
+            Guid.Parse(oversizedLocation.Split('/')[^1])
+        );
+        var following = await ReadDocumentMetadataAsync(
+            harness,
+            Guid.Parse(followingLocation.Split('/')[^1])
+        );
+        await ExecuteNonQueryAsync(
+            harness,
+            """
+            UPDATE dms.DocumentProjectionWork
+            SET FirstEnqueuedAt = '2000-01-01T00:00:00'
+            WHERE DocumentId = @documentId;
+            """,
+            ("@documentId", oversized.DocumentId)
+        );
+
+        var page = await processor.ProcessPageAsync(
+            new(target, DocumentCacheProjectionDrainInvocationKind.Ordinary)
+        );
+
+        page.Outcome.Should().Be(DocumentCacheProjectionDrainPageOutcome.PageProcessed);
+        page.DocumentScopedFailureIds.Should().Equal(oversized.DocumentId);
+        (await CountCacheRowsAsync(harness, following.DocumentId)).Should().Be(1);
+        (await CountProjectionWorkRowsAsync(harness, following.DocumentId)).Should().Be(0);
+
+        JsonObject response = await GetJsonObjectAsync(harness, oversizedLocation);
+        response["firstName"]!.GetValue<string>().Should().Be("Relational Oversized");
+        response.ContainsKey(OversizedCacheOnlyKey).Should().BeFalse();
+        (await CountCacheRowsAsync(harness, oversized.DocumentId)).Should().Be(0);
+        (await CountProjectionWorkRowsAsync(harness, oversized.DocumentId)).Should().Be(1);
+        harness
+            .DocumentCacheReadTelemetryRecorder!.CountTelemetryRecords(
+                "RecordDirectFill",
+                "SkippedNativeJsonLimit"
+            )
+            .Should()
+            .Be(1);
+        harness
+            .DocumentCacheReadTelemetryRecorder!.CountTelemetryRecords("RecordDirectFill", "Attempted")
+            .Should()
+            .Be(0);
+        harness
+            .DocumentCacheReadTelemetryRecorder!.CountTelemetryRecords("RecordDirectFill", "Failed")
+            .Should()
+            .Be(0);
+    }
+
+    private sealed class OversizedCacheCandidateMaterializer(IDocumentCacheMaterializer inner)
+        : IDocumentCacheMaterializer
+    {
+        public async Task<DocumentCacheMaterializationResult> MaterializeAsync(
+            DocumentCacheMaterializationRequest request
+        )
+        {
+            var result = await inner.MaterializeAsync(request);
+            if (
+                result is DocumentCacheMaterializationResult.Success success
+                && success.Candidate.DocumentJson["studentUniqueId"]?.GetValue<string>()
+                    == "cache-oversized-001"
+            )
+            {
+                success.Candidate.DocumentJson[OversizedCacheOnlyKey] = 1;
+            }
+
+            return result;
+        }
+    }
+
     private const string StudentsEndpoint = "/data/ed-fi/students";
     private const string ProfileRootOnlyMergeItemsEndpoint = "/data/ed-fi/profileRootOnlyMergeItems";
     private const string SchoolTypeDescriptorsEndpoint = "/data/ed-fi/schoolTypeDescriptors";
@@ -125,6 +226,43 @@ internal static class DocumentCacheReadAccelerationScenario
                 secondQueryMetadata.DocumentId + 1,
                 "the continuation resumes after the highest key this page selected"
             );
+    }
+
+    public static async Task It_serves_relationally_when_physical_admission_fails(
+        ApiIntegrationHarness harness
+    )
+    {
+        var registry = harness.Services.GetRequiredService<IDocumentCacheTargetRegistry>();
+        var target = registry.CurrentSnapshot.Targets.Should().ContainSingle().Which;
+        target.Inventory!.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+        target.Inventory.Message.Should().Contain("v2 marker");
+        registry.CurrentRuntimeSnapshot.ExecutionContexts.Should().BeEmpty();
+        harness
+            .Services.GetRequiredService<IDocumentCacheProjectionSupervisor>()
+            .CurrentTargetContexts.Should()
+            .BeEmpty();
+
+        string location = await PostStudentAsync(harness, "cache-physical-001", "Relational Student");
+        var metadata = await ReadDocumentMetadataAsync(harness, Guid.Parse(location.Split('/')[^1]));
+        (await CountProjectionWorkRowsAsync(harness, metadata.DocumentId)).Should().Be(1);
+        var document = await GetJsonObjectAsync(harness, location);
+
+        document["firstName"]!.GetValue<string>().Should().Be("Relational Student");
+        (await CountCacheRowsAsync(harness, metadata.DocumentId)).Should().Be(0);
+        (await CountProjectionWorkRowsAsync(harness, metadata.DocumentId)).Should().Be(1);
+        var recorder = harness.DocumentCacheReadTelemetryRecorder!;
+        recorder.CountTelemetryRecords("RecordDirectFill", "Attempted").Should().Be(0);
+        recorder
+            .CountTelemetryRecords("RecordDirectFill", "SkippedUnresolvedTarget")
+            .Should()
+            .BeGreaterThan(0);
+
+        var cacheDocument = CacheDocumentFrom(document, metadata);
+        cacheDocument["firstName"] = "Cached Student";
+        await UpsertCacheRowAsync(harness, metadata, cacheDocument);
+        var fresh = await GetJsonObjectAsync(harness, location);
+        fresh["firstName"]!.GetValue<string>().Should().Be("Relational Student");
+        fresh["_etag"]!.GetValue<string>().Should().Be(document["_etag"]!.GetValue<string>());
     }
 
     public static async Task It_falls_back_relationally_when_cache_row_is_missing_or_stale(

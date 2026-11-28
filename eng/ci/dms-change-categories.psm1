@@ -50,6 +50,7 @@ $script:DmsRelevantPathPrefix = @(
     'eng/'
     'src/dms/'
     'src/config/'
+    'src/shared/'
     # The plugin contract tree. Both main solutions build it and the DMS image's build stage copies
     # it, so a change here reaches the DMS lanes even though nothing references the assemblies yet.
     'src/plugins/'

@@ -22,7 +22,7 @@ public class RestoreManifestReaderTests
         "The restore manifest field '{0}' must be a 64-character lowercase hex SHA-256.";
 
     private const string NotContractMember =
-        "The restore manifest declares a member at position {0} that is not part of the version 1 contract.";
+        "The restore manifest declares a member at position {0} that is not part of the restore manifest contract.";
 
     private static readonly string[] _requiredFields =
     [
@@ -123,7 +123,9 @@ public class RestoreManifestReaderTests
             _manifest.DatabaseEngine.Should().Be("mssql");
             _manifest.PackageId.Should().Be(MssqlPackageId);
             _manifest.DatabaseCompatibilityLevel.Should().Be(170);
-            _manifest.DocumentJsonColumnType.Should().Be("nvarchar(max)");
+            _manifest.Version.Should().Be(2);
+            _manifest.MssqlPhysicalSchemaVersion.Should().Be("v2");
+            _manifest.DocumentJsonColumnType.Should().Be("json");
             _manifest.ArtifactFileName.Should().Be($"{MssqlPackageId}.bak");
         }
 
@@ -134,6 +136,39 @@ public class RestoreManifestReaderTests
             _fromBytesWithByteOrderMark.DatabaseCompatibilityLevel.Should().Be(170);
             _fromBytesWithByteOrderMark.InventorySha256.Should().Be(InventorySha256);
         }
+    }
+
+    [TestFixture]
+    public class Given_a_native_mssql_manifest
+    {
+        [TestCase("mssqlPhysicalSchemaVersion", "v1")]
+        [TestCase("mssqlPhysicalSchemaVersion", "V2")]
+        [TestCase("mssqlPhysicalSchemaVersion", null)]
+        [TestCase("documentJsonColumnType", "nvarchar(max)")]
+        [TestCase("engineVersion", "16.0.500.1")]
+        [TestCase("engineVersion", "unknown")]
+        public void It_rejects_invalid_physical_evidence(string field, string? value) =>
+            RejectionOf(m => m[field] = value, mssql: true).Should().Contain(field);
+
+        [Test]
+        public void It_rejects_legacy_mssql() =>
+            RejectionOf(
+                    m =>
+                    {
+                        m["version"] = 1;
+                        m.Remove("mssqlPhysicalSchemaVersion");
+                        m["documentJsonColumnType"] = "nvarchar(max)";
+                    },
+                    mssql: true
+                )
+                .Should()
+                .Contain("reprovision");
+
+        [Test]
+        public void It_rejects_the_mssql_field_even_when_null_on_postgresql() =>
+            RejectionOf(m => m["mssqlPhysicalSchemaVersion"] = null)
+                .Should()
+                .Contain("mssqlPhysicalSchemaVersion");
     }
 
     [TestFixture]
@@ -224,11 +259,17 @@ public class RestoreManifestReaderTests
             Record("resourceKeyCount zero", m => m["resourceKeyCount"] = 0);
             Record("resourceKeyCount string", m => m["resourceKeyCount"] = "42");
             Record("resourceKeyCount fraction", m => m["resourceKeyCount"] = 42.5);
+            Record("resourceKeyCount Int32 overflow", m => m["resourceKeyCount"] = 2147483648L, mssql: true);
             Record("seed not base64", m => m["resourceKeySeedHashB64"] = "not base64!!");
             Record("seed 16 bytes", m => m["resourceKeySeedHashB64"] = Convert.ToBase64String(new byte[16]));
             Record("mssql without level", m => m.Remove("databaseCompatibilityLevel"), mssql: true);
             Record("mssql level 80", m => m["databaseCompatibilityLevel"] = 80, mssql: true);
             Record("mssql level string", m => m["databaseCompatibilityLevel"] = "170", mssql: true);
+            Record(
+                "mssql level Int32 overflow",
+                m => m["databaseCompatibilityLevel"] = 2147483648L,
+                mssql: true
+            );
             Record("postgresql level 160", m => m["databaseCompatibilityLevel"] = 160);
             Record("postgresql level null", m => m["databaseCompatibilityLevel"] = null);
             Record(
@@ -263,7 +304,9 @@ public class RestoreManifestReaderTests
                 .Be("The restore manifest field 'version' must be an integer manifest format version.");
             _verdicts["version 2"]
                 .Should()
-                .Be("The restore manifest field 'version' is unsupported; only version 1 is supported.");
+                .Be(
+                    "The restore manifest field 'version' is unsupported; only version 1 is supported for postgresql."
+                );
         }
 
         [Test]
@@ -348,6 +391,7 @@ public class RestoreManifestReaderTests
             _verdicts["resourceKeyCount zero"].Should().Be(Rule);
             _verdicts["resourceKeyCount string"].Should().Be(Rule);
             _verdicts["resourceKeyCount fraction"].Should().Be(Rule);
+            _verdicts["resourceKeyCount Int32 overflow"].Should().Be(Rule);
         }
 
         [Test]
@@ -371,6 +415,7 @@ public class RestoreManifestReaderTests
             _verdicts["mssql without level"].Should().Be(Rule);
             _verdicts["mssql level 80"].Should().Be(Rule);
             _verdicts["mssql level string"].Should().Be(Rule);
+            _verdicts["mssql level Int32 overflow"].Should().Be(Rule);
         }
 
         [Test]
@@ -729,17 +774,17 @@ public class RestoreManifestReaderTests
             _verdicts["inventory with an extra member"]
                 .Should()
                 .Be(
-                    "The restore manifest inventory declares a member at position 3 that is not part of the version 1 contract."
+                    "The restore manifest inventory declares a member at position 3 that is not part of the restore manifest contract."
                 );
             _verdicts["schema with an extra member"]
                 .Should()
                 .Be(
-                    "The restore manifest inventory schema entry 1 declares a member at position 3 that is not part of the version 1 contract."
+                    "The restore manifest inventory schema entry 1 declares a member at position 3 that is not part of the restore manifest contract."
                 );
             _verdicts["object with an extra member"]
                 .Should()
                 .Be(
-                    "The restore manifest inventory object entry 1 of schema entry 1 declares a member at position 3 that is not part of the version 1 contract."
+                    "The restore manifest inventory object entry 1 of schema entry 1 declares a member at position 3 that is not part of the restore manifest contract."
                 );
         }
 
@@ -837,7 +882,9 @@ public class RestoreManifestReaderTests
             _mssql.PackageId.Should().Be(MssqlPackageId);
             _mssql.DatabaseEngine.Should().Be("mssql");
             _mssql.DatabaseCompatibilityLevel.Should().Be(170);
-            _mssql.DocumentJsonColumnType.Should().Be("nvarchar(max)");
+            _mssql.Version.Should().Be(2);
+            _mssql.MssqlPhysicalSchemaVersion.Should().Be("v2");
+            _mssql.DocumentJsonColumnType.Should().Be("json");
             _mssql.ArtifactFileName.Should().EndWith(".bak");
         }
 
@@ -852,6 +899,15 @@ public class RestoreManifestReaderTests
         [Test]
         public void It_reads_the_bytes_form_identically() =>
             _mssqlFromBytes.InventorySha256.Should().Be(_mssql.InventorySha256);
+
+        [Test]
+        public void It_rejects_an_array_around_an_inventory_name_in_the_mssql_fixture()
+        {
+            string fixture = CanonicalInventoryHashTests.ReadFixtureText("restore-manifest.mssql.json");
+            string invalid = fixture.Replace("\"name\": \"Document\"", "\"name\": [\"Document\"]");
+            Action read = () => RestoreManifestReader.Read(invalid);
+            read.Should().Throw<RestoreManifestException>().WithMessage("*'name'*");
+        }
 
         [Test]
         public void It_reads_the_escaped_schema_name_back_to_its_characters() =>

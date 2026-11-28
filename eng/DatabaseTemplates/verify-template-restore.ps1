@@ -188,7 +188,7 @@ try {
 
     Assert-DocumentTableShape -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $VerificationDatabaseName -MssqlPassword $MssqlPassword
 
-    # --- Restore-manifest assertions (version-1 restore contract) ---
+    # --- Restore-manifest assertions ---
     # Prove the package carries a shape-valid restore manifest that matches the restored
     # database exactly, using the same independent derivation a restore consumer performs:
     # kind, engine, artifact identity and hash, effective-schema fields, physical baseline,
@@ -211,13 +211,10 @@ try {
         if ($null -eq $manifestFile) {
             throw "Package '$($manifestPackage.Name)' does not contain a $(Get-RestoreManifestFileName); packages without a restore manifest are not eligible for restore."
         }
-        $restoreManifest = Read-RestoreManifest -Path $manifestFile.FullName
+        $restoreManifest = Read-RestoreManifest -Path $manifestFile.FullName -DatabaseEngine $DatabaseEngine
 
         if ([string]$restoreManifest.templateKind -cne $ExpectedTemplateKind) {
             throw "Restore manifest declares templateKind '$($restoreManifest.templateKind)' but this verification expects '$ExpectedTemplateKind'."
-        }
-        if ([string]$restoreManifest.databaseEngine -cne $DatabaseEngine) {
-            throw "Restore manifest declares databaseEngine '$($restoreManifest.databaseEngine)' but this verification runs against '$DatabaseEngine'."
         }
 
         $manifestArtifact = Get-ChildItem -Path (Join-Path $manifestExtractDirectory "contents") -Filter ([string]$restoreManifest.artifactFileName) -Recurse | Select-Object -First 1
@@ -255,6 +252,11 @@ try {
         }
 
         Write-Host "Restore-manifest assertions passed: kind=$($restoreManifest.templateKind), engine=$($restoreManifest.databaseEngine), projects=[$($manifestProjects -join ', ')], inventory and effective-schema facts match." -ForegroundColor Green
+        if ($DatabaseEngine -eq "mssql") {
+            Write-Host ("Verified SQL Server restore manifest format {0}. Source build {1}, restored build {2}, DocumentJson type {3}, physical schema {4}." -f
+                $restoreManifest.version, $restoreManifest.engineVersion, $restoredFacts.EngineVersion,
+                $restoredFacts.DocumentJsonColumnType, $restoredFacts.MssqlPhysicalSchemaVersion)
+        }
     }
     finally {
         if (Test-Path -LiteralPath $manifestExtractDirectory) {
@@ -365,6 +367,8 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
 
     # --- Serveability probe ---
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
+    # CMS enforces unique names; independent and repeated verifications can share a CMS.
+    $verificationName = "Template Verify $([Guid]::NewGuid().ToString('N'))"
 
     # PostgreSQL: Add-DataStore builds the connection string from the credential.
     # MSSQL: the connection string is supplied complete, so no PostgreSQL credential is passed.
@@ -373,7 +377,7 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
         AccessToken    = $cmsToken
         PostgresDbName = $VerificationDatabaseName
         DatabaseEngine = $DatabaseEngine
-        Name           = "Template Restore Verification"
+        Name           = $verificationName
         DataStoreType  = "Verification"
     }
     if ($DatabaseEngine -eq "mssql") {
@@ -391,14 +395,14 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
 
     $verificationDataStoreId = Add-DataStore @dataStoreParameters
 
-    $vendorId = Add-Vendor -CmsUrl $CmsUrl -AccessToken $cmsToken -Company "Template Restore Verification Vendor"
+    $vendorId = Add-Vendor -CmsUrl $CmsUrl -AccessToken $cmsToken -Company "$verificationName Vendor"
 
     $applicationParams = @{
         CmsUrl          = $CmsUrl
         AccessToken     = $cmsToken
         VendorId        = $vendorId
         ClaimSetName    = "EdFiSandbox"
-        ApplicationName = "Template Restore Verification"
+        ApplicationName = $verificationName
         DataStoreIds    = @($verificationDataStoreId)
     }
 

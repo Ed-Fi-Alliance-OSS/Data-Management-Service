@@ -5,12 +5,102 @@
 
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.SchemaTools.Provisioning;
+using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Cdc.Tests.Integration.CdcProviderAdmissionFixture;
 using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
+
+[TestFixture]
+[Category("CdcMssqlNativeWorkerRefusal")]
+[Category("MssqlIntegration")]
+[Category("DatabaseIntegration")]
+public sealed class Given_SqlServer_Native_Cache_Without_A_Qualified_Worker
+{
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_refuses_initial_enable_before_provider_setup_or_writer_publication(bool legacy)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(12));
+        var token = timeout.Token;
+        await using var fixture = await CdcProviderAdmissionFixture.StartAsync(
+            CdcProvider.SqlServer,
+            token,
+            offlineKafka: true
+        );
+        var request = fixture.Request;
+        request.WorkerPolicy.QualifiedImageDigest.Should().Be(CdcQualifiedWorkerImage.Digest);
+        if (legacy)
+        {
+            await fixture.ExecuteAsync(
+                """
+                DROP TABLE dms.MssqlPhysicalSchema;
+                ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+                ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
+                ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;
+                """,
+                token
+            );
+        }
+        (
+            await fixture.ScalarAsync<string>(
+                "SELECT TYPE_NAME(user_type_id) FROM sys.columns WHERE object_id = OBJECT_ID(N'dms.DocumentCache') AND name = N'DocumentJson';",
+                token
+            )
+        )
+            .Should()
+            .Be(legacy ? "nvarchar" : "json");
+        const string providerStateSql = """
+            SELECT 10 * CONVERT(int, is_cdc_enabled) + snapshot_isolation_state
+            FROM sys.databases WHERE database_id = DB_ID();
+            """;
+        int providerStateBefore = await fixture.ScalarAsync<int>(providerStateSql, token);
+        var before = await fixture.JournalAsync(token);
+        var workflow = new CdcInitialEnableWorkflow(
+            fixture.Infrastructure.StateRoot,
+            fixture.Provider,
+            fixture.Templates,
+            fixture.Kafka,
+            fixture.Infrastructure.Connect,
+            fixture.Infrastructure.Worker,
+            A.Fake<ICdcWorkerStartupTransport>(),
+            fixture.Infrastructure.Metrics,
+            A.Fake<CoreCdc.ICdcProviderSourcePositionAdapter>()
+        );
+
+        var result = await workflow.EnableAsync(request, fixture.Runtime, 60_000, token);
+
+        var refusal = result
+            .Should()
+            .BeOfType<CdcTransportResult<CdcWriterPublicationResult>.Unavailable>()
+            .Subject;
+        refusal
+            .Diagnostic.Component.Should()
+            .Be(legacy ? CdcDeploymentComponent.ProviderSetup : CdcDeploymentComponent.Worker);
+        refusal
+            .Diagnostic.Failure.Should()
+            .Be(
+                legacy
+                    ? CdcDeploymentFailure.IncompatibleDocumentCachePhysicalSchema
+                    : CdcDeploymentFailure.NativeDocumentCacheWorkerRequired
+            );
+        var after = await fixture.JournalAsync(token);
+        after.Operations.Select(op => op.Effect).Should().Equal(before.Operations.Select(op => op.Effect));
+        after.WriterPublicationAuthorized.Should().BeFalse();
+        fixture.ProviderModes.Should().BeEmpty();
+        (await fixture.ScalarAsync<int>(providerStateSql, token)).Should().Be(providerStateBefore);
+        (
+            await fixture.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM sys.database_principals WHERE name = N'dms_connector'",
+                token
+            )
+        )
+            .Should()
+            .Be(0);
+    }
+}
 
 [TestFixture]
 [Category(CdcControllerCategories.Admission)]

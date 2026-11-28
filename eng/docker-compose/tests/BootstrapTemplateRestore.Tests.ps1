@@ -88,6 +88,9 @@ BeforeAll {
             [string]$Producer = "local-dev",
 
             [string]$ManifestDataStandardVersion = "5.2.0",
+            [string]$RawManifest,
+            [byte[]]$RawManifestBytes,
+            [switch]$ManifestUtf8Bom,
 
             [switch]$OmitManifest,
             [switch]$ExtraArtifact,
@@ -133,16 +136,27 @@ BeforeAll {
                 ResourceKeySeedHashB64   = [System.Convert]::ToBase64String([byte[]](1..32))
                 RelationalMappingVersion = "v2"
                 EngineVersion            = $(if ($DatabaseEngine -eq "mssql") { "17.0.900.7" } else { "16.8" })
-                DocumentJsonColumnType   = $(if ($DatabaseEngine -eq "mssql") { "nvarchar(max)" } else { "jsonb" })
+                DocumentJsonColumnType   = $(if ($DatabaseEngine -eq "mssql") { "json" } else { "jsonb" })
                 Inventory                = $inventory
                 ArtifactFileName         = $artifactFileName
                 ArtifactSha256           = $artifactSha256
             }
             if ($DatabaseEngine -eq "mssql") {
+                $manifestArguments.MssqlPhysicalSchemaVersion = "v2"
                 $manifestArguments.DatabaseCompatibilityLevel = 170
             }
             $manifest = New-TemplateRestoreManifest @manifestArguments
-            $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $layout (Get-RestoreManifestFileName)) -Encoding utf8
+            $manifestText = if ($RawManifest) { $RawManifest } else { $manifest | ConvertTo-Json -Depth 10 }
+            if ($null -ne $RawManifestBytes) {
+                [IO.File]::WriteAllBytes((Join-Path $layout (Get-RestoreManifestFileName)), $RawManifestBytes)
+            }
+            elseif ($ManifestUtf8Bom) {
+                $encoding = [System.Text.UTF8Encoding]::new($true)
+                [IO.File]::WriteAllBytes((Join-Path $layout (Get-RestoreManifestFileName)), $encoding.GetPreamble() + $encoding.GetBytes($manifestText))
+            }
+            else {
+                [IO.File]::WriteAllText((Join-Path $layout (Get-RestoreManifestFileName)), $manifestText)
+            }
         }
 
         if ($ExtraArtifact) {
@@ -605,6 +619,84 @@ Describe "Initialize-RestorePackageStage" {
 
         Remove-RestorePackageStage -StageDirectory $stage.StageDirectory
         Test-Path -LiteralPath $stage.StageDirectory | Should -BeFalse
+    }
+
+    It "refuses signed format-2 manifest with <Case> before Docker" -ForEach @(
+        @{ Case = "duplicate physical version"; From = '"mssqlPhysicalSchemaVersion": "v2"'; To = '"mssqlPhysicalSchemaVersion": "v1", "mssqlPhysicalSchemaVersion": "v2"'; Expected = "*duplicate*" }
+        @{ Case = "duplicate column type"; From = '"documentJsonColumnType": "json"'; To = '"documentJsonColumnType": "nvarchar(max)", "documentJsonColumnType": "json"'; Expected = "*duplicate*" }
+        @{ Case = "duplicate compatibility level"; From = '"databaseCompatibilityLevel": 170'; To = '"databaseCompatibilityLevel": 90, "databaseCompatibilityLevel": 170'; Expected = "*duplicate*" }
+        @{ Case = "singleton compatibility array"; From = '"databaseCompatibilityLevel": 170'; To = '"databaseCompatibilityLevel": [170]'; Expected = "*databaseCompatibilityLevel*" }
+        @{ Case = "case-variant version member"; From = '"version": 2'; To = '"Version": 2'; Expected = "*not part of the format-2 contract*" }
+        @{ Case = "unknown top-level member"; From = '"version": 2'; To = '"version": 2, "unexpected": "x"'; Expected = "*not part of the format-2 contract*" }
+        @{ Case = "NUL in the marker"; From = '"mssqlPhysicalSchemaVersion": "v2"'; To = '"mssqlPhysicalSchemaVersion": "v\u00002"'; Expected = "*mssqlPhysicalSchemaVersion*" }
+        @{ Case = "NUL in the native type"; From = '"documentJsonColumnType": "json"'; To = '"documentJsonColumnType": "json\u0000"'; Expected = "*documentJsonColumnType*" }
+        @{ Case = "NUL in the SQL Server engine"; From = '"databaseEngine": "mssql"'; To = '"databaseEngine": "mssql\u0000"'; Expected = "*databaseEngine*" }
+    ) {
+        Mock docker -ModuleName bootstrap-restore { throw "Unexpected Docker activity" }
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.mssql.json"
+        $text = [IO.File]::ReadAllText($fixture)
+        $text.Contains($From) | Should -BeTrue
+        $trustWorld = New-RestoreTrustWorld
+        $packageDirectory = New-TestWorkspace
+        New-RestoreTestPackage -Directory $packageDirectory -TrustWorld $trustWorld -DatabaseEngine mssql `
+            -PackageId "EdFi.Api.Minimal.Template.MsSql.5.2.0" -RawManifest $text.Replace($From, $To) | Out-Null
+        { Invoke-TrustedFindAndStage -TrustWorld $trustWorld -PackageDirectory $packageDirectory -EnvironmentValues (New-TestEnvironmentValues) -DatabaseEngine mssql } | Should -Throw $Expected
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly
+    }
+
+    It "rejects non-UTF-8 bytes in a signed SQL Server manifest before Docker" {
+        Mock docker -ModuleName bootstrap-restore { throw "Unexpected Docker activity" }
+        $fixture = Join-Path $PSScriptRoot "../../../src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Manifest/restore-manifest.mssql.json"
+        $text = [IO.File]::ReadAllText($fixture)
+        $utf16Bytes = [Text.Encoding]::Unicode.GetPreamble() + [Text.Encoding]::Unicode.GetBytes($text)
+        $invalidUtf8Bytes = [Text.Encoding]::ASCII.GetBytes('{"databaseEngine":"mssql","version":2,"engineVersion":"17.0.900.7') + [byte[]]@(0xFF) + [Text.Encoding]::ASCII.GetBytes('"}')
+
+        foreach ($case in @(
+                @{ Name = "UTF-16 BOM"; Bytes = $utf16Bytes },
+                @{ Name = "invalid UTF-8 sequence"; Bytes = $invalidUtf8Bytes }
+            )) {
+            $trustWorld = New-RestoreTrustWorld
+            $packageDirectory = New-TestWorkspace
+            New-RestoreTestPackage -Directory $packageDirectory -TrustWorld $trustWorld -DatabaseEngine mssql `
+                -PackageId "EdFi.Api.Minimal.Template.MsSql.5.2.0" -RawManifestBytes $case.Bytes | Out-Null
+            { Invoke-TrustedFindAndStage -TrustWorld $trustWorld -PackageDirectory $packageDirectory `
+                    -EnvironmentValues (New-TestEnvironmentValues) -DatabaseEngine mssql } |
+                Should -Throw "*strict UTF-8*"
+        }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly
+    }
+
+    It "accepts an optional UTF-8 BOM in a signed SQL Server manifest" {
+        $trustWorld = New-RestoreTrustWorld
+        $packageDirectory = New-TestWorkspace
+        New-RestoreTestPackage -Directory $packageDirectory -TrustWorld $trustWorld -DatabaseEngine mssql `
+            -PackageId "EdFi.Api.Minimal.Template.MsSql.5.2.0" -ManifestUtf8Bom | Out-Null
+        $stage = Invoke-TrustedFindAndStage -TrustWorld $trustWorld -PackageDirectory $packageDirectory `
+            -EnvironmentValues (New-TestEnvironmentValues) -DatabaseEngine mssql
+        try {
+            $stage.Manifest.databaseEngine | Should -BeExactly "mssql"
+            $stage.Manifest.mssqlPhysicalSchemaVersion | Should -BeExactly "v2"
+        }
+        finally {
+            Remove-RestorePackageStage -StageDirectory $stage.StageDirectory
+        }
+    }
+
+    It "stages a signed native SQL Server manifest before checking the selected SchemaTools" {
+        Mock docker -ModuleName bootstrap-restore { throw "Unexpected Docker activity" }
+        $trustWorld = New-RestoreTrustWorld
+        $packageDirectory = New-TestWorkspace
+        New-RestoreTestPackage -Directory $packageDirectory -TrustWorld $trustWorld -DatabaseEngine mssql -PackageId "EdFi.Api.Minimal.Template.MsSql.5.2.0" | Out-Null
+        $stage = Invoke-TrustedFindAndStage -TrustWorld $trustWorld -PackageDirectory $packageDirectory -EnvironmentValues (New-TestEnvironmentValues) -DatabaseEngine mssql
+        try {
+            $stage.Manifest.version | Should -Be 2
+            $stage.Manifest.mssqlPhysicalSchemaVersion | Should -BeExactly "v2"
+            $stage.Manifest.documentJsonColumnType | Should -BeExactly "json"
+            Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly
+        }
+        finally {
+            Remove-RestorePackageStage -StageDirectory $stage.StageDirectory
+        }
     }
 
     It "rejects a package whose staged bytes differ from the authenticated hash and removes the stage" {

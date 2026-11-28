@@ -17,6 +17,7 @@ using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Data.SqlTypes;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -121,6 +122,9 @@ public class Given_A_Mssql_DocumentCacheWriter
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
         SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
         DocumentCacheMaterializationCandidate candidate = CreateCandidate(source, "candidate-current");
+        candidate.DocumentJson["nested"] = JsonNode.Parse(
+            """{"city":"San José","values":[2.75,42,0.30000000000000004,9007199254740993]}"""
+        );
 
         DocumentCacheWriterResult result = await WriteAsync(source, candidate);
 
@@ -134,7 +138,7 @@ public class Given_A_Mssql_DocumentCacheWriter
         CacheRow cacheRow = await ReadCacheRowAsync(source.DocumentId);
         cacheRow.ContentVersion.Should().Be(10);
         cacheRow.StreamEtag.Should().Be("etag-10");
-        JsonNode.Parse(cacheRow.DocumentJson)!["value"]!.GetValue<string>().Should().Be("candidate-current");
+        JsonNode.DeepEquals(JsonNode.Parse(cacheRow.DocumentJson), candidate.DocumentJson).Should().BeTrue();
 
         // Exact to the tick, including the seventh fractional digit.
         DateTime contentCreatedAt = await ReadCacheTimestampAsync(source.DocumentId, "ContentCreatedAt");
@@ -143,6 +147,132 @@ public class Given_A_Mssql_DocumentCacheWriter
             .Should()
             .NotBe(await ReadCacheTimestampAsync(source.DocumentId, "LastModifiedAt"))
             .And.NotBe(await ReadCacheTimestampAsync(source.DocumentId, "ComputedAt"));
+    }
+
+    [TestCase(false, false)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    public async Task It_preserves_work_and_cache_when_a_candidate_exceeds_the_native_json_limit(
+        bool hasPreviousCacheRow,
+        bool xactAbort
+    )
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        var source = await InsertSourceDocumentAsync(contentVersion: 10);
+        if (hasPreviousCacheRow)
+        {
+            await InsertCacheRowAsync(source, contentVersion: 9);
+        }
+        var candidate = CreateCandidate(source, "oversized");
+        candidate.DocumentJson[new string('x', 8_000)] = 1;
+        if (xactAbort)
+        {
+            _writer = CreateWriter(sessionInitializationCommandText: "SET XACT_ABORT ON");
+        }
+
+        var result = await WriteAsync(source, candidate);
+
+        result.Should().BeOfType<DocumentCacheWriterResult.NativeJsonLimitExceeded>();
+        (await ReadWorkRequiredContentVersionAsync(source.DocumentId)).Should().Be(10);
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(hasPreviousCacheRow ? 1 : 0);
+        if (hasPreviousCacheRow)
+        {
+            (await ReadCacheRowAsync(source.DocumentId)).ContentVersion.Should().Be(9);
+        }
+    }
+
+    [Test]
+    public async Task It_propagates_an_unrelated_constraint_failure_without_acknowledging_work()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        var source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await _database.ExecuteNonQueryAsync(
+            "ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_CacheTestRejectDocument CHECK (DocumentId < 0);"
+        );
+
+        var write = () => WriteAsync(source, CreateCandidate(source, "valid"));
+        var exception = (await write.Should().ThrowAsync<SqlException>()).Which;
+
+        exception.Number.Should().Be(547);
+        (await ReadWorkRequiredContentVersionAsync(source.DocumentId)).Should().Be(10);
+        (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
+    }
+
+    [TestCase("[1,2]", 547)]
+    [TestCase("42", 13609)]
+    [TestCase("{bad", 13609)]
+    public async Task It_distinguishes_the_generated_object_check_from_native_conversion_errors(
+        string json,
+        int error
+    )
+    {
+        var source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await InsertCacheRowAsync(source, contentVersion: 10);
+
+        var update = () =>
+            _database.ExecuteNonQueryAsync(
+                "UPDATE dms.DocumentCache SET DocumentJson = @json WHERE DocumentId = @id",
+                new SqlParameter("@json", json),
+                new SqlParameter("@id", source.DocumentId)
+            );
+        var exception = (await update.Should().ThrowAsync<SqlException>()).Which;
+        exception.Number.Should().Be(error);
+        if (error == 547)
+        {
+            exception.Message.Should().Contain("CK_DocumentCache_IsJsonObject");
+        }
+    }
+
+    [Test]
+    public async Task It_bulk_copies_and_queries_native_json_on_the_generated_cache()
+    {
+        var source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await InsertCacheRowAsync(source, contentVersion: 10);
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT * FROM dms.DocumentCache WHERE DocumentId = @id";
+        command.Parameters.AddWithValue("@id", source.DocumentId);
+        using var data = new DataTable();
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            var ordinal = reader.GetOrdinal("DocumentJson");
+            (await reader.GetColumnSchemaAsync())[ordinal].DataTypeName.Should().Be("json");
+            (await reader.GetSchemaTableAsync())!.Rows[ordinal]["DataTypeName"].Should().Be("json");
+            data.Load(reader);
+        }
+        data.Rows[0]["DocumentJson"] = """{"city":"San José","values":[2.75,42]}""";
+        command.CommandText = "DELETE FROM dms.DocumentCache WHERE DocumentId = @id";
+        await command.ExecuteNonQueryAsync();
+        using var bulk = new SqlBulkCopy(
+            connection,
+            SqlBulkCopyOptions.CheckConstraints | SqlBulkCopyOptions.FireTriggers,
+            null
+        )
+        {
+            DestinationTableName = "dms.DocumentCache",
+        };
+        foreach (DataColumn column in data.Columns)
+        {
+            bulk.ColumnMappings.Add(column.ColumnName, column.ColumnName);
+        }
+        await bulk.WriteToServerAsync(data);
+
+        command.CommandText = """
+            SELECT c.DocumentJson, JSON_VALUE(c.DocumentJson, '$.city'), v.amount
+            FROM dms.DocumentCache c
+            CROSS APPLY OPENJSON(c.DocumentJson) WITH (amount decimal(5,2) '$.values[0]') v
+            WHERE c.DocumentId = @id
+            """;
+        await using var result = await command.ExecuteReaderAsync();
+        (await result.ReadAsync()).Should().BeTrue();
+        var typed = await result.GetFieldValueAsync<SqlJson>(0);
+        JsonNode
+            .DeepEquals(JsonNode.Parse(typed.Value), JsonNode.Parse((string)data.Rows[0]["DocumentJson"]))
+            .Should()
+            .BeTrue();
+        result.GetString(1).Should().Be("San José");
+        result.GetDecimal(2).Should().Be(2.75m);
     }
 
     [Test]

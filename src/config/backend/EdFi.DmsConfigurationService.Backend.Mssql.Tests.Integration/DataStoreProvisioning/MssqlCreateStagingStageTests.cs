@@ -288,6 +288,55 @@ public class MssqlCreateStagingStageTests
     }
 
     [TestFixture]
+    public class Given_a_signed_backup_with_an_incompatible_document_cache
+    {
+        [TestCase(
+            "DROP TABLE [dms].[MssqlPhysicalSchema];",
+            DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
+        )]
+        [TestCase(
+            "UPDATE [dms].[MssqlPhysicalSchema] SET [MssqlPhysicalSchemaVersion] = 'v1';",
+            DmsTargetValidator.MssqlPhysicalSchemaVersionCheck
+        )]
+        [TestCase(
+            """
+                ALTER TABLE [dms].[DocumentCache] DROP CONSTRAINT [CK_DocumentCache_IsJsonObject];
+                ALTER TABLE [dms].[DocumentCache] DROP COLUMN [DocumentJson];
+                EXEC(N'ALTER TABLE [dms].[DocumentCache] ADD [DocumentJson] nvarchar(max) NOT NULL;');
+                """,
+            DmsTargetValidator.DocumentJsonColumnTypeCheck
+        )]
+        public async Task It_reports_reprovisioning_guidance_before_publication(string mutation, string check)
+        {
+            RequireSharedStagingOrSkip();
+            byte[] backup = await ShapedBackup.CreateAsync(mutation);
+            LaneHooks hooks = new();
+            await using Lane lane = await Lane.BuildAsync(backup, hooks);
+
+            DmsDataStoreCreateResult result = await lane.CreateAsync();
+
+            DmsProvisioningFailure failure = FailureOf(result);
+            failure.Code.Should().Be(DmsProvisioningFailureCode.TargetIncompatible);
+            failure.Category.Should().Be(DmsProvisioningFailureCategory.OperatorInspectionRequired);
+            failure
+                .Diagnostic.Operation.Should()
+                .Be(DmsDataStoreProvisioningService.ValidateStagingStep + "." + check);
+            failure
+                .Summary.Should()
+                .Contain("Verify the pinned v2 template package")
+                .And.Contain("Reprovision");
+            hooks.Points.Should().Equal(DmsProvisioningHookPoint.AfterRestoreStarted);
+            lane.TargetMutations.Should().BeEmpty();
+            ((DmsDataStoreCreateResult.Failure)result).Cleanup.HasResidue.Should().BeFalse();
+            MssqlDmsTargetEngine side = Engine();
+            (await side.InspectAsync(lane.Operation.StagingDatabaseName, default))
+                .Should()
+                .BeOfType<DmsLiveTargetState.Absent>();
+            (await side.InspectAsync(lane.Target, default)).Should().BeOfType<DmsLiveTargetState.Absent>();
+        }
+    }
+
+    [TestFixture]
     public class Given_the_staged_file_is_replaced_after_the_restore
     {
         private Lane? _lane;

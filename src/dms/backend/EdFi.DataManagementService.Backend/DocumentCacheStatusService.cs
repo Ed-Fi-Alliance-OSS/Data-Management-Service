@@ -1425,7 +1425,8 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                 DocumentCacheStatusDocumentDiagnosticCategory.PoisonRetryScheduled,
             DocumentCacheProjectionDocumentDiagnosticCategory.WorkAnomaly =>
                 DocumentCacheStatusDocumentDiagnosticCategory.SourceChanged,
-            DocumentCacheProjectionDocumentDiagnosticCategory.WriterOutcome =>
+            DocumentCacheProjectionDocumentDiagnosticCategory.WriterOutcome
+            or DocumentCacheProjectionDocumentDiagnosticCategory.NativeJsonLimitExceeded =>
                 DocumentCacheStatusDocumentDiagnosticCategory.WriterFailed,
             DocumentCacheProjectionDocumentDiagnosticCategory.ProviderFailure =>
                 DocumentCacheStatusDocumentDiagnosticCategory.MaterializationFailed,

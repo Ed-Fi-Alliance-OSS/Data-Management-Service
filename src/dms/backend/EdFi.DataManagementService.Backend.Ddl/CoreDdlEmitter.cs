@@ -13,7 +13,7 @@ internal sealed record CoreDdlEmission(string Sql, IReadOnlyList<CdcSourceTableI
 /// Emits deterministic DDL for the core <c>dms.*</c> schema objects.
 /// <para>
 /// This includes tables, constraints, indexes, sequences, and the descriptor
-/// stamping trigger required by the v1 object inventory defined in
+/// stamping trigger required by the object inventory defined in
 /// <c>reference/design/backend-redesign/design-docs/ddl-generation.md</c>.
 /// </para>
 /// <para>
@@ -353,6 +353,10 @@ public sealed class CoreDdlEmitter
         EmitDocumentCacheStateTable(writer);
         EmitDocumentProjectionWorkTable(writer);
         EmitEffectiveSchemaTable(writer);
+        if (_dialect.Rules.Dialect == SqlDialect.Mssql)
+        {
+            EmitMssqlPhysicalSchemaTable(writer);
+        }
         EmitRepresentationRestampOperationTable(writer);
         EmitResourceKeyTable(writer);
         EmitSchemaComponentTable(writer);
@@ -516,10 +520,52 @@ public sealed class CoreDdlEmitter
                 _dialect.AddCheckConstraint(
                     _documentCacheTable,
                     DocumentCacheInventoryDefinition.DocumentCacheConstraints.MssqlJsonObject,
-                    $"ISJSON({_dialect.QuoteIdentifier("DocumentJson")}) = 1 AND LEFT(LTRIM({_dialect.QuoteIdentifier("DocumentJson")}), 1) = '{{'"
+                    $"ISJSON({Quote("DocumentJson")}, OBJECT) = 1"
                 )
             );
         }
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Creates and initializes the SQL Server-only marker in one branch. A rerun never seeds an
+    /// existing table, including if its marker row is removed after preflight.
+    /// </summary>
+    private void EmitMssqlPhysicalSchemaTable(SqlWriter writer)
+    {
+        var table = _dialect.QualifyTable(MssqlDocumentCachePhysicalSchema.Table);
+        var tableLiteral = _dialect.RenderStringLiteral(table);
+        var singletonId = Col(MssqlDocumentCachePhysicalSchema.SingletonIdColumn);
+        var version = Col(MssqlDocumentCachePhysicalSchema.VersionColumn);
+        var singletonColumn = Quote(singletonId.Value);
+        var versionColumn = Quote(version.Value);
+        var versionLiteral = _dialect.RenderStringLiteral(MssqlDocumentCachePhysicalSchema.Version);
+
+        writer.AppendLine($"IF OBJECT_ID({tableLiteral}, N'U') IS NULL");
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"CREATE TABLE {table}");
+            writer.AppendLine("(");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    $"{_dialect.RenderColumnDefinition(singletonId, _dialect.SmallintColumnType, false)},"
+                );
+                writer.AppendLine($"{_dialect.RenderColumnDefinition(version, "varchar(2)", false)},");
+                writer.AppendLine(
+                    $"{_dialect.RenderNamedPrimaryKeyClause("PK_MssqlPhysicalSchema", [singletonId])},"
+                );
+                writer.AppendLine(
+                    $"CONSTRAINT {Quote(MssqlDocumentCachePhysicalSchema.SingletonCheckName)} CHECK ({singletonColumn} = 1)"
+                );
+            }
+            writer.AppendLine(");");
+            writer.AppendLine();
+            writer.AppendLine($"INSERT INTO {table} ({singletonColumn}, {versionColumn})");
+            writer.AppendLine($"VALUES (1, {versionLiteral});");
+        }
+        writer.AppendLine("END;");
         writer.AppendLine();
     }
 

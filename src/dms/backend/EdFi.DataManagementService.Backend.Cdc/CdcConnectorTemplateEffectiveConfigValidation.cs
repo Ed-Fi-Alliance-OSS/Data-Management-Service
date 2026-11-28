@@ -1002,6 +1002,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         if (
             propertyName.StartsWith("database.", StringComparison.Ordinal)
             || propertyName.StartsWith("driver.", StringComparison.Ordinal)
+            || propertyName == CdcConnectorTemplateRenderer.CacheJsonConverterTableProperty
             || CdcConnectorTemplateInputValidator.IsKafkaSecurityMaterialRenderedProperty(propertyName)
             || propertyName
                 is "table.include.list"

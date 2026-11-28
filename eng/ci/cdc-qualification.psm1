@@ -325,7 +325,7 @@ function Export-CdcQualificationEvidence {
             }
             if ($value['failureCodes'] -is [array]) {
                 $safeValue.failureCodes = @($value['failureCodes'] | Where-Object {
-                    $_ -is [string] -and $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed)\z'
+                    Test-CdcControllerFailureCode $_
                 })
             }
             if ($value['worker'] -is [Collections.IDictionary]) {
@@ -373,11 +373,23 @@ function Export-CdcRunbookReport {
     }
 }
 
+function Get-CdcQualificationWorkerImage {
+    <#
+    .SYNOPSIS
+    Reads the shipped worker image and its qualification capabilities.
+    #>
+    Get-Content (Join-Path $PSScriptRoot '../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json') -Raw |
+        ConvertFrom-Json -AsHashtable
+}
+
 function Get-CdcQualificationProviderSuite {
     <# .SYNOPSIS
     Returns the ordered provider suites and their complete test filters for execution and CI scheduling.
     #>
-    param([ValidateSet('Postgresql', 'Mssql')][string] $Provider)
+    param(
+        [ValidateSet('Postgresql', 'Mssql')][string] $Provider,
+        [bool] $MssqlNativeDocumentCache = $true
+    )
 
     $categories = [ordered]@{
         Admission = 'CdcControllerAdmission'; Lifecycle = 'CdcControllerManagedLifecycle'
@@ -390,6 +402,14 @@ function Get-CdcQualificationProviderSuite {
     }
     $filters['MessageContract'] = "(Category=CdcMessageContractSerialized|Category=CdcMessageContractKafka)&Category=$($Provider)Integration"
     $filters['ApiE2E'] = 'FullyQualifiedName~Given_CdcApiE2E'
+    if ($Provider -eq 'Mssql' -and -not $MssqlNativeDocumentCache) {
+        $filters['Admission'] = 'Category=CdcMssqlNativeWorkerRefusal&Category=MssqlIntegration'
+        # Serialized cases exercise the shipped worker with synthetic records and need no CDC source.
+        $filters['MessageContract'] = 'Category=CdcMessageContractSerialized&Category=MssqlIntegration'
+        foreach ($suite in @('Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'ApiE2E')) {
+            $filters.Remove($suite)
+        }
+    }
     return $filters
 }
 
@@ -545,7 +565,8 @@ function Get-CdcRunbookHistoryReport {
     <# .SYNOPSIS
     Requires exact packaged history cases and the live provider/marked retirement follow-on.
     #>
-    param([string] $Path, [ValidateSet('History', 'Cleanup')] [string] $Selection = 'History')
+    param([string] $Path, [ValidateSet('History', 'Cleanup')] [string] $Selection = 'History',
+        [switch] $ProviderCleanupOnly)
     $required = if ($Selection -eq 'History') { [ordered]@{
         It_allows_all_three_commands_from_managed_non_CDC_creation = 1
         It_rejects_initial_enablement_of_a_managed_non_CDC_source_published_to_the_runtime = 2
@@ -561,6 +582,9 @@ function Get-CdcRunbookHistoryReport {
         It_reconciles_actual_committed_deletion_after_lost_response = 1
         It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history = 1
     } }
+    if ($Selection -eq 'Cleanup' -and $ProviderCleanupOnly) {
+        $required.Remove('It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history')
+    }
     Get-CdcRequiredMethodReport -Path $Path -Required $required -Name "runbook-$($Selection.ToLowerInvariant())-behavior" -ExactCount
 }
 
@@ -623,4 +647,4 @@ function Get-CdcRequiredMethodReport {
         Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases }
 }
 
-Export-ModuleMember -Function New-CdcApiRunnerReport, Get-CdcApiScenarioReport, Invoke-CdcApiQualification, Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Export-CdcRunbookReport, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport, Get-CdcRunbookRecoveryReport, Get-CdcRunbookRecordSizeReport, Get-CdcRunbookHistoryReport, Get-CdcRunbookTelemetryReport, Get-CdcRunbookKafkaReport, Get-CdcRunbookConsumerReport
+Export-ModuleMember -Function New-CdcApiRunnerReport, Get-CdcApiScenarioReport, Invoke-CdcApiQualification, Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Export-CdcRunbookReport, Get-CdcQualificationWorkerImage, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport, Get-CdcRunbookRecoveryReport, Get-CdcRunbookRecordSizeReport, Get-CdcRunbookHistoryReport, Get-CdcRunbookTelemetryReport, Get-CdcRunbookKafkaReport, Get-CdcRunbookConsumerReport

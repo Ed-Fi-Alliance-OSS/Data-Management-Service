@@ -817,6 +817,18 @@ public class Given_DdlManifestEmitter_Emit_Manifest_Schema
     }
 
     [Test]
+    public void It_should_include_the_physical_schema_version_on_the_mssql_entry_only()
+    {
+        const string property = "mssql_physical_schema_version";
+        var ddl = _doc.RootElement.GetProperty("ddl");
+
+        ddl[0].TryGetProperty(property, out var version).Should().BeTrue();
+        version.GetString().Should().Be("v2");
+        ddl[1].TryGetProperty(property, out _).Should().BeFalse();
+        _doc.RootElement.TryGetProperty(property, out _).Should().BeFalse();
+    }
+
+    [Test]
     public void It_should_include_normalized_sql_sha256_per_dialect()
     {
         var ddl = _doc.RootElement.GetProperty("ddl");

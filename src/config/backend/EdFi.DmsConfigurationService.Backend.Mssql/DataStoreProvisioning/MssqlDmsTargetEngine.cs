@@ -402,12 +402,23 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
             MssqlInventoryQueries.CompatibilityLevel,
             cancellationToken
         );
-        List<DmsDocumentJsonColumn> documentJsonColumns = await ReadRowsAsync(
+        var physicalFacts = await ReadRowsAsync(
             connection,
-            MssqlInventoryQueries.DocumentJsonColumns,
-            reader => new DmsDocumentJsonColumn("dms", reader.GetString(0), reader.GetString(1)),
+            MssqlInventoryQueries.DocumentCachePhysicalFacts,
+            reader =>
+                (
+                    MarkerValid: reader.GetBoolean(0),
+                    ObjectCheckValid: reader.GetBoolean(1),
+                    Column: reader.IsDBNull(2)
+                        ? null
+                        : new DmsDocumentJsonColumn("dms", reader.GetString(2), reader.GetString(3))
+                        {
+                            IsMssqlDocumentCacheColumn = reader.GetBoolean(4),
+                        }
+                ),
             cancellationToken
         );
+        var (markerValid, objectCheckValid, _) = physicalFacts[0];
         List<string> schemaNames = await ReadRowsAsync(
             connection,
             MssqlInventoryQueries.SchemaNames,
@@ -443,7 +454,12 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
             EffectiveSchema = effectiveSchema,
             EngineMajorVersion = engineMajorVersion,
             CompatibilityLevel = compatibilityLevel,
-            DocumentJsonColumns = documentJsonColumns,
+            DocumentJsonColumns = physicalFacts
+                .Select(row => row.Column)
+                .OfType<DmsDocumentJsonColumn>()
+                .ToArray(),
+            HasMssqlPhysicalSchemaMarker = markerValid,
+            HasMssqlDocumentCacheObjectCheck = objectCheckValid,
             SchemaNames = schemaNames,
             InventoryObjects = inventoryObjects,
             Principals = principals,

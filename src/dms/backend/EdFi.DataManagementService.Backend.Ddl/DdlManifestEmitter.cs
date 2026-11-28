@@ -69,6 +69,13 @@ public static class DdlManifestEmitter
 
         writer.WriteStartObject();
         writer.WriteString("dialect", DialectLabel(entry.Dialect));
+        if (entry.Dialect == SqlDialect.Mssql)
+        {
+            writer.WriteString(
+                MssqlDocumentCachePhysicalSchema.ManifestPropertyName,
+                MssqlDocumentCachePhysicalSchema.Version
+            );
+        }
         writer.WriteString("normalized_sql_sha256", ComputeSha256(normalized));
         writer.WriteNumber("statement_count", CountStatements(entry.Dialect, normalized));
         writer.WriteEndObject();

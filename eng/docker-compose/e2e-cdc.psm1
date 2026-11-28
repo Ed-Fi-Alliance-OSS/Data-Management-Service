@@ -6,6 +6,7 @@
 Set-StrictMode -Version Latest
 Import-Module (Join-Path $PSScriptRoot 'bootstrap-wrapper.psm1')
 Import-Module (Join-Path $PSScriptRoot 'bootstrap-cdc.psm1')
+. (Join-Path $PSScriptRoot 'cdc-failure-codes.ps1')
 Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
 Import-Module (Join-Path $PSScriptRoot 'database-safety.psm1')
 Import-Module (Join-Path $PSScriptRoot 'env-utility.psm1')
@@ -374,7 +375,7 @@ function Invoke-E2ECdcSetup {
     catch {
         $cancelled = $_.Exception -is [OperationCanceledException]
         $failureCodes = @($_.Exception.Data['CdcFailureCodes'] | Where-Object {
-            $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed)$'
+            Test-CdcControllerFailureCode $_
         })
         # Qualification opts in. Capture the failed worker before stop changes its state.
         $workerDiagnostic = @{}

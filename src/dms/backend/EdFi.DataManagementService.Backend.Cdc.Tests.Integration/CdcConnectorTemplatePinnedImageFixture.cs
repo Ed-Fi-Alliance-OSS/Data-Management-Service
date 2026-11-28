@@ -84,11 +84,12 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 new("StreamEtag", "varchar(64)"),
                 new("LastModifiedAt", "datetime2(7)"),
                 new("ContentCreatedAt", "datetime2(7)"),
-                new("DocumentJson", "nvarchar(max)"),
+                new("DocumentJson", "json"),
                 new("ComputedAt", "datetime2(7)"),
             ],
             [
                 "CONSTRAINT [FK_DocumentCache_Document] FOREIGN KEY ([DocumentId]) REFERENCES [dms].[Document] ([DocumentId]) ON DELETE CASCADE",
+                "CONSTRAINT [CK_DocumentCache_IsJsonObject] CHECK (ISJSON([DocumentJson], OBJECT) = 1)",
             ]
         ),
         new(
@@ -617,13 +618,22 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             );
         }
 
-        string[] requiredClasses =
+        List<string> requiredClasses =
         [
             connectorClass,
             DocumentStateTransformClass,
             DocumentStateJsonConverterClass,
             KafkaMurmur2PartitionerClass,
         ];
+        if (
+            rendered.Config.TryGetValue(
+                CdcConnectorTemplateRenderer.CacheJsonConverterTypeProperty,
+                out var converterClass
+            )
+        )
+        {
+            requiredClasses.Add(converterClass);
+        }
 
         try
         {
@@ -1219,14 +1229,14 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             databaseExecutor: databaseExecutor
         );
 
-    private static IReadOnlyList<CdcDmsManagedTableInventory> BuildDmsManagedTableInventory(
+    internal static IReadOnlyList<CdcDmsManagedTableInventory> BuildDmsManagedTableInventory(
         CdcProvider provider
     )
     {
         ISqlDialect dialect = SqlDialectFactory.Create(
             provider == CdcProvider.Postgresql ? SqlDialect.Pgsql : SqlDialect.Mssql
         );
-        DbTableName[] tables =
+        List<DbTableName> tables =
         [
             DmsTableNames.DataStoreIdentity,
             DmsTableNames.CdcHeartbeat,
@@ -1234,6 +1244,10 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             DmsTableNames.DocumentCache,
             DmsTableNames.DocumentProjectionWork,
         ];
+        if (provider == CdcProvider.SqlServer)
+        {
+            tables.Add(MssqlDocumentCachePhysicalSchema.Table);
+        }
 
         return tables
             .Select(table => new CdcDmsManagedTableInventory(
@@ -2102,6 +2116,18 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 INSERT INTO [dms].[DataStoreIdentity] ([DataStoreIdentitySingletonId], [SourceIdentity])
                 VALUES (1, '{{CdcConnectorTemplatePinnedImageTestData.SourceIdentity}}');
             {{createSourceTablesSql}}
+            IF OBJECT_ID(N'[dms].[MssqlPhysicalSchema]', N'U') IS NULL
+            BEGIN
+                CREATE TABLE [dms].[MssqlPhysicalSchema]
+                (
+                    [SingletonId] smallint NOT NULL,
+                    [MssqlPhysicalSchemaVersion] varchar(2) NOT NULL,
+                    CONSTRAINT [PK_MssqlPhysicalSchema] PRIMARY KEY CLUSTERED ([SingletonId]),
+                    CONSTRAINT [CK_MssqlPhysicalSchema_Singleton] CHECK ([SingletonId] = 1)
+                );
+                INSERT INTO [dms].[MssqlPhysicalSchema] ([SingletonId], [MssqlPhysicalSchemaVersion])
+                VALUES (1, 'v2');
+            END;
             IF OBJECT_ID(N'[dms].[DocumentProjectionWork]', N'U') IS NULL
                 CREATE TABLE [dms].[DocumentProjectionWork]
                 (
@@ -2941,7 +2967,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             .ToArray();
     }
 
-    private static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory(
+    internal static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory(
         CdcProvider provider
     ) =>
         SqlServerCaptureInstances
@@ -2973,7 +2999,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         {
             "uniqueidentifier" => "uuid",
             "datetime2(7)" => "timestamp with time zone",
-            "nvarchar(max)" => "jsonb",
+            "json" => "jsonb",
             "nvarchar(256)" => "varchar(256)",
             "nvarchar(32)" => "varchar(32)",
             "varchar(64)" => "varchar(64)",

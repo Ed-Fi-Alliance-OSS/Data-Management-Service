@@ -36,8 +36,17 @@ public static class FullDdlEmitter
     public static FullDdlEmission EmitWithMetadata(ISqlDialect dialect, DerivedRelationalModelSet modelSet)
     {
         var seedEmitter = new SeedDmlEmitter(dialect);
+        // The engine check must finish before SQL Server compiles the catalog query
+        // (which uses TRANSLATE) or any native JSON DDL.
+        var physicalGuard =
+            dialect.Rules.Dialect == SqlDialect.Mssql
+                ? MssqlDocumentCachePhysicalSchema.PlatformGuardSql
+                    + "\nGO\n\n"
+                    + MssqlDocumentCachePhysicalSchema.ProvisioningGuardSql
+                    + "\nGO\n\n"
+                : "";
         string preflightDdl = WrapPhase0(
-            seedEmitter.EmitPreflightOnly(modelSet.EffectiveSchema.EffectiveSchemaHash)
+            physicalGuard + seedEmitter.EmitPreflightOnly(modelSet.EffectiveSchema.EffectiveSchemaHash)
         );
         var sharedDescriptorTrackedChangeTable = modelSet.TrackedChangeTablesInNameOrder.SingleOrDefault(t =>
             t.Kind == TrackedChangeTableKind.SharedDescriptor
@@ -51,17 +60,20 @@ public static class FullDdlEmitter
             coreEmission.CdcSourceInventory
         );
 
-        return new FullDdlEmission(
-            JoinSegments(
-                dialect.RenderScriptPrologue(),
-                preflightDdl,
-                coreEmission.Sql,
-                relationalDdl,
-                seedDml
-            ),
-            coreEmission.CdcSourceInventory,
-            cdcDmsManagedTableInventory
+        string combinedSql = JoinSegments(
+            dialect.RenderScriptPrologue(),
+            preflightDdl,
+            coreEmission.Sql,
+            relationalDdl,
+            seedDml
         );
+        if (dialect.Rules.Dialect == SqlDialect.Mssql)
+        {
+            // Match the single final newline in written SQL snapshots on every platform.
+            combinedSql = combinedSql.TrimEnd('\r', '\n') + "\n";
+        }
+
+        return new FullDdlEmission(combinedSql, coreEmission.CdcSourceInventory, cdcDmsManagedTableInventory);
     }
 
     private static string WrapPhase0(string preflightSql)

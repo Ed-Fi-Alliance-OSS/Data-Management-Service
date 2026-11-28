@@ -117,9 +117,11 @@ internal sealed class MessageContractRunner(IDockerCli docker, string image)
                 ),
                 token
             );
+            // Give the worker runtime jars precedence over dependencies bundled with unrelated plugins.
             string script = $$"""
                 set -eu
                 {{CdcPinnedImageJavaRuntime.ClassPathScript}}
+                class_path="/kafka/libs/*:${class_path}"
                 java -cp "${class_path}" /tmp/contract/CdcTemplateClassProbe.java {{string.Join(
                     " ",
                     probeClasses
